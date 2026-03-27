@@ -5,13 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
-from .models import (
+from database import get_db
+from strategy.models import (
     StrategyCreate, StrategyUpdate, StrategyRead,
     StrategyRunCreate, StrategyRunRead,
     ChatMessageCreate, ChatMessageRead,
 )
-from .service import strategy_service
+from strategy.service import strategy_service
 
 router = APIRouter(prefix="/strategies", tags=["strategy"])
 

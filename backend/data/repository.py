@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Datasource, Dataset, CollectionJob, DataCharacteristics
+from data.models import Datasource, Dataset, CollectionJob, DataCharacteristics
 
 
 class DataRepository:

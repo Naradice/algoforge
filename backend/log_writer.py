@@ -19,7 +19,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .database import async_session_factory
+from database import async_session_factory
 
 _FLUSH_INTERVAL = 0.05  # seconds
 _BATCH_SIZE = 200

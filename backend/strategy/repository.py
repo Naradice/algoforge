@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Strategy, StrategyRun, StrategyRunCreate, Trade, RunMetric, StrategyRunChat, StrategyEvent
+from strategy.models import Strategy, StrategyRun, StrategyRunCreate, Trade, RunMetric, StrategyRunChat, StrategyEvent
 
 
 class StrategyRepository:

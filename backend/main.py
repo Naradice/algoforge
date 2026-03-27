@@ -12,12 +12,12 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import engine, Base
-from .log_writer import start_log_writer
-from .strategy.router import router as strategy_router
-from .model.router import router as model_router
-from .data.router import router as data_router
-from .logs_router import router as logs_router
+from database import engine, Base
+from log_writer import start_log_writer
+from strategy.router import router as strategy_router
+from model.router import router as model_router
+from data.router import router as data_router
+from logs_router import router as logs_router
 
 # Configure Python logging (console output in development)
 logging.basicConfig(

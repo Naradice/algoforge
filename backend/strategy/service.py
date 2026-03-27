@@ -5,12 +5,12 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import (
+from strategy.models import (
     Strategy, StrategyCreate, StrategyUpdate,
     StrategyRun, StrategyRunCreate, StrategyRunRead,
     ChatMessageCreate, ChatMessageRead,
 )
-from .repository import strategy_repo
+from strategy.repository import strategy_repo
 
 # Error codes (used in HTTPException detail)
 STRATEGY_NOT_FOUND = "STRATEGY_NOT_FOUND"

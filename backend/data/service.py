@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Datasource, DatasourceCreate, DatasourceUpdate, Dataset, CollectionJobCreate
-from .repository import data_repo
+from data.models import Datasource, DatasourceCreate, DatasourceUpdate, Dataset, CollectionJobCreate
+from data.repository import data_repo
 
 DATASOURCE_NOT_FOUND = "DATASOURCE_NOT_FOUND"
 DATASET_NOT_FOUND = "DATASET_NOT_FOUND"

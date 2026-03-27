@@ -10,8 +10,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .database import get_db
-from .log_models import Log
+from database import get_db
+from log_models import Log
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 

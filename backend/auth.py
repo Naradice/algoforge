@@ -9,7 +9,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .database import Base, get_db
+try:
+    from .database import Base, get_db
+except ImportError:
+    from database import Base, get_db
 
 import sqlalchemy as sa
 

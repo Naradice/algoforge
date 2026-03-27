@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import MLModel, MLModelCreate, MLModelUpdate, TrainingRun, TrainingRunCreate
-from .repository import model_repo
+from model.models import MLModel, MLModelCreate, MLModelUpdate, TrainingRun, TrainingRunCreate
+from model.repository import model_repo
 
 MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
 TRAINING_RUN_NOT_FOUND = "TRAINING_RUN_NOT_FOUND"

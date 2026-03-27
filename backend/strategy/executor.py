@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 
-from ..logging import StructuredLogger, current_strategy_run_id
+from loger import StructuredLogger, current_strategy_run_id
 
 logger = StructuredLogger("strategy.executor")
 

@@ -54,7 +54,7 @@ class StructuredLogger:
         self._py.log(getattr(logging, level), message, extra={"context": context})
 
         # Fire-and-forget DB write via the batch writer
-        from .log_writer import enqueue_log  # late import to avoid circular
+        from log_writer import enqueue_log  # late import to avoid circular
 
         enqueue_log(
             level=level,

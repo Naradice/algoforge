@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import MLModel, TrainingRun, TrainingCheckpoint, ModelValidation
+from model.models import MLModel, TrainingRun, TrainingCheckpoint, ModelValidation
 
 
 class ModelRepository:

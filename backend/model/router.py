@@ -5,13 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
-from .models import (
+from database import get_db
+from model.models import (
     MLModelCreate, MLModelUpdate, MLModelRead,
     TrainingRunCreate, TrainingRunRead,
     ModelValidationRead, PredictRequest, PredictResponse,
 )
-from .service import model_service
+from model.service import model_service
 
 router = APIRouter(prefix="/models", tags=["model"])
 

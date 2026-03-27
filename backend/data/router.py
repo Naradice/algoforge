@@ -5,13 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
-from .models import (
+from database import get_db
+from data.models import (
     DatasourceCreate, DatasourceUpdate, DatasourceRead,
     DatasetRead, CollectionJobCreate, CollectionJobRead,
     DataCharacteristicsRead,
 )
-from .service import data_service
+from data.service import data_service
 
 router = APIRouter(prefix="/data", tags=["data"])
 
