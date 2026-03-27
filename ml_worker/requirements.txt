@@ -1,0 +1,19 @@
+# Python 3.8 — RL training worker only
+# All other training (Transformer, LSTM, GAN) runs in the main backend (Python 3.12).
+
+-e ../../finance_client
+
+# Task queue (must match backend version)
+arq==0.25.0
+redis[hiredis]
+
+# Database (read/write training progress)
+sqlalchemy[asyncio]==1.4.52
+asyncpg==0.27.0
+
+# RL dependencies — require Python 3.8
+torch==1.13.1
+pfrl==0.3.0
+gym==0.22.0
+numpy==1.23.5
+pandas==1.5.3

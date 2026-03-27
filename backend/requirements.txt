@@ -1,0 +1,45 @@
+# Editable installs from sibling projects
+-e ../../finance_client
+-e ../../trade_strategy
+
+# Web framework
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart
+
+# Database
+sqlalchemy[asyncio]>=2.0
+asyncpg
+alembic
+
+# Task queue
+arq
+redis[hiredis]
+
+# Auth
+passlib[bcrypt]
+
+# MCP server
+fastmcp>=0.4
+
+# Google AI (LLM agent handler)
+google-genai
+google-adk
+
+# Browser automation (web report collector, replaces Puppeteer/Selenium)
+playwright
+
+# Data / ML
+numpy
+pandas
+torch
+scikit-learn
+
+# Scheduling
+apscheduler>=3.10
+
+# Utilities
+pydantic-settings
+python-dotenv
+httpx
+orjson
