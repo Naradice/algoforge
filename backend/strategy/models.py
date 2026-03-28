@@ -9,7 +9,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -49,6 +49,7 @@ class StrategyRun(Base):
     to_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    equity_curve: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
     strategy: Mapped[Strategy] = relationship("Strategy", back_populates="runs")
@@ -96,6 +97,16 @@ class RunMetric(Base):
     value: Mapped[float] = mapped_column(sa.Float, nullable=False)
 
     run: Mapped[StrategyRun] = relationship("StrategyRun", back_populates="metrics")
+
+
+class StrategyVersion(Base):
+    __tablename__ = "strategy_versions"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    strategy_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("strategies.id", ondelete="CASCADE"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    definition: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
 
 class StrategyRunChat(Base):
@@ -164,6 +175,16 @@ class StrategyRunRead(BaseModel):
     to_ts: datetime | None
     started_at: datetime | None
     ended_at: datetime | None
+    created_at: datetime
+
+
+class StrategyVersionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    strategy_id: int
+    version: int
+    definition: dict[str, Any]
     created_at: datetime
 
 

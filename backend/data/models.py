@@ -63,9 +63,22 @@ class CollectionJob(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     next_run_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
     datasource: Mapped[Datasource] = relationship("Datasource", back_populates="collection_jobs")
+
+
+class CollectionJobRun(Base):
+    __tablename__ = "collection_job_runs"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("collection_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="running")  # running | completed | error
+    datasets_produced: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
+    error_message: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 
 class DataCharacteristics(Base):
@@ -146,3 +159,29 @@ class DataCharacteristicsRead(BaseModel):
     dataset_id: int
     metrics: dict[str, Any]
     computed_at: datetime
+
+
+class CollectionJobUpdate(BaseModel):
+    schedule_cron: str | None = None
+    enabled: bool | None = None
+
+
+class CollectionJobRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    job_id: int
+    started_at: datetime | None
+    finished_at: datetime | None
+    status: str
+    datasets_produced: int
+    error_message: str | None
+
+
+class CollectRequest(BaseModel):
+    from_ts: str | None = None
+    to_ts: str | None = None
+
+
+class AnalyzeRequest(BaseModel):
+    analyses: list[str] | None = None

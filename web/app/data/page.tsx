@@ -4,8 +4,8 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/fetcher";
 
 export default function DataPage() {
-  const { data: datasources, isLoading } = useSWR("/api/v1/data/datasources", fetcher);
-  const { data: datasets } = useSWR("/api/v1/data/datasets", fetcher);
+  const { data: datasources, isLoading } = useSWR("/api/v1/datasources", fetcher);
+  const { data: datasets } = useSWR("/api/v1/datasets", fetcher);
 
   return (
     <div className="space-y-6">
@@ -65,7 +65,7 @@ export default function DataPage() {
                   <td className="py-2 pr-4 text-gray-300">{d.timeframe ?? "—"}</td>
                   <td className="py-2 pr-4 text-gray-300">{d.row_count?.toLocaleString() ?? "—"}</td>
                   <td className="py-2 pr-4">
-                    <span className="rounded-full bg-gray-700 px-2 py-0.5 text-xs">{d.status}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${d.status === "ready" ? "bg-green-500/20 text-green-400" : d.status === "error" ? "bg-red-500/20 text-red-400" : "bg-gray-700 text-gray-400"}`}>{d.status}</span>
                   </td>
                 </tr>
               ))}

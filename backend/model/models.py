@@ -48,6 +48,7 @@ class TrainingRun(Base):
     best_epoch: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     val_loss: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     eta_seconds: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    stop_requested: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="false")
     artifact_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -68,6 +69,18 @@ class TrainingCheckpoint(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
     training_run: Mapped[TrainingRun] = relationship("TrainingRun", back_populates="checkpoints")
+
+
+class TrainingRunMetric(Base):
+    __tablename__ = "training_run_metrics"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    training_run_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("training_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    epoch: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    train_loss: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    val_loss: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    lr: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
 
 class ModelValidation(Base):
@@ -154,3 +167,26 @@ class PredictRequest(BaseModel):
 
 class PredictResponse(BaseModel):
     predictions: list[dict[str, Any]]
+
+
+class TrainingRunMetricRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    training_run_id: int
+    epoch: int
+    train_loss: float | None
+    val_loss: float | None
+    lr: float | None
+    recorded_at: datetime
+
+
+class ValidationCreate(BaseModel):
+    training_run_id: int
+    dataset_id: int
+
+
+class HyperparamSearchCreate(BaseModel):
+    model_id: int
+    dataset_id: int
+    search_grid: dict[str, list]  # e.g. {"lr": [0.001, 0.0001], "batch_size": [32, 64]}

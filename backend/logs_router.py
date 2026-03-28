@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from log_models import Log
+from schemas import DataResponse
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -40,7 +41,7 @@ class LogSummary(BaseModel):
 _LEVEL_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
 
 
-@router.get("", response_model=list[LogEntryRead])
+@router.get("", response_model=DataResponse[list[LogEntryRead]])
 async def get_logs(
     strategy_run_id: int | None = None,
     training_run_id: int | None = None,
@@ -81,10 +82,10 @@ async def get_logs(
 
     query = query.order_by(Log.created_at.desc()).limit(limit)
     result = await db.execute(query)
-    return list(result.scalars().all())
+    return DataResponse(data=list(result.scalars().all()))
 
 
-@router.get("/summary", response_model=LogSummary)
+@router.get("/summary", response_model=DataResponse[LogSummary])
 async def get_log_summary(
     strategy_run_id: int | None = None,
     training_run_id: int | None = None,
@@ -111,4 +112,4 @@ async def get_log_summary(
         if row.level in ("ERROR", "CRITICAL") and first_error is None:
             first_error = LogEntryRead.model_validate(row)
 
-    return LogSummary(counts_by_level=counts_by_level, counts_by_source=counts_by_source, first_error=first_error)
+    return DataResponse(data=LogSummary(counts_by_level=counts_by_level, counts_by_source=counts_by_source, first_error=first_error))

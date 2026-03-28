@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(docker exec:*)",
+      "Bash(pip install:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker run:*)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm \\\\\n  --network infra_default \\\\\n  -v \"C:/Users/ksato/workspace/finance/algoforge/backend:/app\" \\\\\n  -w /app \\\\\n  -e DATABASE_URL=\"postgresql+psycopg2://algoforge:algoforge@postgres:5432/algoforge\" \\\\\n  python:3.12-slim \\\\\n  bash -c \"pip install -q alembic psycopg2-binary sqlalchemy pydantic fastapi asyncpg && alembic upgrade head\" 2>&1)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "webhook"
+  ]
+}
