@@ -18,7 +18,14 @@ export default function StrategyListPage() {
 
       {isLoading && <p className="text-gray-400">Loading…</p>}
 
-      {strategies && (
+      {strategies && strategies.length === 0 && (
+        <div className="rounded border border-gray-800 bg-gray-900 px-6 py-12 text-center">
+          <p className="text-gray-400">No strategies yet.</p>
+          <a href="/strategy/new" className="mt-3 inline-block text-sm text-brand-400 hover:underline">Create your first strategy →</a>
+        </div>
+      )}
+
+      {strategies && strategies.length > 0 && (
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-gray-800 text-xs text-gray-400 uppercase">
@@ -55,3 +62,4 @@ export default function StrategyListPage() {
     </div>
   );
 }
+

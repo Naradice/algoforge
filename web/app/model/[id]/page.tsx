@@ -34,6 +34,12 @@ export default function ModelDetailPage() {
   const [deploying, setDeploying] = useState<number | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
 
+  const [showValidateForm, setShowValidateForm] = useState(false);
+  const [validateRunId, setValidateRunId] = useState("");
+  const [validateDatasetId, setValidateDatasetId] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [validateError, setValidateError] = useState<string | null>(null);
+
   async function startTraining() {
     setTrainError(null);
     let hp: object;
@@ -82,6 +88,31 @@ export default function ModelDetailPage() {
       mutate(`/api/v1/models/${id}`);
     } finally {
       setDeploying(null);
+    }
+  }
+
+  async function runValidation() {
+    setValidateError(null);
+    if (!validateRunId || !validateDatasetId) {
+      setValidateError("Select a training run and dataset");
+      return;
+    }
+    setValidating(true);
+    try {
+      const res = await fetch(`/api/v1/models/${id}/validations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ training_run_id: parseInt(validateRunId), dataset_id: parseInt(validateDatasetId) }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setValidateError(body.error?.message ?? body.detail ?? `Error ${res.status}`);
+        return;
+      }
+      setShowValidateForm(false);
+      mutate(`/api/v1/models/${id}/validations`);
+    } finally {
+      setValidating(false);
     }
   }
 
@@ -238,26 +269,96 @@ export default function ModelDetailPage() {
       </section>
 
       {/* Validations */}
-      {validations && validations.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-gray-400">
-            Validations
-          </h2>
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-gray-400">Validations</h2>
+          {runs && runs.some((r: any) => r.status === "completed") && (
+            <button
+              onClick={() => setShowValidateForm(!showValidateForm)}
+              className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:border-gray-400 hover:text-white"
+            >
+              + Run Validation
+            </button>
+          )}
+        </div>
+
+        {showValidateForm && (
+          <div className="mb-4 rounded border border-gray-700 bg-gray-900 p-4 space-y-3">
+            <div>
+              <label className="mb-1 block text-xs text-gray-400">Training Run</label>
+              <select
+                value={validateRunId}
+                onChange={(e) => setValidateRunId(e.target.value)}
+                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="">Select run…</option>
+                {runs?.filter((r: any) => r.status === "completed").map((r: any) => (
+                  <option key={r.id} value={r.id}>
+                    Run #{r.id} · val_loss {r.val_loss?.toFixed(6) ?? "—"}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-400">Validation Dataset</label>
+              <select
+                value={validateDatasetId}
+                onChange={(e) => setValidateDatasetId(e.target.value)}
+                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="">Select dataset…</option>
+                {datasets?.map((d: any) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.row_count} rows)
+                  </option>
+                ))}
+              </select>
+            </div>
+            {validateError && <p className="text-xs text-red-400">{validateError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={runValidation}
+                disabled={validating}
+                className="rounded bg-brand-500 px-3 py-1.5 text-xs text-white hover:bg-sky-400 disabled:opacity-50"
+              >
+                {validating ? "Running…" : "Run"}
+              </button>
+              <button
+                onClick={() => setShowValidateForm(false)}
+                className="rounded border border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {validations && validations.length === 0 && (
+          <p className="text-sm text-gray-500">No validations yet.</p>
+        )}
+        {validations && validations.length > 0 && (
           <div className="space-y-3">
             {validations.map((v: any) => (
               <div key={v.id} className="rounded border border-gray-700 bg-gray-900 p-3">
-                <p className="mb-1 text-xs text-gray-500">
+                <p className="mb-2 text-xs text-gray-500">
                   Run #{v.training_run_id} · Dataset {v.dataset_id} ·{" "}
                   {new Date(v.computed_at).toLocaleString()}
                 </p>
-                <pre className="text-xs text-gray-300 overflow-auto">
-                  {JSON.stringify(v.metrics, null, 2)}
-                </pre>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {Object.entries(v.metrics as Record<string, number>).map(([key, val]) => (
+                    <div key={key} className="rounded bg-gray-800 px-3 py-2">
+                      <p className="text-xs text-gray-500">{key.replace(/_/g, " ")}</p>
+                      <p className="text-sm font-mono text-white">
+                        {typeof val === "number" ? val.toFixed(4) : String(val)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }

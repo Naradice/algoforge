@@ -30,8 +30,8 @@ services:
 
   backend:
     build:
-      context: ../backend
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: algoforge/backend/Dockerfile
     ports:
       - "8000:8000"
     env_file:
@@ -56,6 +56,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      API_URL: http://backend:8000
       NEXT_PUBLIC_API_URL: http://localhost:8000
       NEXT_PUBLIC_WS_URL: ws://localhost:8000
     depends_on:
@@ -63,8 +64,8 @@ services:
 
   ml_worker:
     build:
-      context: ../ml_worker
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: algoforge/ml_worker/Dockerfile
     env_file:
       - .env
     environment:

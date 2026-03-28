@@ -9,7 +9,7 @@ from sqlalchemy.pool import NullPool
 from database import Base  # noqa: F401
 import auth  # noqa: F401 — registers APIKey
 import log_models  # noqa: F401 — registers Log
-import webhook_models  # noqa: F401 — registers WebhookRegistration
+import webhooks.models  # noqa: F401 — registers WebhookRegistration
 import strategy.models  # noqa: F401
 import model.models  # noqa: F401
 import data.models  # noqa: F401

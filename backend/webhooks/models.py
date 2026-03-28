@@ -6,7 +6,6 @@ from typing import Any
 
 import sqlalchemy as sa
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -17,7 +16,7 @@ class WebhookRegistration(Base):
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     url: Mapped[str] = mapped_column(sa.Text, nullable=False)
-    events: Mapped[list] = mapped_column(ARRAY(sa.Text), nullable=False, server_default="{}")
+    events: Mapped[list] = mapped_column(sa.JSON, nullable=False, server_default="[]")
     secret: Mapped[str] = mapped_column(sa.Text, nullable=False)  # stored for HMAC signing
     active: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())

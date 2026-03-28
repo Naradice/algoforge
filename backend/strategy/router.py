@@ -77,6 +77,17 @@ async def start_run(strategy_id: int, body: StrategyRunCreate, db: AsyncSession 
     return DataResponse(data=run)
 
 
+@router.get("/{strategy_id}/runs/compare")
+async def compare_runs(
+    strategy_id: int,
+    run_ids: str,
+    db: AsyncSession = Depends(get_db),
+):
+    ids = [int(x.strip()) for x in run_ids.split(",")]
+    comparison = await strategy_service.compare_runs(db, strategy_id, ids)
+    return DataResponse(data=comparison)
+
+
 @router.get("/{strategy_id}/runs/{run_id}", response_model=DataResponse[StrategyRunRead])
 async def get_run(strategy_id: int, run_id: int, db: AsyncSession = Depends(get_db)):
     item = await strategy_service.get_run(db, strategy_id, run_id)
@@ -132,17 +143,6 @@ async def get_run_status(strategy_id: int, run_id: int, db: AsyncSession = Depen
 async def get_equity_curve(strategy_id: int, run_id: int, db: AsyncSession = Depends(get_db)):
     curve = await strategy_service.get_equity_curve(db, strategy_id, run_id)
     return DataResponse(data=curve)
-
-
-@router.get("/{strategy_id}/runs/compare")
-async def compare_runs(
-    strategy_id: int,
-    run_ids: str,
-    db: AsyncSession = Depends(get_db),
-):
-    ids = [int(x.strip()) for x in run_ids.split(",")]
-    comparison = await strategy_service.compare_runs(db, strategy_id, ids)
-    return DataResponse(data=comparison)
 
 
 @router.get("/{strategy_id}/runs/{run_id}/trades/{trade_id}")

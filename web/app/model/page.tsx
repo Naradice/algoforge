@@ -11,14 +11,26 @@ export default function ModelListPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-white">ML Models</h1>
-        <a href="/model/new" className="rounded bg-brand-500 px-3 py-1.5 text-sm text-white hover:bg-sky-400">
-          New Model
-        </a>
+        <div className="flex gap-2">
+          <a href="/model/compare" className="rounded border border-gray-600 px-3 py-1.5 text-sm text-gray-300 hover:border-gray-400 hover:text-white">
+            Compare Runs
+          </a>
+          <a href="/model/new" className="rounded bg-brand-500 px-3 py-1.5 text-sm text-white hover:bg-sky-400">
+            New Model
+          </a>
+        </div>
       </div>
 
       {isLoading && <p className="text-gray-400">Loading…</p>}
 
-      {models && (
+      {models && models.length === 0 && (
+        <div className="rounded border border-gray-800 bg-gray-900 px-6 py-12 text-center">
+          <p className="text-gray-400">No models yet.</p>
+          <a href="/model/new" className="mt-3 inline-block text-sm text-brand-400 hover:underline">Create your first model →</a>
+        </div>
+      )}
+
+      {models && models.length > 0 && (
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-gray-800 text-xs text-gray-400 uppercase">
@@ -57,3 +69,4 @@ export default function ModelListPage() {
     </div>
   );
 }
+

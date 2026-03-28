@@ -59,10 +59,19 @@ app.include_router(tr_router, prefix=API_PREFIX)
 app.include_router(model_config_router, prefix=API_PREFIX)
 
 # MCP server — accessible at /mcp (SSE transport for Claude Desktop)
-try:
-    app.mount("/mcp", mcp.get_asgi_app())
-except AttributeError:
-    app.mount("/mcp", mcp.sse_app())  # fastmcp < 2.0
+# Try known API names across fastmcp versions; skip gracefully if unavailable.
+_mcp_mounted = False
+for _attr in ("get_asgi_app", "http_app", "sse_app", "asgi_app"):
+    _fn = getattr(mcp, _attr, None)
+    if _fn is not None:
+        try:
+            app.mount("/mcp", _fn() if callable(_fn) else _fn)
+            _mcp_mounted = True
+            break
+        except Exception:
+            pass
+if not _mcp_mounted:
+    logging.getLogger("main").warning("MCP server could not be mounted — upgrade fastmcp or run it standalone")
 
 
 _HTTP_CODE_MAP: dict[int, str] = {

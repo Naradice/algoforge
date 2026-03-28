@@ -15,6 +15,7 @@ const TYPE_CONFIGS: Record<string, Record<string, string>> = {
     num_agent: "50",
     initial_price: "100",
     length: "50000",
+    tick_time: "1",
     timeframe: "M1",
     seed: "42",
   },

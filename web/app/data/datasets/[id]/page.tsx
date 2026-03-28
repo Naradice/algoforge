@@ -1,7 +1,8 @@
 "use client";
 
-import { use, useState } from "react";
+import { useState } from "react";
 import useSWR, { mutate } from "swr";
+import { useParams } from "next/navigation";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { ACFPlot } from "@/components/acf-plot";
@@ -10,9 +11,10 @@ import { QQPlot } from "@/components/qq-plot";
 
 type Tab = "overview" | "preview" | "characteristics";
 
-export default function DatasetDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function DatasetDetailPage() {
+  const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<Tab>("overview");
+  const [deleting, setDeleting] = useState(false);
   const { data: dataset } = useSWR(`/api/v1/datasets/${id}`, fetcher);
   const { data: chars } = useSWR(tab === "characteristics" ? `/api/v1/datasets/${id}/characteristics` : null, fetcher);
   const { data: preview } = useSWR(tab === "preview" && dataset?.status === "ready" ? `/api/v1/datasets/${id}/preview?rows=200` : null, fetcher);
@@ -22,17 +24,49 @@ export default function DatasetDetailPage({ params }: { params: Promise<{ id: st
     mutate(`/api/v1/datasets/${id}/characteristics`);
   }
 
+  async function deleteDataset() {
+    if (!confirm(`Delete dataset "${dataset?.name}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    const res = await fetch(`/api/v1/datasets/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      window.location.href = "/data";
+    } else {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error?.message ?? "Failed to delete");
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="space-y-4 max-w-5xl">
-      <div>
-        <a href="/data" className="text-xs text-gray-500 hover:text-white">← Data</a>
-        <h1 className="mt-1 text-2xl font-semibold text-white">{dataset?.name ?? "…"}</h1>
-        <div className="flex gap-3 mt-1 text-xs text-gray-400">
-          {dataset?.symbol && <span>{dataset.symbol}</span>}
-          {dataset?.timeframe && <span>{dataset.timeframe}</span>}
-          {dataset && <StatusBadge status={dataset.status} />}
-          {dataset?.row_count && <span>{dataset.row_count.toLocaleString()} rows</span>}
+      <div className="flex items-start justify-between">
+        <div>
+          <a href="/data" className="text-xs text-gray-500 hover:text-white">← Data</a>
+          <h1 className="mt-1 text-2xl font-semibold text-white">{dataset?.name ?? "…"}</h1>
+          <div className="flex gap-3 mt-1 text-xs text-gray-400">
+            {dataset?.symbol && <span>{dataset.symbol}</span>}
+            {dataset?.timeframe && <span>{dataset.timeframe}</span>}
+            {dataset && <StatusBadge status={dataset.status} />}
+            {dataset?.row_count && <span>{dataset.row_count.toLocaleString()} rows</span>}
+          </div>
         </div>
+        {dataset?.status === "ready" && (
+          <div className="flex gap-2">
+            <a
+              href={`/api/v1/datasets/${id}/download`}
+              className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-400 hover:text-white"
+            >
+              Download CSV
+            </a>
+            <button
+              onClick={deleteDataset}
+              disabled={deleting}
+              className="rounded border border-red-800 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20 disabled:opacity-50"
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

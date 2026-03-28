@@ -1,17 +1,22 @@
 "use client";
 
-import { use } from "react";
 import useSWR, { mutate } from "swr";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
+import { useParams } from "next/navigation";
 
-export default function DatasourceDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function DatasourceDetailPage() {
+  const { id } = useParams<{ id: string }>();
   const { data: ds } = useSWR(`/api/v1/datasources/${id}`, fetcher);
   const { data: jobs, isLoading } = useSWR(`/api/v1/collection-jobs?datasource_id=${id}`, fetcher);
 
   async function runJob(jobId: number) {
     await fetch(`/api/v1/collection-jobs/${jobId}/run`, { method: "POST" });
+    mutate(`/api/v1/collection-jobs?datasource_id=${id}`);
+  }
+
+  async function startCollection() {
+    await fetch(`/api/v1/datasources/${id}/collect`, { method: "POST" });
     mutate(`/api/v1/collection-jobs?datasource_id=${id}`);
   }
 
@@ -33,12 +38,20 @@ export default function DatasourceDetailPage({ params }: { params: Promise<{ id:
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wide">Collection Jobs</h2>
-          <a
-            href={`/data/datasources/${id}/new-job`}
-            className="rounded bg-brand-500 px-2 py-1 text-xs text-white hover:bg-sky-400"
-          >
-            New Job
-          </a>
+          <div className="flex gap-2">
+            <button
+              onClick={startCollection}
+              className="rounded bg-brand-500 px-2 py-1 text-xs text-white hover:bg-sky-400"
+            >
+              Run now
+            </button>
+            <a
+              href={`/data/datasources/${id}/new-job`}
+              className="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600"
+            >
+              New Job
+            </a>
+          </div>
         </div>
         {isLoading && <p className="text-gray-400 text-sm">Loading…</p>}
         {jobs?.map((job: any) => (

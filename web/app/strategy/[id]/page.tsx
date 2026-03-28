@@ -146,6 +146,8 @@ export default function StrategyDetailPage() {
     refreshInterval: 3000,
   });
   const { data: datasets } = useSWR("/api/v1/datasets", fetcher);
+  const { data: versions } = useSWR(`/api/v1/strategies/${id}/versions`, fetcher);
+  const [showVersions, setShowVersions] = useState(false);
 
   const [showRunForm, setShowRunForm] = useState(false);
   const [mode, setMode] = useState("backtest");
@@ -166,6 +168,46 @@ export default function StrategyDetailPage() {
   );
 
   const [stopping, setStopping] = useState<number | null>(null);
+
+  const [editingDef, setEditingDef] = useState(false);
+  const [defText, setDefText] = useState("");
+  const [savingDef, setSavingDef] = useState(false);
+  const [defError, setDefError] = useState<string | null>(null);
+
+  function startEditDef() {
+    setDefText(JSON.stringify(strategy.definition, null, 2));
+    setDefError(null);
+    setEditingDef(true);
+  }
+
+  async function saveDef() {
+    setDefError(null);
+    let parsed: object;
+    try {
+      parsed = JSON.parse(defText);
+    } catch {
+      setDefError("Invalid JSON");
+      return;
+    }
+    setSavingDef(true);
+    try {
+      const res = await fetch(`/api/v1/strategies/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ definition: parsed }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setDefError(body.error?.message ?? body.detail ?? `Error ${res.status}`);
+        return;
+      }
+      setEditingDef(false);
+      mutate(`/api/v1/strategies/${id}`);
+      mutate(`/api/v1/strategies/${id}/versions`);
+    } finally {
+      setSavingDef(false);
+    }
+  }
 
   async function startRun() {
     setRunError(null);
@@ -233,12 +275,70 @@ export default function StrategyDetailPage() {
 
       {/* Definition */}
       <section>
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-gray-400">
-          Definition
-        </h2>
-        <pre className="rounded bg-gray-900 p-3 text-xs text-gray-300 overflow-auto max-h-48">
-          {JSON.stringify(strategy.definition, null, 2)}
-        </pre>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-gray-400">Definition</h2>
+          {versions && versions.length > 0 && (
+            <button
+              onClick={() => setShowVersions(!showVersions)}
+              className="text-xs text-gray-400 hover:text-white"
+            >
+              {showVersions ? "Hide" : `Version history (${versions.length})`}
+            </button>
+          )}
+        </div>
+        {!editingDef && (
+          <>
+            <pre className="rounded bg-gray-900 p-3 text-xs text-gray-300 overflow-auto max-h-48">
+              {JSON.stringify(strategy.definition, null, 2)}
+            </pre>
+            <button
+              onClick={startEditDef}
+              className="mt-2 text-xs text-gray-400 hover:text-white"
+            >
+              Edit definition
+            </button>
+          </>
+        )}
+        {editingDef && (
+          <div className="space-y-2">
+            <textarea
+              value={defText}
+              onChange={(e) => setDefText(e.target.value)}
+              rows={14}
+              className="w-full rounded border border-gray-700 bg-gray-900 p-3 font-mono text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+            {defError && <p className="text-xs text-red-400">{defError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={saveDef}
+                disabled={savingDef}
+                className="rounded bg-brand-500 px-3 py-1.5 text-xs text-white hover:bg-sky-400 disabled:opacity-50"
+              >
+                {savingDef ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={() => setEditingDef(false)}
+                className="rounded border border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {showVersions && versions && (
+          <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
+            {(versions as { id: number; version: number; definition: object; created_at: string }[]).map((v) => (
+              <div key={v.id} className="rounded border border-gray-800 bg-gray-900 p-3">
+                <p className="mb-1 text-xs text-gray-500">
+                  v{v.version} · {new Date(v.created_at).toLocaleString()}
+                </p>
+                <pre className="text-xs text-gray-400 overflow-auto max-h-32">
+                  {JSON.stringify(v.definition, null, 2)}
+                </pre>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Runs */}

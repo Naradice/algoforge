@@ -1,8 +1,6 @@
 # Python 3.8 — RL training worker only
 # All other training (Transformer, LSTM, GAN) runs in the main backend (Python 3.12).
 
--e ../../finance_client
-
 # Task queue (must match backend version)
 arq==0.25.0
 redis[hiredis]

@@ -1,6 +1,5 @@
-# Editable installs from sibling projects
--e ../../finance_client
--e ../../trade_strategy
+# finance_client installed from /deps/finance_client in Docker (see Dockerfile)
+# For local dev outside Docker: pip install -e ../../finance_client
 
 # Web framework
 fastapi>=0.115
@@ -10,6 +9,7 @@ python-multipart
 # Database
 sqlalchemy[asyncio]>=2.0
 asyncpg
+psycopg2-binary
 alembic
 
 # Task queue

@@ -174,7 +174,7 @@ def _ticks_to_ohlc(prices: pd.Series, freq: str) -> pd.DataFrame:
 
 
 def collect(datasource_id: int, config: dict) -> CollectResult:
-    seed = config.get("seed", 42)
+    seed = int(config.get("seed", 42))
     random.seed(seed)
     np.random.seed(seed)
 
