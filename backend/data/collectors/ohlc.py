@@ -39,6 +39,14 @@ _YF_INTERVAL: dict[str, str] = {
     "MN": "1mo",
 }
 
+# yfinance maximum lookback in days per interval (None = unlimited)
+_YF_MAX_LOOKBACK_DAYS: dict[str, int | None] = {
+    "1m": 7,
+    "2m": 60, "5m": 60, "15m": 60, "30m": 60, "90m": 60,
+    "1h": 730,
+    "1d": None, "1wk": None, "1mo": None,
+}
+
 ARTIFACT_STORE = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
 
 
@@ -75,7 +83,7 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
         raise ValueError(f"Unknown OHLC client: {client!r}")
 
     if df.empty:
-        raise RuntimeError(f"No data returned for {symbol} {timeframe} ({from_dt} – {to_dt})")
+        raise RuntimeError(f"No data returned for {symbol} {timeframe} ({from_dt} to {to_dt})")
 
     # Normalise column names to lowercase
     df.columns = [c.lower() for c in df.columns]
@@ -101,6 +109,14 @@ def _download_yfinance(
     import yfinance as yf  # type: ignore
 
     interval = _YF_INTERVAL.get(timeframe, "1d")
+
+    # Clamp from_dt to yfinance's lookback limit for this interval
+    max_days = _YF_MAX_LOOKBACK_DAYS.get(interval)
+    if max_days is not None:
+        earliest_allowed = to_dt - pd.Timedelta(days=max_days)
+        if from_dt < earliest_allowed:
+            from_dt = earliest_allowed
+
     df: pd.DataFrame = yf.download(
         symbol,
         start=from_dt.strftime("%Y-%m-%d"),

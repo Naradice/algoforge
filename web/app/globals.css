@@ -2,10 +2,136 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── CSS variables ──────────────────────────────────────────────────────────── */
 :root {
-  --sidebar-width: 220px;
+  --sidebar-width: 248px;
 }
 
+/* ── Base ───────────────────────────────────────────────────────────────────── */
 body {
-  @apply bg-gray-950 text-gray-100 font-mono text-sm;
+  @apply bg-gray-950 text-gray-100 font-sans text-sm antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0D1117; }
+::-webkit-scrollbar-thumb { background: #30363D; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #484F58; }
+
+/* ── Material Design component classes ──────────────────────────────────────── */
+@layer components {
+
+  /* --- Surfaces & Cards --- */
+  .md-card {
+    @apply rounded-xl border border-gray-800 bg-gray-900 shadow-elevation-1;
+  }
+  .md-card-elevated {
+    @apply rounded-xl bg-gray-800 shadow-elevation-2;
+  }
+
+  /* --- Buttons --- */
+  .md-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           text-sm font-medium transition-colors
+           disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .md-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           text-sm font-medium transition-colors
+           disabled:opacity-40 disabled:pointer-events-none
+           bg-brand-500 text-white hover:bg-brand-400 active:bg-brand-600
+           shadow-elevation-1;
+  }
+  .md-btn-outlined {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           text-sm font-medium transition-colors
+           disabled:opacity-40 disabled:pointer-events-none
+           border border-gray-700 text-gray-200
+           hover:bg-gray-800 hover:border-gray-600 hover:text-white;
+  }
+  .md-btn-tonal {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           text-sm font-medium transition-colors
+           disabled:opacity-40 disabled:pointer-events-none
+           bg-brand-900 text-brand-300 hover:bg-brand-800;
+  }
+  .md-btn-text {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5
+           text-sm font-medium transition-colors
+           text-brand-400 hover:bg-brand-500/10;
+  }
+  .md-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           text-sm font-medium transition-colors
+           disabled:opacity-40 disabled:pointer-events-none
+           border border-red-800/50 text-red-400 hover:bg-red-900/20;
+  }
+  .md-btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* --- Inputs --- */
+  .md-input {
+    @apply rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5
+           text-sm text-gray-100 placeholder-gray-500
+           focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
+           transition-colors;
+  }
+  .md-select {
+    @apply rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5
+           text-sm text-gray-100
+           focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
+           transition-colors cursor-pointer;
+  }
+  .md-textarea {
+    @apply rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5
+           text-sm text-gray-100 placeholder-gray-500 font-mono resize-y
+           focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
+           transition-colors;
+  }
+
+  /* --- Typography --- */
+  .md-title-lg  { @apply text-2xl font-semibold text-gray-50; }
+  .md-title-md  { @apply text-xl font-semibold text-gray-50; }
+  .md-title-sm  { @apply text-base font-semibold text-gray-100; }
+  .md-label-lg  { @apply text-sm font-medium text-gray-100; }
+  .md-label-md  { @apply text-xs font-semibold uppercase tracking-widest text-gray-400; }
+  .md-body-md   { @apply text-sm text-gray-300; }
+  .md-body-sm   { @apply text-xs text-gray-400; }
+
+  /* --- Layout helpers --- */
+  .md-page-header    { @apply flex items-center justify-between; }
+  .md-section        { @apply space-y-3; }
+  .md-section-header { @apply flex items-center justify-between; }
+
+  /* --- Table --- */
+  .md-table               { @apply w-full text-left; }
+  .md-table thead tr      { @apply border-b-2 border-gray-800; }
+  .md-table thead th      { @apply py-3 pr-6 text-xs font-semibold uppercase tracking-wider text-gray-400; }
+  .md-table tbody tr      { @apply border-b border-gray-800/60 transition-colors hover:bg-gray-800/40; }
+  .md-table tbody td      { @apply py-3 pr-6 text-sm text-gray-200; }
+  .md-table tbody tr:last-child { @apply border-b-0; }
+
+  /* --- Empty state --- */
+  .md-empty-state {
+    @apply rounded-xl border border-gray-800 bg-gray-900 shadow-elevation-1
+           flex flex-col items-center justify-center px-6 py-16 text-center;
+  }
+
+  /* --- List item --- */
+  .md-list-item {
+    @apply rounded-xl border border-gray-800 bg-gray-900 shadow-elevation-1
+           flex items-center justify-between px-5 py-4
+           hover:border-brand-500/50 hover:bg-gray-800/50
+           transition-all cursor-pointer;
+  }
+
+  /* --- Chip --- */
+  .md-chip {
+    @apply inline-flex items-center rounded-full border border-gray-700 bg-gray-800
+           px-2.5 py-0.5 text-xs font-medium text-gray-300;
+  }
+
+  /* --- Divider --- */
+  .md-divider { @apply border-t border-gray-800; }
 }

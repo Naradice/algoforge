@@ -10,11 +10,12 @@ from pagination import Pagination
 from schemas import DataResponse, Meta
 from data.models import (
     DatasourceCreate, DatasourceUpdate, DatasourceRead,
-    DatasetRead, CollectionJobCreate, CollectionJobRead,
+    DatasetRead, DatasetUpdate, CollectionJobCreate, CollectionJobRead,
     CollectionJobUpdate, CollectionJobRunRead,
     DataCharacteristicsRead,
 )
 from data.service import data_service
+from data.repository import data_repo
 
 router = APIRouter(prefix="", tags=["data"])
 
@@ -105,6 +106,19 @@ async def get_dataset(dataset_id: int, db: AsyncSession = Depends(get_db)):
     return DataResponse(data=item)
 
 
+@router.patch("/datasets/{dataset_id}", response_model=DataResponse[DatasetRead])
+async def update_dataset(dataset_id: int, body: DatasetUpdate, db: AsyncSession = Depends(get_db)):
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        item = await data_service.get_dataset(db, dataset_id)
+    else:
+        item = await data_repo.update_dataset(db, dataset_id, **updates)
+        if item is None:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="DATASET_NOT_FOUND")
+    return DataResponse(data=item)
+
+
 @router.get("/datasets/{dataset_id}/characteristics", response_model=DataResponse[DataCharacteristicsRead | None])
 async def get_characteristics(dataset_id: int, db: AsyncSession = Depends(get_db)):
     item = await data_service.get_characteristics(db, dataset_id)
@@ -119,9 +133,13 @@ async def compute_characteristics(dataset_id: int, db: AsyncSession = Depends(ge
 
 
 @router.get("/datasets/{dataset_id}/preview", response_model=DataResponse[list])
-async def preview_dataset(dataset_id: int, rows: int = 100, db: AsyncSession = Depends(get_db)):
-    """Return the first N rows of the dataset as JSON."""
-    items = await data_service.get_dataset_preview(db, dataset_id, rows=rows)
+async def preview_dataset(dataset_id: int, rows: int = 100, timeframe: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Return the first N rows of the dataset as JSON.
+
+    For tick datasets (DDM simulation) pass `timeframe` to control OHLC aggregation.
+    Defaults to the dataset's stored timeframe.
+    """
+    items = await data_service.get_dataset_preview(db, dataset_id, rows=rows, timeframe=timeframe)
     return DataResponse(data=items)
 
 
@@ -149,12 +167,13 @@ async def delete_dataset(dataset_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/datasets/{dataset_id}/download")
-async def download_dataset(dataset_id: int, db: AsyncSession = Depends(get_db)):
+async def download_dataset(dataset_id: int, timeframe: str | None = None, db: AsyncSession = Depends(get_db)):
     import os
     import io
     from pathlib import Path
     import pandas as pd
     from fastapi.responses import StreamingResponse as _SR
+    from data.service import _resample_ticks
 
     ds = await data_service.get_dataset(db, dataset_id)
     if not ds.artifact_path:
@@ -162,6 +181,10 @@ async def download_dataset(dataset_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail={"code": "DATASET_FILE_NOT_FOUND", "message": "Dataset file not found"})
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
     df = pd.read_parquet(store / ds.artifact_path)
+
+    if "price" in df.columns:
+        df = _resample_ticks(df["price"], timeframe or ds.timeframe or "M1")
+
     buf = io.StringIO()
     df.to_csv(buf, index=True)
     buf.seek(0)

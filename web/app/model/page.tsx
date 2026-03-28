@@ -8,65 +8,58 @@ export default function ModelListPage() {
   const { data: models, isLoading } = useSWR("/api/v1/models", fetcher);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-white">ML Models</h1>
+    <div className="space-y-8 max-w-5xl">
+      <div className="md-page-header">
+        <h1 className="md-title-lg">ML Models</h1>
         <div className="flex gap-2">
-          <a href="/model/compare" className="rounded border border-gray-600 px-3 py-1.5 text-sm text-gray-300 hover:border-gray-400 hover:text-white">
-            Compare Runs
-          </a>
-          <a href="/model/new" className="rounded bg-brand-500 px-3 py-1.5 text-sm text-white hover:bg-sky-400">
-            New Model
-          </a>
+          <a href="/model/compare" className="md-btn md-btn-outlined">Compare Runs</a>
+          <a href="/model/new" className="md-btn md-btn-primary">+ New Model</a>
         </div>
       </div>
 
-      {isLoading && <p className="text-gray-400">Loading…</p>}
+      {isLoading && <p className="md-body-md">Loading…</p>}
 
       {models && models.length === 0 && (
-        <div className="rounded border border-gray-800 bg-gray-900 px-6 py-12 text-center">
-          <p className="text-gray-400">No models yet.</p>
-          <a href="/model/new" className="mt-3 inline-block text-sm text-brand-400 hover:underline">Create your first model →</a>
+        <div className="md-empty-state">
+          <p className="text-gray-200 font-medium">No models yet.</p>
+          <a href="/model/new" className="md-btn-text mt-2">Create your first model →</a>
         </div>
       )}
 
       {models && models.length > 0 && (
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b border-gray-800 text-xs text-gray-400 uppercase">
-              <th className="py-2 pr-4">Name</th>
-              <th className="py-2 pr-4">Architecture</th>
-              <th className="py-2 pr-4">Status</th>
-              <th className="py-2 pr-4">Created</th>
-              <th className="py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {models.map((m: any) => (
-              <tr key={m.id} className="border-b border-gray-800/50 hover:bg-gray-900">
-                <td className="py-2 pr-4">
-                  <a href={`/model/${m.id}`} className="text-brand-500 hover:underline">
-                    {m.name}
-                  </a>
-                </td>
-                <td className="py-2 pr-4 text-gray-300">{m.architecture}</td>
-                <td className="py-2 pr-4">
-                  <StatusBadge status={m.status} />
-                </td>
-                <td className="py-2 pr-4 text-gray-400">
-                  {new Date(m.created_at).toLocaleDateString()}
-                </td>
-                <td className="py-2 text-right">
-                  <a href={`/model/${m.id}`} className="text-xs text-gray-400 hover:text-white">
-                    View →
-                  </a>
-                </td>
+        <div className="md-card overflow-hidden">
+          <table className="md-table">
+            <thead>
+              <tr>
+                <th className="pl-5">Name</th>
+                <th>Architecture</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th className="pr-5 text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {models.map((m: any) => (
+                <tr key={m.id}>
+                  <td className="pl-5">
+                    <a href={`/model/${m.id}`} className="text-brand-400 hover:text-brand-300 font-medium hover:underline">
+                      {m.name}
+                    </a>
+                  </td>
+                  <td><span className="md-chip">{m.architecture}</span></td>
+                  <td><StatusBadge status={m.status} /></td>
+                  <td className="text-gray-400">{new Date(m.created_at).toLocaleDateString()}</td>
+                  <td className="pr-5 text-right">
+                    <a href={`/model/${m.id}`} className="text-xs text-brand-400 hover:text-brand-300 font-medium">
+                      Open →
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
-

@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import pandas as pd
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from data.models import Datasource, DatasourceCreate, DatasourceUpdate, Dataset, CollectionJobCreate
 from data.repository import data_repo
+
+_PANDAS_OFFSET = {
+    "M1": "1min", "M5": "5min", "M15": "15min", "M30": "30min",
+    "H1": "1h", "H4": "4h", "D1": "1D",
+}
+
+
+def _resample_ticks(tick_series: "pd.Series", timeframe: str) -> "pd.DataFrame":
+    """Resample a tick price series to OHLC candles."""
+    freq = _PANDAS_OFFSET.get(timeframe, "1min")
+    ohlc = tick_series.resample(freq).ohlc()
+    ohlc.columns = ["open", "high", "low", "close"]
+    ohlc["volume"] = tick_series.resample(freq).count()
+    return ohlc.dropna()
 
 DATASOURCE_NOT_FOUND = "DATASOURCE_NOT_FOUND"
 DATASET_NOT_FOUND = "DATASET_NOT_FOUND"
@@ -167,8 +182,12 @@ class DataService:
         await enqueue("run_collection_job", job.id)
         return job
 
-    async def get_dataset_preview(self, db: AsyncSession, dataset_id: int, rows: int = 100) -> list[dict]:
-        """Return the first `rows` rows of a dataset as a list of dicts."""
+    async def get_dataset_preview(self, db: AsyncSession, dataset_id: int, rows: int = 100, timeframe: str | None = None) -> list[dict]:
+        """Return the first `rows` rows of a dataset as a list of dicts.
+
+        If the artifact contains tick data (single `price` column), it is resampled
+        to OHLC using `timeframe` (or dataset.timeframe as the default).
+        """
         import os
         from pathlib import Path
         import pandas as pd
@@ -178,7 +197,12 @@ class DataService:
             raise HTTPException(status_code=422, detail=DATASET_NOT_READY)
 
         store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
-        df = pd.read_parquet(store / dataset.artifact_path).head(rows)
+        df = pd.read_parquet(store / dataset.artifact_path)
+
+        if "price" in df.columns:
+            df = _resample_ticks(df["price"], timeframe or dataset.timeframe or "M1")
+
+        df = df.head(rows)
         df.index = df.index.astype(str)
         return df.reset_index().rename(columns={df.index.name or "index": "datetime"}).to_dict(orient="records")
 

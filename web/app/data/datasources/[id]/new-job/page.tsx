@@ -48,7 +48,7 @@ export default function NewJobPage() {
         <div className="space-y-1">
           <label className="text-xs text-gray-400 uppercase">Schedule (cron, optional)</label>
           <input
-            className="input w-full"
+            className="md-input w-full"
             value={scheduleCron}
             onChange={(e) => setScheduleCron(e.target.value)}
             placeholder="e.g. 0 * * * *  (leave blank for one-off)"
@@ -67,7 +67,6 @@ export default function NewJobPage() {
         </button>
       </form>
 
-      <style>{`.input { @apply rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none; }`}</style>
     </div>
   );
 }

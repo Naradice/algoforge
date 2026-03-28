@@ -5,6 +5,7 @@ import useSWR, { mutate } from "swr";
 import { useParams } from "next/navigation";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
+import { useToast } from "@/lib/toast";
 import { ACFPlot } from "@/components/acf-plot";
 import { CCDFPlot } from "@/components/ccdf-plot";
 import { QQPlot } from "@/components/qq-plot";
@@ -13,15 +14,36 @@ type Tab = "overview" | "preview" | "characteristics";
 
 export default function DatasetDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("overview");
   const [deleting, setDeleting] = useState(false);
+  const [renamingName, setRenamingName] = useState<string | null>(null);
   const { data: dataset } = useSWR(`/api/v1/datasets/${id}`, fetcher);
   const { data: chars } = useSWR(tab === "characteristics" ? `/api/v1/datasets/${id}/characteristics` : null, fetcher);
-  const { data: preview } = useSWR(tab === "preview" && dataset?.status === "ready" ? `/api/v1/datasets/${id}/preview?rows=200` : null, fetcher);
+  const [previewTimeframe, setPreviewTimeframe] = useState<string>("");
+  const tfParam = previewTimeframe ? `&timeframe=${previewTimeframe}` : "";
+  const { data: preview } = useSWR(tab === "preview" && dataset?.status === "ready" ? `/api/v1/datasets/${id}/preview?rows=200${tfParam}` : null, fetcher);
 
   async function computeChars() {
     await fetch(`/api/v1/datasets/${id}/characteristics/compute`, { method: "POST" });
     mutate(`/api/v1/datasets/${id}/characteristics`);
+  }
+
+  async function renameDataset() {
+    if (renamingName === null || !renamingName.trim()) return;
+    const res = await fetch(`/api/v1/datasets/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: renamingName.trim() }),
+    });
+    if (res.ok) {
+      toast("Dataset renamed", "success");
+      mutate(`/api/v1/datasets/${id}`);
+      mutate("/api/v1/datasets");
+      setRenamingName(null);
+    } else {
+      toast("Failed to rename", "error");
+    }
   }
 
   async function deleteDataset() {
@@ -42,7 +64,28 @@ export default function DatasetDetailPage() {
       <div className="flex items-start justify-between">
         <div>
           <a href="/data" className="text-xs text-gray-500 hover:text-white">← Data</a>
-          <h1 className="mt-1 text-2xl font-semibold text-white">{dataset?.name ?? "…"}</h1>
+          {renamingName !== null ? (
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                value={renamingName}
+                onChange={(e) => setRenamingName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") renameDataset(); if (e.key === "Escape") setRenamingName(null); }}
+                autoFocus
+                className="rounded border border-gray-700 bg-gray-900 px-3 py-1 text-xl font-semibold text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+              <button onClick={renameDataset} className="text-xs text-brand-400 hover:underline">Save</button>
+              <button onClick={() => setRenamingName(null)} className="text-xs text-gray-500 hover:text-white">Cancel</button>
+            </div>
+          ) : (
+            <div className="mt-1 flex items-center gap-2">
+              <h1 className="text-2xl font-semibold text-white">{dataset?.name ?? "…"}</h1>
+              {dataset && (
+                <button onClick={() => setRenamingName(dataset.name)} className="text-xs text-gray-500 hover:text-gray-300">
+                  rename
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex gap-3 mt-1 text-xs text-gray-400">
             {dataset?.symbol && <span>{dataset.symbol}</span>}
             {dataset?.timeframe && <span>{dataset.timeframe}</span>}
@@ -53,7 +96,7 @@ export default function DatasetDetailPage() {
         {dataset?.status === "ready" && (
           <div className="flex gap-2">
             <a
-              href={`/api/v1/datasets/${id}/download`}
+              href={`/api/v1/datasets/${id}/download${previewTimeframe ? `?timeframe=${previewTimeframe}` : ""}`}
               className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-400 hover:text-white"
             >
               Download CSV
@@ -97,6 +140,20 @@ export default function DatasetDetailPage() {
 
       {/* Preview */}
       {tab === "preview" && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-400 uppercase">Timeframe</label>
+            <select
+              value={previewTimeframe || dataset?.timeframe || ""}
+              onChange={(e) => setPreviewTimeframe(e.target.value)}
+              className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+            >
+              {["M1", "M5", "M15", "M30", "H1", "H4", "D1"].map((tf) => (
+                <option key={tf} value={tf}>{tf}</option>
+              ))}
+            </select>
+            <span className="text-xs text-gray-500">(applies to tick datasets)</span>
+          </div>
         <div className="overflow-x-auto">
           {!preview && <p className="text-gray-400 text-sm">Loading preview…</p>}
           {preview && preview.length > 0 && (
@@ -121,6 +178,7 @@ export default function DatasetDetailPage() {
               </tbody>
             </table>
           )}
+        </div>
         </div>
       )}
 

@@ -3,6 +3,9 @@ DDM (Deterministic Dealer Model) simulator collector.
 
 Adapted from stocknet/stocknet/datasets/simulator.py — DeterministicDealerModelV3.
 
+Tick data is stored as the artifact. When previewing/downloading a dataset the
+service layer resamples the tick series to the requested OHLC timeframe on demand.
+
 Datasource config shape:
     {
         "num_agent": 50,
@@ -14,9 +17,9 @@ Datasource config shape:
         "wma": 5,
         "dealer_sensitive_min": -3.5,
         "dealer_sensitive_max": -1.5,
-        "tick_time": 0.001,
-        "length": 50000,          # number of ticks to simulate
-        "timeframe": "M1",        # resample tick data to this OHLC frame
+        "tick_time": 1.0,         # simulated seconds between ticks
+        "length": 1000,           # desired number of OUTPUT OHLC candles
+        "timeframe": "M1",        # OHLC timeframe for display / default resample
         "seed": 42
     }
 """
@@ -50,7 +53,11 @@ class CollectResult:
 
 
 class _DDMv1:
-    """Minimal base for DeterministicDealerModelV3."""
+    """Minimal base for DeterministicDealerModelV3.
+
+    Agent state is stored as numpy arrays (not a pandas DataFrame) so the inner
+    simulation loop runs with minimal overhead.
+    """
 
     def __init__(
         self,
@@ -63,39 +70,47 @@ class _DDMv1:
         tick_time: float = 0.001,
         **kwargs,
     ) -> None:
-        tendency = pd.Series([random.uniform(min_volatility, max_volatility) for _ in range(num_agent)], dtype=float)
-        prices = pd.Series([random.uniform(initial_price, initial_price + spread) for _ in range(num_agent)], dtype=float)
-        position_trends = pd.Series([random.choice([-1, 1]) for _ in range(num_agent)], dtype=int)
-        self.agent_df = pd.concat([tendency, position_trends, prices], axis=1, keys=["tend", "position", "price"])
+        self.tend = np.array([random.uniform(min_volatility, max_volatility) for _ in range(num_agent)], dtype=np.float64)
+        self.agent_prices = np.array([random.uniform(initial_price, initial_price + spread) for _ in range(num_agent)], dtype=np.float64)
+        self.position = np.array([random.choice([-1, 1]) for _ in range(num_agent)], dtype=np.int8)
         self.spread = spread
-        self.market_price = initial_price + spread
+        self.market_price: float = initial_price + spread
         self.trade_unit = trade_unit
         self.tick_time = 0.0
         self.tick_time_unit = tick_time
         self.price_history: list[float] = [self.market_price]
         self.tick_times: list[float] = [0.0]
 
-    def advance_order_price(self) -> pd.Series:
-        self.agent_df["price"] += self.agent_df["position"] * self.agent_df["tend"]
-        return self.agent_df["price"]
+    def advance_order_price(self) -> np.ndarray:
+        self.agent_prices += self.position * self.tend
+        return self.agent_prices
 
-    def _contruct(self) -> None:
+    def _contruct(self, iter_index: int) -> None:
+        """Run one simulation iteration.
+
+        ``iter_index`` is the current iteration number; the simulated time of
+        this iteration is ``iter_index * tick_time_unit``.  A price is only
+        recorded when a trade actually occurs, but the timestamp is based on
+        the iteration count — not on how many trades have happened.
+        """
         prices = self.advance_order_price()
-        bid = prices[self.agent_df["position"] == -1]
-        ask = prices[self.agent_df["position"] == 1]
-        if bid.empty or ask.empty:
+        seller_mask = self.position == -1
+        buyer_mask = self.position == 1
+        if not seller_mask.any() or not buyer_mask.any():
             return
-        bid_val, ask_val = bid.max(), ask.min()
+        bid_val = prices[seller_mask].max()
+        ask_val = prices[buyer_mask].min()
         if bid_val >= ask_val:
+            # A trade occurred — update market price and record it with the
+            # wall-clock time of *this iteration*, not trade-count time.
             self.market_price = (bid_val + ask_val) / 2
-            # Flip position for matched agents
-            bid_idx = bid[bid == bid_val].index
-            ask_idx = ask[ask == ask_val].index
-            self.agent_df.loc[bid_idx, "position"] *= -1
-            self.agent_df.loc[ask_idx, "position"] *= -1
-        self.price_history.append(self.market_price)
-        self.tick_time += self.tick_time_unit
-        self.tick_times.append(self.tick_time)
+            flip_seller = seller_mask & (prices == bid_val)
+            flip_buyer = buyer_mask & (prices == ask_val)
+            self.position[flip_seller] *= -1
+            self.position[flip_buyer] *= -1
+            self.price_history.append(self.market_price)
+            sim_time = iter_index * self.tick_time_unit
+            self.tick_times.append(sim_time)
 
 
 class DDMv3(_DDMv1):
@@ -136,19 +151,35 @@ class DDMv3(_DDMv1):
     def _wma_diff(self) -> float:
         if len(self.price_history) < self.wma + 1:
             return 0.0
-        diffs = [self.price_history[-i] - self.price_history[-i - 1] for i in range(1, self.wma + 1)]
+        h = self.price_history
+        diffs = [h[-i] - h[-i - 1] for i in range(1, self.wma + 1)]
         return float(np.dot(self.weight_array, diffs) / self._total_weight)
 
-    def advance_order_price(self) -> pd.Series:
-        follow = self.dealer_sensitive * self._wma_diff()
-        self.agent_df["price"] += self.agent_df["position"] * self.agent_df["tend"] + follow
-        return self.agent_df["price"]
+    def advance_order_price(self) -> np.ndarray:
+        wma = self._wma_diff()
+        # Clip feedback relative to market price to prevent runaway divergence.
+        # Without this, prices diverge exponentially and the simulation hangs.
+        if self.market_price and np.isfinite(self.market_price):
+            cap = abs(self.market_price) * 0.005
+            wma = float(np.clip(wma, -cap, cap))
+        follow = self.dealer_sensitive * wma
+        self.agent_prices += self.position * self.tend + follow
+        return self.agent_prices
 
-    def simulate(self, length: int) -> pd.DataFrame:
-        """Simulate `length` ticks and return tick price DataFrame."""
-        while len(self.price_history) < length:
-            self._contruct()
-        return pd.DataFrame({"price": self.price_history[:length]})
+    def simulate(self, n_iters: int) -> pd.DataFrame:
+        """Run exactly ``n_iters`` simulation iterations.
+
+        Returns a DataFrame with columns ``price`` and ``sim_time`` (seconds)
+        for every iteration that produced a trade.  The time is iteration-based
+        so candles contain only trades that fell within that time window.
+        """
+        for i in range(n_iters):
+            self._contruct(i)
+        # price_history[0] / tick_times[0] are the initial seed values — skip them
+        return pd.DataFrame({
+            "price": self.price_history[1:],
+            "sim_time": self.tick_times[1:],
+        })
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +196,17 @@ _PANDAS_OFFSET = {
     "D1": "1D",
 }
 
+# Approximate wall-clock seconds per OHLC candle for each timeframe
+_CANDLE_SECONDS = {
+    "M1": 60,
+    "M5": 300,
+    "M15": 900,
+    "M30": 1800,
+    "H1": 3600,
+    "H4": 14400,
+    "D1": 86400,
+}
+
 
 def _ticks_to_ohlc(prices: pd.Series, freq: str) -> pd.DataFrame:
     ohlc = prices.resample(freq).ohlc()
@@ -178,9 +220,15 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     random.seed(seed)
     np.random.seed(seed)
 
-    length = int(config.get("length", 50_000))
+    # `length` = desired number of output OHLC candles
+    ohlc_length = int(config.get("length", 1000))
     timeframe = config.get("timeframe", "M1")
     freq = _PANDAS_OFFSET.get(timeframe, "1min")
+    tick_interval_s = float(config.get("tick_time", 1.0))
+
+    candle_secs = _CANDLE_SECONDS.get(timeframe, 60)
+    ticks_per_candle = max(2, int(candle_secs / max(tick_interval_s, 0.001)))
+    tick_count = ohlc_length * ticks_per_candle
 
     model = DDMv3(
         num_agent=int(config.get("num_agent", 50)),
@@ -189,26 +237,29 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
         trade_unit=float(config.get("trade_unit", 0.001)),
         initial_price=float(config.get("initial_price", 100.0)),
         spread=float(config.get("spread", 1.0)),
-        tick_time=float(config.get("tick_time", 0.001)),
+        tick_time=tick_interval_s,
         wma=int(config.get("wma", 5)),
         dealer_sensitive_min=float(config.get("dealer_sensitive_min", -3.5)),
         dealer_sensitive_max=float(config.get("dealer_sensitive_max", -1.5)),
     )
 
-    tick_df = model.simulate(length)
+    tick_df = model.simulate(tick_count)
 
-    # Assign synthetic timestamps starting at 2000-01-03 00:00 UTC (Monday)
-    tick_interval_s = float(config.get("tick_time", 0.001))
+    # Build timestamps from the actual iteration-based sim_time of each trade.
+    # Trades that share the same integer-second bucket are placed at that second.
     start = pd.Timestamp("2000-01-03 00:00:00", tz="UTC")
-    times = pd.date_range(start=start, periods=len(tick_df), freq=f"{tick_interval_s}s")
+    times = [start + pd.Timedelta(seconds=float(t)) for t in tick_df["sim_time"]]
     tick_series = pd.Series(tick_df["price"].values, index=times)
 
+    # Compute OHLC for row_count / from_ts / to_ts metadata only
     ohlc = _ticks_to_ohlc(tick_series, freq)
 
     out_dir = ARTIFACT_STORE / "datasets" / f"src_{datasource_id}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    artifact_rel = f"datasets/src_{datasource_id}/ddm_{timeframe}_len{length}.parquet"
-    ohlc.to_parquet(ARTIFACT_STORE / artifact_rel)
+
+    # Store raw tick data so the dataset can be resampled to any timeframe later
+    artifact_rel = f"datasets/src_{datasource_id}/ddm_ticks.parquet"
+    tick_series.rename("price").to_frame().to_parquet(ARTIFACT_STORE / artifact_rel)
 
     return CollectResult(
         artifact_path=artifact_rel,

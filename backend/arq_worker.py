@@ -80,7 +80,7 @@ async def run_collection_job(ctx, job_id: int) -> dict:
         timeframe = source.config.get("timeframe")
         dataset = Dataset(
             datasource_id=source.id,
-            name=f"{source.name} – {collect_result.from_ts.date()} to {collect_result.to_ts.date()}",
+            name=f"{source.name} {collect_result.from_ts.date()} to {collect_result.to_ts.date()}",
             symbol=symbol,
             timeframe=timeframe,
             from_ts=collect_result.from_ts,

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
+import { useToast } from "@/lib/toast";
 
 // ---------------------------------------------------------------------------
 // Chat panel with WebSocket
@@ -138,6 +139,7 @@ function ChatPanel({ strategyId, runId }: { strategyId: string; runId: number })
 
 export default function StrategyDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { toast } = useToast();
   const { data: strategy, isLoading, error } = useSWR(
     `/api/v1/strategies/${id}`,
     fetcher
@@ -202,6 +204,7 @@ export default function StrategyDetailPage() {
         return;
       }
       setEditingDef(false);
+      toast("Definition saved", "success");
       mutate(`/api/v1/strategies/${id}`);
       mutate(`/api/v1/strategies/${id}/versions`);
     } finally {
@@ -231,6 +234,7 @@ export default function StrategyDetailPage() {
         return;
       }
       setShowRunForm(false);
+      toast(`${mode} run queued`, "success");
       mutate(`/api/v1/strategies/${id}/runs`);
     } finally {
       setStarting(false);
@@ -241,6 +245,7 @@ export default function StrategyDetailPage() {
     setStopping(runId);
     try {
       await fetch(`/api/v1/strategies/${id}/runs/${runId}/stop`, { method: "POST" });
+      toast("Stop requested", "info");
       mutate(`/api/v1/strategies/${id}/runs`);
     } finally {
       setStopping(null);

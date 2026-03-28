@@ -134,6 +134,12 @@ class DatasetRead(BaseModel):
     created_at: datetime
 
 
+class DatasetUpdate(BaseModel):
+    name: str | None = None
+    symbol: str | None = None
+    timeframe: str | None = None
+
+
 class CollectionJobCreate(BaseModel):
     datasource_id: int
     schedule_cron: str | None = None

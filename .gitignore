@@ -5,3 +5,4 @@ __pycache__/
 .next/
 .env
 .env.local
+*.parquet

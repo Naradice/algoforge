@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
+import { useToast } from "@/lib/toast";
 
 const DEFAULT_HYPERPARAMS = {
   obs_len: 60,
@@ -20,6 +21,7 @@ const DEFAULT_HYPERPARAMS = {
 export default function ModelDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { toast } = useToast();
   const { data: model, isLoading, error } = useSWR(`/api/v1/models/${id}`, fetcher, { refreshInterval: 5000 });
   const { data: runs } = useSWR(`/api/v1/models/${id}/training-runs`, fetcher, { refreshInterval: 5000 });
   const { data: validations } = useSWR(`/api/v1/models/${id}/validations`, fetcher);
@@ -66,6 +68,7 @@ export default function ModelDetailPage() {
         return;
       }
       setShowTrainForm(false);
+      toast("Training run queued", "success");
       mutate(`/api/v1/models/${id}/training-runs`);
       mutate(`/api/v1/models/${id}`);
     } finally {
@@ -85,6 +88,7 @@ export default function ModelDetailPage() {
         setDeployError(body.error?.message ?? body.detail ?? `Error ${res.status}`);
         return;
       }
+      toast("Model deployed", "success");
       mutate(`/api/v1/models/${id}`);
     } finally {
       setDeploying(null);
@@ -110,6 +114,7 @@ export default function ModelDetailPage() {
         return;
       }
       setShowValidateForm(false);
+      toast("Validation queued", "success");
       mutate(`/api/v1/models/${id}/validations`);
     } finally {
       setValidating(false);

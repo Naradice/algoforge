@@ -1,25 +1,41 @@
 import { clsx } from "clsx";
 
-const COLOR: Record<string, string> = {
-  active: "bg-green-500/20 text-green-400",
-  inactive: "bg-gray-700 text-gray-400",
-  archived: "bg-gray-800 text-gray-500",
-  running: "bg-blue-500/20 text-blue-400",
-  pending: "bg-yellow-500/20 text-yellow-400",
-  completed: "bg-green-500/20 text-green-400",
-  error: "bg-red-500/20 text-red-400",
-  stopped: "bg-gray-700 text-gray-400",
-  deployed: "bg-green-500/20 text-green-400",
-  training: "bg-blue-500/20 text-blue-400",
-  trained: "bg-teal-500/20 text-teal-400",
-  created: "bg-gray-700 text-gray-400",
-  ready: "bg-green-500/20 text-green-400",
-  idle: "bg-gray-700 text-gray-400",
+const STYLE: Record<string, string> = {
+  active:    "bg-success/15 text-success border-success/30",
+  ready:     "bg-success/15 text-success border-success/30",
+  deployed:  "bg-success/15 text-success border-success/30",
+  completed: "bg-success/15 text-success border-success/30",
+  running:   "bg-brand-500/15 text-brand-400 border-brand-500/30",
+  training:  "bg-brand-500/15 text-brand-400 border-brand-500/30",
+  pending:   "bg-warning/15 text-warning border-warning/30",
+  trained:   "bg-teal-500/15 text-teal-400 border-teal-500/30",
+  error:     "bg-danger/15 text-danger border-danger/30",
+  idle:      "bg-gray-700/50 text-gray-400 border-gray-700",
+  inactive:  "bg-gray-700/50 text-gray-400 border-gray-700",
+  stopped:   "bg-gray-700/50 text-gray-400 border-gray-700",
+  archived:  "bg-gray-700/50 text-gray-500 border-gray-700",
+  created:   "bg-gray-700/50 text-gray-400 border-gray-700",
+};
+
+const DOT: Record<string, string> = {
+  active: "bg-success", ready: "bg-success", deployed: "bg-success", completed: "bg-success",
+  running: "bg-brand-400 animate-pulse", training: "bg-brand-400 animate-pulse",
+  pending: "bg-warning",
+  error: "bg-danger",
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
+  const style = STYLE[status] ?? "bg-gray-700/50 text-gray-400 border-gray-700";
+  const dot = DOT[status];
   return (
-    <span className={clsx("rounded-full px-2 py-0.5 text-xs font-medium", COLOR[status] ?? "bg-gray-700 text-gray-400", className)}>
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+        style,
+        className
+      )}
+    >
+      {dot && <span className={clsx("h-1.5 w-1.5 rounded-full flex-shrink-0", dot)} />}
       {status}
     </span>
   );

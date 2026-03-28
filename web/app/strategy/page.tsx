@@ -8,58 +8,54 @@ export default function StrategyListPage() {
   const { data: strategies, isLoading } = useSWR("/api/v1/strategies", fetcher);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-white">Strategies</h1>
-        <a href="/strategy/new" className="rounded bg-brand-500 px-3 py-1.5 text-sm text-white hover:bg-sky-400">
-          New Strategy
-        </a>
+    <div className="space-y-8 max-w-5xl">
+      <div className="md-page-header">
+        <h1 className="md-title-lg">Strategies</h1>
+        <a href="/strategy/new" className="md-btn md-btn-primary">+ New Strategy</a>
       </div>
 
-      {isLoading && <p className="text-gray-400">Loading…</p>}
+      {isLoading && <p className="md-body-md">Loading…</p>}
 
       {strategies && strategies.length === 0 && (
-        <div className="rounded border border-gray-800 bg-gray-900 px-6 py-12 text-center">
-          <p className="text-gray-400">No strategies yet.</p>
-          <a href="/strategy/new" className="mt-3 inline-block text-sm text-brand-400 hover:underline">Create your first strategy →</a>
+        <div className="md-empty-state">
+          <p className="text-gray-200 font-medium">No strategies yet.</p>
+          <a href="/strategy/new" className="md-btn-text mt-2">Create your first strategy →</a>
         </div>
       )}
 
       {strategies && strategies.length > 0 && (
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b border-gray-800 text-xs text-gray-400 uppercase">
-              <th className="py-2 pr-4">Name</th>
-              <th className="py-2 pr-4">Status</th>
-              <th className="py-2 pr-4">Created</th>
-              <th className="py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {strategies.map((s: any) => (
-              <tr key={s.id} className="border-b border-gray-800/50 hover:bg-gray-900">
-                <td className="py-2 pr-4">
-                  <a href={`/strategy/${s.id}`} className="text-brand-500 hover:underline">
-                    {s.name}
-                  </a>
-                </td>
-                <td className="py-2 pr-4">
-                  <StatusBadge status={s.status} />
-                </td>
-                <td className="py-2 pr-4 text-gray-400">
-                  {new Date(s.created_at).toLocaleDateString()}
-                </td>
-                <td className="py-2 text-right">
-                  <a href={`/strategy/${s.id}`} className="text-xs text-gray-400 hover:text-white">
-                    View →
-                  </a>
-                </td>
+        <div className="md-card overflow-hidden">
+          <table className="md-table">
+            <thead>
+              <tr>
+                <th className="pl-5">Name</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th className="pr-5 text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {strategies.map((s: any) => (
+                <tr key={s.id}>
+                  <td className="pl-5">
+                    <a href={`/strategy/${s.id}`} className="text-brand-400 hover:text-brand-300 font-medium hover:underline">
+                      {s.name}
+                    </a>
+                    {s.description && <p className="md-body-sm mt-0.5">{s.description}</p>}
+                  </td>
+                  <td><StatusBadge status={s.status} /></td>
+                  <td className="text-gray-400">{new Date(s.created_at).toLocaleDateString()}</td>
+                  <td className="pr-5 text-right">
+                    <a href={`/strategy/${s.id}`} className="text-xs text-brand-400 hover:text-brand-300 font-medium">
+                      Open →
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
-
