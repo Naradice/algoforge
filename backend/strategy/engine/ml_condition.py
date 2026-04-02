@@ -65,10 +65,12 @@ def evaluate_ml_condition(
         logger.warning(f"ml_signal: none of {feature_cols} found in DataFrame")
         return False
 
-    features = df_upto[available].values.tolist()
     obs_len = hp.get("obs_len", 60)
-    if len(features) < obs_len:
+    if len(df_upto) < obs_len:
         return False  # Not enough history yet
+    # Slice to only the last obs_len rows before converting to avoid building
+    # a growing Python list over the full backtest history at every bar.
+    features = df_upto[available].iloc[-obs_len:].values.tolist()
 
     try:
         preds = predict(

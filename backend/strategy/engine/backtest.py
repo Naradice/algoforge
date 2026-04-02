@@ -177,11 +177,23 @@ def run_backtest(
 # ---------------------------------------------------------------------------
 
 
+_MAX_TICK_FILES = 100   # 100 × 10 000 ticks → resamples to ~3 333 M1 candles
+
 def _load_df(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Dataset artifact not found: {path}")
-    df = pd.read_parquet(path)
-    # Normalise column names to lowercase
+
+    if path.is_dir():
+        # DDM tick directory: load a capped sample and resample to M1 OHLC
+        from data.parquet_reader import load_ddm_ticks
+        tick_df = load_ddm_ticks(path, max_files=_MAX_TICK_FILES)
+        ohlc = tick_df["price"].resample("1min").ohlc()
+        ohlc.columns = ["open", "high", "low", "close"]
+        ohlc["volume"] = tick_df["price"].resample("1min").count()
+        df = ohlc.dropna()
+    else:
+        df = pd.read_parquet(path)
+
     df.columns = [c.lower() for c in df.columns]
     for required in ("close",):
         if required not in df.columns:

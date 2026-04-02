@@ -6,7 +6,9 @@ import { StatusBadge } from "@/components/status-badge";
 
 export default function DataPage() {
   const { data: datasources, isLoading } = useSWR("/api/v1/datasources", fetcher);
-  const { data: datasets } = useSWR("/api/v1/datasets", fetcher, { refreshInterval: 5000 });
+  const { data: datasets } = useSWR("/api/v1/datasets", fetcher, {
+    refreshInterval: (data) => data?.some?.((d: any) => d.status === "running") ? 3000 : 10000,
+  });
   const { data: allJobs } = useSWR("/api/v1/collection-jobs?page_size=100", fetcher, {
     refreshInterval: (data) => data?.some?.((j: any) => j.status === "running") ? 3000 : 10000,
   });
@@ -96,7 +98,16 @@ export default function DataPage() {
                     </td>
                     <td className="text-gray-300 font-mono text-xs">{d.symbol ?? "—"}</td>
                     <td>{d.timeframe ? <span className="md-chip">{d.timeframe}</span> : <span className="text-gray-500">—</span>}</td>
-                    <td className="tabular-nums text-gray-200">{d.row_count?.toLocaleString() ?? "—"}</td>
+                    <td className="tabular-nums text-gray-200">
+                      {d.status === "running" ? (
+                        <span className="flex items-center gap-1">
+                          <span className="inline-block w-2 h-2 rounded-full bg-brand-400 animate-pulse" />
+                          {d.row_count?.toLocaleString() ?? 0}
+                        </span>
+                      ) : (
+                        d.row_count?.toLocaleString() ?? "—"
+                      )}
+                    </td>
                     <td><StatusBadge status={d.status} /></td>
                     <td className="pr-5 text-gray-400">{new Date(d.created_at).toLocaleDateString()}</td>
                   </tr>

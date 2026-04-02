@@ -6,9 +6,9 @@ Unified algorithmic trading platform — strategy backtesting, ML model training
 
 ```
 algoforge/
-├── backend/      FastAPI + arq — REST API, background jobs, MCP server
+├── backend/      FastAPI + Celery — REST API, background jobs, MCP server
 ├── web/          Next.js 14 — dashboard UI
-├── ml_worker/    Python 3.8 arq worker — RL model training (PFRL/gym)
+├── ml_worker/    Python 3.8 Celery worker — RL model training (PFRL/gym)
 └── infra/        Docker Compose — postgres, redis, services
 ```
 
@@ -16,11 +16,15 @@ algoforge/
 
 | Component | Role | Port |
 |-----------|------|------|
-| `backend` | REST API, WebSocket, MCP server, arq worker | 8000 |
+| `backend` | REST API, WebSocket, MCP server | 8000 |
+| `celery-collection` | Collection jobs (DDM sim, OHLC download) — 3 parallel processes | — |
+| `celery-characteristics` | Statistical analysis jobs — 12 parallel processes | — |
+| `celery-training` | ML training & validation jobs — 2 parallel processes | — |
+| `celery-backtest` | Strategy backtest jobs — 5 parallel processes | — |
 | `web` | Next.js dashboard | 3000 |
 | `ml_worker` | RL training jobs (Python 3.8) | — |
 | PostgreSQL | Primary database | 5432 |
-| Redis | arq job queue, event bus | 6379 |
+| Redis | Celery broker + result backend, event bus | 6379 |
 
 ### Three layers
 
@@ -31,6 +35,19 @@ Data layer       — collect OHLC data, run DDM simulation, compute characterist
 ```
 
 Each layer follows the same structure: `router → service → repository → ORM models`.
+
+### Dataset storage
+
+Simulated (DDM) datasets are stored as **date-partitioned Parquet** on local disk:
+
+```
+artifacts/datasets/src_{id}/ddm_ticks/
+  year=2024/month=01/day=15/part-000000.parquet   (~200–500 MB each)
+  year=2024/month=01/day=16/part-000000.parquet
+  ...
+```
+
+This layout supports 100 GB+ datasets without ever buffering all data in memory. The simulator streams write partition-by-partition; readers use `data/parquet_reader.py` which samples up to 100 fragment files for analysis. OHLC downloads and manual uploads remain single flat Parquet files.
 
 ## Quick start
 
@@ -59,9 +76,22 @@ cp .env.example .env           # edit as needed
 alembic upgrade head
 uvicorn main:app --reload --port 8000
 
-# 3. arq worker (separate terminal)
+# 3. Celery workers (separate terminals)
+# Linux / macOS:
 cd backend
-python -m arq arq_worker.WorkerSettings
+celery -A celery_worker worker -Q collection      -c 3  --pool=prefork --loglevel=info
+celery -A celery_worker worker -Q characteristics -c 12 --pool=prefork --loglevel=info
+celery -A celery_worker worker -Q training        -c 2  --pool=prefork --loglevel=info
+celery -A celery_worker worker -Q backtest        -c 5  --pool=prefork --loglevel=info
+
+# Windows — prefork uses shared memory (billiard) which is blocked by Windows.
+# Use --pool=solo instead. Open one terminal per queue for parallel execution:
+cd backend
+celery -A celery_worker worker -Q collection      --pool=solo --loglevel=info  # terminal A
+celery -A celery_worker worker -Q characteristics --pool=solo --loglevel=info  # terminal B
+celery -A celery_worker worker -Q training,backtest --pool=solo --loglevel=info # terminal C
+# Or a single terminal for all queues (sequential within the process):
+celery -A celery_worker worker -Q collection,characteristics,training,backtest --pool=solo --loglevel=info
 
 # 4. Frontend
 cd web
@@ -73,8 +103,9 @@ npm run dev
 
 ### Data management (`/data`)
 - Download OHLC data from yfinance or Alpha Vantage
-- Simulate synthetic tick data using DDM (Directional Change + DDM v3)
+- Simulate synthetic tick data using DDM (Directional Change + DDM v3) — supports 100 GB+ outputs via streaming partitioned writes
 - Compute dataset characteristics: ACF, Hurst exponent, fat tails, seasonality
+- Multiple collection jobs run in parallel in separate OS processes (no event-loop blocking)
 
 ### ML models (`/model`)
 - Architectures: **Seq2Seq Transformer**, **LSTM**, **TimeGAN**
@@ -119,10 +150,10 @@ See `backend/.env.example` for all variables. Key ones:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | localhost/algoforge |
-| `REDIS_URL` | Redis connection string | localhost:6379 |
+| `REDIS_URL` | Redis connection string (Celery broker + backend) | localhost:6379 |
 | `ARTIFACT_STORE_PATH` | Where model/dataset files are saved | `../artifacts` |
 | `GOOGLE_API_KEY` | Gemini API key (for LLM conditions + chat) | — |
-| `ALGOFORGE_NO_REDIS` | Use in-process event bus instead of Redis | `0` |
+| `ALGOFORGE_NO_REDIS` | Run Celery tasks inline without broker (dev only) | `0` |
 | `PAPER_CHECK_INTERVAL_S` | Paper trading poll interval (seconds) | `60` |
 | `LLM_MODEL` | Gemini model name | `gemini-2.0-flash` |
 
@@ -161,14 +192,16 @@ WS   /api/v1/ws/strategies/{id}/runs/{run_id}/chat
 algoforge/
 ├── backend/
 │   ├── main.py               App entry point
-│   ├── arq_worker.py         Background job definitions
-│   ├── arq_pool.py           Job enqueue helper
+│   ├── celery_app.py         Celery instance, queue routing, enqueue() helper
+│   ├── celery_worker.py      Background task definitions (collection, training, backtest)
 │   ├── database.py           SQLAlchemy async engine
 │   ├── events.py             In-process / Redis event bus
 │   ├── ws_router.py          WebSocket endpoints
 │   ├── logs_router.py        Log query endpoints
 │   ├── mcp_server/           FastMCP tools
-│   ├── data/                 Data layer (models, router, collectors)
+│   ├── data/
+│   │   ├── parquet_reader.py Shared DDM tick reader (partitioned + legacy layouts)
+│   │   └── collectors/       DDM simulator, OHLC downloader, web scraper
 │   ├── model/                ML layer (architectures, trainers, inference)
 │   └── strategy/             Strategy layer (engine, executor, live runner)
 ├── web/
@@ -176,7 +209,7 @@ algoforge/
 │   └── components/           Shared UI components
 ├── ml_worker/                Python 3.8 RL worker
 └── infra/
-    └── docker-compose.yml
+    └── docker-compose.yml    postgres, redis, backend, 4 celery workers, web
 ```
 
 ## Related projects

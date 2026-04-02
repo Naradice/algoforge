@@ -21,15 +21,14 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
 os.environ.setdefault("ARTIFACT_STORE_PATH", "/tmp/algoforge_test_artifacts")
 os.environ.setdefault("ALGOFORGE_NO_AUTH", "1")
 
-# Patch arq enqueue to a no-op so tests don't need Redis
+# Stub celery_app.enqueue to a no-op so tests don't need Redis
 import unittest.mock as mock
 import sys
 
-# Stub arq_pool before app loads
-arq_pool_stub = mock.MagicMock()
-arq_pool_stub.enqueue = mock.AsyncMock(return_value=None)
-arq_pool_stub.init_arq_pool = mock.AsyncMock(return_value=None)
-sys.modules.setdefault("arq_pool", arq_pool_stub)
+# Stub celery_app before app loads
+celery_app_stub = mock.MagicMock()
+celery_app_stub.enqueue = mock.AsyncMock(return_value=None)
+sys.modules.setdefault("celery_app", celery_app_stub)
 
 # ── Make PostgreSQL-specific types compile on SQLite ───────────────────────────
 # JSONB has no SQLite fallback; register a passthrough that renders as JSON TEXT.

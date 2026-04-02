@@ -13,7 +13,7 @@ psycopg2-binary
 alembic
 
 # Task queue
-arq
+celery[redis]>=5.3
 redis[hiredis]
 
 # Auth
@@ -43,3 +43,6 @@ pydantic-settings
 python-dotenv
 httpx
 orjson
+statsmodels
+scipy
+pyarrow

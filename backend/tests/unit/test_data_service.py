@@ -1,4 +1,7 @@
 """Unit tests for DataService — repository mocked out."""
+import os
+import tempfile
+from pathlib import Path
 import pytest
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from fastapi import HTTPException
@@ -144,8 +147,8 @@ class TestTriggerAnalysis:
     async def test_enqueues_task_when_ready(self):
         svc = DataService()
         ds = MagicMock(spec=Dataset, id=1, status="ready")
-        # enqueue is imported inside the function body, so patch at arq_pool module level
-        with patch(PATCH_REPO) as repo, patch("arq_pool.enqueue", new=AsyncMock()) as mock_enqueue:
+        # enqueue is imported inside the function body, so patch at celery_app module level
+        with patch(PATCH_REPO) as repo, patch("celery_app.enqueue", new=AsyncMock()) as mock_enqueue:
             repo.get_dataset = AsyncMock(return_value=ds)
             result = await svc.trigger_analysis(AsyncMock(), 1)
             mock_enqueue.assert_called_once_with("compute_characteristics", 1)
@@ -158,4 +161,100 @@ class TestTriggerAnalysis:
             repo.get_dataset = AsyncMock(return_value=None)
             with pytest.raises(HTTPException) as exc:
                 await svc.trigger_analysis(AsyncMock(), 999)
+            assert exc.value.status_code == 404
+
+
+# ── get_dataset_preview ────────────────────────────────────────────────────────
+
+class TestGetDatasetPreview:
+    """get_dataset_preview() should work for both 'ready' and 'running' datasets."""
+
+    def _make_parquet(self, tmpdir: str, status: str = "ready") -> tuple:
+        """Create a minimal parquet file and return (db_mock, dataset_mock)."""
+        import pandas as pd
+        import numpy as np
+
+        store = Path(tmpdir)
+        artifact_path = "test_ohlc.parquet"
+        full = store / artifact_path
+
+        # Minimal OHLC data
+        idx = pd.date_range("2000-01-03", periods=10, freq="1min", tz="UTC")
+        df = pd.DataFrame({
+            "open": np.ones(10) * 100,
+            "high": np.ones(10) * 101,
+            "low": np.ones(10) * 99,
+            "close": np.ones(10) * 100,
+            "volume": np.ones(10, dtype=int) * 30,
+        }, index=idx)
+        df.index.name = "datetime"
+        df.to_parquet(full)
+
+        ds = MagicMock(spec=Dataset)
+        ds.id = 1
+        ds.artifact_path = artifact_path
+        ds.status = status
+        ds.timeframe = "M1"
+        return ds
+
+    @pytest.mark.asyncio
+    async def test_preview_works_for_ready_dataset(self):
+        svc = DataService()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import data.service as svc_mod
+            orig = os.environ.get("ARTIFACT_STORE_PATH")
+            os.environ["ARTIFACT_STORE_PATH"] = tmpdir
+            try:
+                ds = self._make_parquet(tmpdir, status="ready")
+                with patch(PATCH_REPO) as repo:
+                    repo.get_dataset = AsyncMock(return_value=ds)
+                    rows = await svc.get_dataset_preview(AsyncMock(), 1, rows=5)
+                assert len(rows) == 5
+                assert "close" in rows[0]
+            finally:
+                if orig is None:
+                    os.environ.pop("ARTIFACT_STORE_PATH", None)
+                else:
+                    os.environ["ARTIFACT_STORE_PATH"] = orig
+
+    @pytest.mark.asyncio
+    async def test_preview_works_for_running_dataset(self):
+        """status='running' must NOT raise 422 — live preview is supported."""
+        svc = DataService()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig = os.environ.get("ARTIFACT_STORE_PATH")
+            os.environ["ARTIFACT_STORE_PATH"] = tmpdir
+            try:
+                ds = self._make_parquet(tmpdir, status="running")
+                with patch(PATCH_REPO) as repo:
+                    repo.get_dataset = AsyncMock(return_value=ds)
+                    rows = await svc.get_dataset_preview(AsyncMock(), 1, rows=5)
+                assert len(rows) == 5
+            finally:
+                if orig is None:
+                    os.environ.pop("ARTIFACT_STORE_PATH", None)
+                else:
+                    os.environ["ARTIFACT_STORE_PATH"] = orig
+
+    @pytest.mark.asyncio
+    async def test_preview_raises_422_for_pending_dataset(self):
+        """status='pending' (no artifact yet) must raise 422."""
+        svc = DataService()
+        ds = MagicMock(spec=Dataset)
+        ds.id = 1
+        ds.artifact_path = None
+        ds.status = "pending"
+        with patch(PATCH_REPO) as repo:
+            repo.get_dataset = AsyncMock(return_value=ds)
+            with pytest.raises(HTTPException) as exc:
+                await svc.get_dataset_preview(AsyncMock(), 1)
+            assert exc.value.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_preview_raises_404_when_dataset_not_found(self):
+        svc = DataService()
+        with patch(PATCH_REPO) as repo:
+            repo.get_dataset = AsyncMock(return_value=None)
+            with pytest.raises(HTTPException) as exc:
+                await svc.get_dataset_preview(AsyncMock(), 999)
             assert exc.value.status_code == 404

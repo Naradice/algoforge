@@ -92,24 +92,36 @@ async def get_log_summary(
     collection_job_id: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    base = sa.select(Log)
-    if strategy_run_id:
-        base = base.where(Log.strategy_run_id == strategy_run_id)
-    if training_run_id:
-        base = base.where(Log.training_run_id == training_run_id)
-    if collection_job_id:
-        base = base.where(Log.collection_job_id == collection_job_id)
+    def _apply_filters(q):
+        if strategy_run_id:
+            q = q.where(Log.strategy_run_id == strategy_run_id)
+        if training_run_id:
+            q = q.where(Log.training_run_id == training_run_id)
+        if collection_job_id:
+            q = q.where(Log.collection_job_id == collection_job_id)
+        return q
 
-    rows = (await db.execute(base)).scalars().all()
+    # Counts by level — single GROUP BY query, no full scan
+    level_rows = (await db.execute(
+        _apply_filters(sa.select(Log.level, sa.func.count().label("n")).group_by(Log.level))
+    )).all()
+    counts_by_level = {row.level: row.n for row in level_rows}
 
-    counts_by_level: dict[str, int] = {}
-    counts_by_source: dict[str, int] = {}
-    first_error = None
+    # Counts by source — single GROUP BY query
+    source_rows = (await db.execute(
+        _apply_filters(sa.select(Log.source, sa.func.count().label("n")).group_by(Log.source))
+    )).all()
+    counts_by_source = {row.source: row.n for row in source_rows}
 
-    for row in rows:
-        counts_by_level[row.level] = counts_by_level.get(row.level, 0) + 1
-        counts_by_source[row.source] = counts_by_source.get(row.source, 0) + 1
-        if row.level in ("ERROR", "CRITICAL") and first_error is None:
-            first_error = LogEntryRead.model_validate(row)
+    # First error — LIMIT 1, no table scan
+    first_error_row = (await db.execute(
+        _apply_filters(
+            sa.select(Log)
+            .where(Log.level.in_(("ERROR", "CRITICAL")))
+            .order_by(Log.id.asc())
+            .limit(1)
+        )
+    )).scalar_one_or_none()
+    first_error = LogEntryRead.model_validate(first_error_row) if first_error_row else None
 
     return DataResponse(data=LogSummary(counts_by_level=counts_by_level, counts_by_source=counts_by_source, first_error=first_error))

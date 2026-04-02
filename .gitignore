@@ -6,3 +6,7 @@ __pycache__/
 .env
 .env.local
 *.parquet
+*.db
+.claude
+_meta.json
+docs/

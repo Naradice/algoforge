@@ -12,7 +12,7 @@ from events import event_bus
 from schemas import DataResponse
 from model.models import TrainingRunMetricRead, HyperparamSearchCreate, ValidationCreate
 from model.service import model_service
-from arq_pool import enqueue
+from celery_app import enqueue
 
 tr_router = APIRouter(prefix="/training-runs", tags=["training-runs"])
 

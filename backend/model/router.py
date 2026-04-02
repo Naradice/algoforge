@@ -15,7 +15,7 @@ from model.models import (
     ValidationCreate,
 )
 from model.service import model_service
-from arq_pool import enqueue
+from celery_app import enqueue
 
 router = APIRouter(prefix="/models", tags=["model"])
 

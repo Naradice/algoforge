@@ -93,10 +93,11 @@ async def get_datasource_type_schema(type_name: str):
 async def list_datasets(
     symbol: str | None = None,
     timeframe: str | None = None,
+    datasource_id: int | None = None,
     pagination: Pagination = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await data_service.list_datasets(db, symbol=symbol, timeframe=timeframe, offset=pagination.offset, limit=pagination.page_size)
+    items, total = await data_service.list_datasets(db, symbol=symbol, timeframe=timeframe, datasource_id=datasource_id, offset=pagination.offset, limit=pagination.page_size)
     return DataResponse(data=items, meta=Meta(total=total, page=pagination.page, page_size=pagination.page_size))
 
 
@@ -132,6 +133,30 @@ async def compute_characteristics(dataset_id: int, db: AsyncSession = Depends(ge
     return DataResponse(data=item)
 
 
+@router.get("/datasets/{dataset_id}/live-progress")
+async def dataset_live_progress(dataset_id: int, db: AsyncSession = Depends(get_db)):
+    """Return live tick-count progress for a running DDM simulation dataset.
+
+    Reads the _meta.json written by the collector after each batch flush.
+    Returns null if the dataset is not a DDM simulation or hasn't written a batch yet.
+    """
+    from data.models import Dataset, Datasource
+    from data.collectors.ddm_simulator import read_meta
+    from sqlalchemy import select
+
+    result = await db.execute(
+        select(Dataset, Datasource)
+        .join(Datasource, Dataset.datasource_id == Datasource.id)
+        .where(Dataset.id == dataset_id)
+    )
+    row = result.first()
+    if row is None or row.Datasource.type != "ddm_simulation":
+        return DataResponse(data=None)
+
+    meta = read_meta(row.Datasource.id)
+    return DataResponse(data=meta if meta else None)
+
+
 @router.get("/datasets/{dataset_id}/preview", response_model=DataResponse[list])
 async def preview_dataset(dataset_id: int, rows: int = 100, timeframe: str | None = None, db: AsyncSession = Depends(get_db)):
     """Return the first N rows of the dataset as JSON.
@@ -149,9 +174,21 @@ async def upload_dataset(
     datasource_id: int | None = Form(None),
     symbol: str | None = Form(None),
     timeframe: str | None = Form(None),
+    close_col: str | None = Form(None),
+    open_col: str | None = Form(None),
+    high_col: str | None = Form(None),
+    low_col: str | None = Form(None),
+    volume_col: str | None = Form(None),
+    datetime_col: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    dataset = await data_service.create_dataset_from_upload(db, file, datasource_id=datasource_id, symbol=symbol, timeframe=timeframe)
+    col_map = {k: v for k, v in {
+        "close": close_col, "open": open_col, "high": high_col,
+        "low": low_col, "volume": volume_col, "datetime": datetime_col,
+    }.items() if v}
+    dataset = await data_service.create_dataset_from_upload(
+        db, file, datasource_id=datasource_id, symbol=symbol, timeframe=timeframe, col_map=col_map or None,
+    )
     return DataResponse(data={"dataset_id": dataset.id, "status": dataset.status})
 
 

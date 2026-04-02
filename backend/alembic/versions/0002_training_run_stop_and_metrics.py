@@ -16,10 +16,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "training_runs",
-        sa.Column("stop_requested", sa.Boolean, nullable=False, server_default="false"),
-    )
+    op.execute(sa.text(
+        "ALTER TABLE training_runs ADD COLUMN IF NOT EXISTS "
+        "stop_requested BOOLEAN NOT NULL DEFAULT false"
+    ))
 
     op.create_table(
         "training_run_metrics",
@@ -41,9 +41,11 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.func.now(),
         ),
+        if_not_exists=True,
     )
     op.create_index(
-        "ix_training_run_metrics_run_id", "training_run_metrics", ["training_run_id"]
+        "ix_training_run_metrics_run_id", "training_run_metrics", ["training_run_id"],
+        if_not_exists=True,
     )
 
 

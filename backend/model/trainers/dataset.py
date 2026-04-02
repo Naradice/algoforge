@@ -22,6 +22,11 @@ import torch
 
 
 class OHLCWindowDataset:
+    # Max tick batch files to load from a DDM directory (100 × 10 000 = 1 M ticks)
+    _MAX_TICK_FILES = 100
+    # Max OHLC rows to keep after loading; keeps window arrays from exceeding ~1 GB RAM
+    _MAX_OHLC_ROWS = 50_000
+
     def __init__(
         self,
         artifact_path: str,
@@ -33,9 +38,23 @@ class OHLCWindowDataset:
         device: str = "cpu",
     ) -> None:
         store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
-        df = pd.read_parquet(store / artifact_path)
+        full_path = store / artifact_path
+
+        if full_path.is_dir():
+            # DDM tick directory: load a capped sample and resample to M1 OHLC
+            from data.parquet_reader import load_ddm_ticks
+            tick_df = load_ddm_ticks(full_path, max_files=self._MAX_TICK_FILES)
+            ohlc = tick_df["price"].resample("1min").ohlc()
+            ohlc.columns = ["open", "high", "low", "close"]
+            ohlc["volume"] = tick_df["price"].resample("1min").count()
+            df = ohlc.dropna()
+        else:
+            df = pd.read_parquet(full_path)
+
         df.columns = [c.lower() for c in df.columns]
         df = df.sort_index().dropna()
+        if len(df) > self._MAX_OHLC_ROWS:
+            df = df.iloc[-self._MAX_OHLC_ROWS:]
 
         if feature_cols is None:
             feature_cols = ["close"]

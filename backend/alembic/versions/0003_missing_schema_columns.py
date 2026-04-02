@@ -17,10 +17,9 @@ depends_on = None
 
 def upgrade() -> None:
     # collection_jobs.enabled
-    op.add_column(
-        "collection_jobs",
-        sa.Column("enabled", sa.Boolean, nullable=False, server_default="true"),
-    )
+    op.execute(sa.text(
+        "ALTER TABLE collection_jobs ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT true"
+    ))
 
     # collection_job_runs table
     op.create_table(
@@ -37,25 +36,21 @@ def upgrade() -> None:
         sa.Column("status", sa.Text, nullable=False, server_default="running"),
         sa.Column("datasets_produced", sa.Integer, nullable=False, server_default="0"),
         sa.Column("error_message", sa.Text, nullable=True),
+        if_not_exists=True,
     )
-    op.create_index("ix_collection_job_runs_job_id", "collection_job_runs", ["job_id"])
+    op.create_index("ix_collection_job_runs_job_id", "collection_job_runs", ["job_id"],
+                    if_not_exists=True)
 
     # training_run_metrics.recorded_at
-    op.add_column(
-        "training_run_metrics",
-        sa.Column(
-            "recorded_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-    )
+    op.execute(sa.text(
+        "ALTER TABLE training_run_metrics ADD COLUMN IF NOT EXISTS "
+        "recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+    ))
 
     # strategy_runs.equity_curve
-    op.add_column(
-        "strategy_runs",
-        sa.Column("equity_curve", JSONB, nullable=True),
-    )
+    op.execute(sa.text(
+        "ALTER TABLE strategy_runs ADD COLUMN IF NOT EXISTS equity_curve JSONB"
+    ))
 
     # strategy_versions table
     op.create_table(
@@ -75,24 +70,23 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.func.now(),
         ),
+        if_not_exists=True,
     )
     op.create_index(
-        "ix_strategy_versions_strategy_id", "strategy_versions", ["strategy_id"]
+        "ix_strategy_versions_strategy_id", "strategy_versions", ["strategy_id"],
+        if_not_exists=True,
     )
 
     # webhook_registrations missing columns
-    op.add_column(
-        "webhook_registrations",
-        sa.Column("secret", sa.Text, nullable=False, server_default=""),
-    )
-    op.add_column(
-        "webhook_registrations",
-        sa.Column("last_fired_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "webhook_registrations",
-        sa.Column("last_status", sa.Integer, nullable=True),
-    )
+    op.execute(sa.text(
+        "ALTER TABLE webhook_registrations ADD COLUMN IF NOT EXISTS secret TEXT NOT NULL DEFAULT ''"
+    ))
+    op.execute(sa.text(
+        "ALTER TABLE webhook_registrations ADD COLUMN IF NOT EXISTS last_fired_at TIMESTAMPTZ"
+    ))
+    op.execute(sa.text(
+        "ALTER TABLE webhook_registrations ADD COLUMN IF NOT EXISTS last_status INTEGER"
+    ))
 
 
 def downgrade() -> None:

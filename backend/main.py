@@ -103,8 +103,6 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 @app.on_event("startup")
 async def startup() -> None:
     asyncio.create_task(start_log_writer())
-    from arq_pool import init_arq_pool
-    await init_arq_pool()
 
 
 @app.get("/api/v1/health", tags=["health"])

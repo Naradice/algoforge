@@ -35,12 +35,14 @@ class DataRepository:
         if obj:
             await db.delete(obj)
 
-    async def get_datasets(self, db: AsyncSession, symbol: str | None = None, timeframe: str | None = None, offset: int = 0, limit: int = 20) -> tuple[list[Dataset], int]:
+    async def get_datasets(self, db: AsyncSession, symbol: str | None = None, timeframe: str | None = None, datasource_id: int | None = None, offset: int = 0, limit: int = 20) -> tuple[list[Dataset], int]:
         q = select(Dataset)
         if symbol:
             q = q.where(Dataset.symbol == symbol)
         if timeframe:
             q = q.where(Dataset.timeframe == timeframe)
+        if datasource_id is not None:
+            q = q.where(Dataset.datasource_id == datasource_id)
         total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
         items = (await db.execute(q.order_by(Dataset.created_at.desc()).offset(offset).limit(limit))).scalars().all()
         return list(items), total

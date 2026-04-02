@@ -42,6 +42,7 @@ async def train_rl_model(ctx, training_run_id: int) -> dict:
 
 class WorkerSettings:
     functions = [train_rl_model]
+    queue_name = "arq:ml_queue"  # isolated from the backend arq-worker queue
     redis_settings = RedisSettings.from_dsn(REDIS_URL)
     max_jobs = 2  # RL training is GPU-intensive; limit concurrency
     job_timeout = 3600 * 6  # 6 hours max per training run

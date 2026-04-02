@@ -51,8 +51,8 @@ class DataService:
         await self.get_datasource(db, datasource_id)
         await data_repo.delete_datasource(db, datasource_id)
 
-    async def list_datasets(self, db: AsyncSession, symbol: str | None = None, timeframe: str | None = None, offset: int = 0, limit: int = 20) -> tuple[list[Dataset], int]:
-        return await data_repo.get_datasets(db, symbol=symbol, timeframe=timeframe, offset=offset, limit=limit)
+    async def list_datasets(self, db: AsyncSession, symbol: str | None = None, timeframe: str | None = None, datasource_id: int | None = None, offset: int = 0, limit: int = 20) -> tuple[list[Dataset], int]:
+        return await data_repo.get_datasets(db, symbol=symbol, timeframe=timeframe, datasource_id=datasource_id, offset=offset, limit=limit)
 
     async def get_dataset(self, db: AsyncSession, dataset_id: int) -> Dataset:
         obj = await data_repo.get_dataset(db, dataset_id)
@@ -78,18 +78,18 @@ class DataService:
         return await data_repo.get_characteristics(db, dataset_id)
 
     async def trigger_collection(self, db: AsyncSession, job_id: int):
-        """Enqueue a run_collection_job arq task and return the job."""
+        """Enqueue a run_collection_job Celery task and return the job."""
         job = await self.get_collection_job(db, job_id)
-        from arq_pool import enqueue
+        from celery_app import enqueue
         await enqueue("run_collection_job", job_id)
         return job
 
     async def trigger_analysis(self, db: AsyncSession, dataset_id: int):
-        """Enqueue a compute_characteristics arq task and return the dataset."""
+        """Enqueue a compute_characteristics Celery task and return the dataset."""
         dataset = await self.get_dataset(db, dataset_id)
-        if dataset.status != "ready":
+        if dataset.status not in ("ready", "running"):
             raise HTTPException(status_code=422, detail=DATASET_NOT_READY)
-        from arq_pool import enqueue
+        from celery_app import enqueue
         await enqueue("compute_characteristics", dataset_id)
         return dataset
 
@@ -109,6 +109,8 @@ class DataService:
         return await data_repo.get_job_runs(db, job_id)
 
     async def delete_dataset(self, db: AsyncSession, dataset_id: int):
+        import os
+        from pathlib import Path
         from strategy.models import StrategyRun
         from model.models import TrainingRun
         from sqlalchemy import select
@@ -122,8 +124,17 @@ class DataService:
         if ref_tr:
             raise HTTPException(status_code=409, detail={"code": "DATASET_IN_USE", "message": f"Dataset is referenced by training run {ref_tr.id}"})
         await data_repo.delete_dataset(db, dataset_id)
+        # Remove artifact file from disk
+        if dataset.artifact_path:
+            import shutil
+            store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
+            artifact = store / dataset.artifact_path
+            if artifact.is_dir():
+                shutil.rmtree(artifact)
+            elif artifact.exists():
+                artifact.unlink()
 
-    async def create_dataset_from_upload(self, db: AsyncSession, file, datasource_id=None, symbol=None, timeframe=None):
+    async def create_dataset_from_upload(self, db: AsyncSession, file, datasource_id=None, symbol=None, timeframe=None, col_map: dict | None = None):
         import os
         import uuid
         from pathlib import Path
@@ -138,9 +149,53 @@ class DataService:
         contents = await file.read()
         import io
         df = pd.read_csv(io.BytesIO(contents))
-        df.columns = [c.lower() for c in df.columns]
-        if "close" not in df.columns:
-            raise HTTPException(status_code=422, detail={"code": "INVALID_CSV", "message": "CSV must contain 'close' column"})
+
+        # Resolve column names: explicit mapping → case-insensitive auto-detect
+        col_lower = {c.lower(): c for c in df.columns}
+        _ALIASES = {
+            "close":    ["close", "adj close", "adjusted close", "price"],
+            "open":     ["open"],
+            "high":     ["high"],
+            "low":      ["low"],
+            "volume":   ["volume", "vol"],
+            "datetime": ["datetime", "date", "time", "timestamp"],
+        }
+
+        def _resolve(field: str) -> str | None:
+            """Return the actual DataFrame column name for a logical field."""
+            explicit = (col_map or {}).get(field)
+            if explicit:
+                if explicit in df.columns:
+                    return explicit
+                if explicit.lower() in col_lower:
+                    return col_lower[explicit.lower()]
+            for alias in _ALIASES[field]:
+                if alias in col_lower:
+                    return col_lower[alias]
+            return None
+
+        close_src = _resolve("close")
+        if close_src is None:
+            raise HTTPException(status_code=422, detail={
+                "code": "INVALID_CSV",
+                "message": f"Could not find a 'close' column. Available columns: {list(df.columns)}",
+            })
+
+        rename: dict[str, str] = {}
+        for field in ("close", "open", "high", "low", "volume", "datetime"):
+            src = _resolve(field)
+            if src and src not in rename:
+                rename[src] = field
+
+        df = df.rename(columns=rename)
+        keep = [c for c in ["datetime", "open", "high", "low", "close", "volume"] if c in df.columns]
+        df = df[keep]
+
+        # Use datetime column as index so characteristics (seasonality etc.) work correctly
+        if "datetime" in df.columns:
+            df = df.set_index("datetime")
+            df.index = pd.to_datetime(df.index)
+            df.index.name = "datetime"
 
         # Save as parquet
         artifact_name = f"datasets/upload_{uuid.uuid4().hex}.parquet"
@@ -178,33 +233,68 @@ class DataService:
             await db.flush()
             await db.refresh(job)
 
-        from arq_pool import enqueue
+        from celery_app import enqueue
         await enqueue("run_collection_job", job.id)
         return job
 
     async def get_dataset_preview(self, db: AsyncSession, dataset_id: int, rows: int = 100, timeframe: str | None = None) -> list[dict]:
-        """Return the first `rows` rows of a dataset as a list of dicts.
+        """Return up to `rows` OHLC rows of a dataset as a list of dicts.
 
-        If the artifact contains tick data (single `price` column), it is resampled
-        to OHLC using `timeframe` (or dataset.timeframe as the default).
+        DDM tick directories: reads the most-recent batch files, resamples to
+        OHLC, and returns the most-recent `rows` candles so an ongoing endless
+        simulation always shows the current state.
+
+        File-based OHLC datasets: returns the first `rows` rows.
         """
         import os
         from pathlib import Path
+        import numpy as np
         import pandas as pd
 
         dataset = await self.get_dataset(db, dataset_id)
-        if dataset.artifact_path is None or dataset.status != "ready":
+        if dataset.artifact_path is None or dataset.status not in ("ready", "running"):
             raise HTTPException(status_code=422, detail=DATASET_NOT_READY)
 
         store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
-        df = pd.read_parquet(store / dataset.artifact_path)
+        full_path = store / dataset.artifact_path
 
-        if "price" in df.columns:
-            df = _resample_ticks(df["price"], timeframe or dataset.timeframe or "M1")
+        is_tick_dir = full_path.is_dir()
 
-        df = df.head(rows)
+        if is_tick_dir:
+            # Read only the most-recent fragment files to keep load bounded.
+            # 20 files × ~10 000 ticks ≈ 4-5 days of M1 data — enough for preview.
+            from data.parquet_reader import load_ddm_ticks_recent
+            try:
+                tick_df = load_ddm_ticks_recent(full_path, n_files=20)
+            except Exception:
+                return []
+
+            if tick_df.empty or "price" not in tick_df.columns:
+                return []
+
+            tf = timeframe or dataset.timeframe or "M1"
+            df = _resample_ticks(tick_df["price"], tf)
+            # Return the most-recent candles to reflect current simulation state.
+            df = df.tail(rows)
+
+        else:
+            df = pd.read_parquet(full_path)
+
+            if "price" in df.columns:
+                # Legacy tick file (not a directory) — normalise index then resample.
+                if "datetime" in df.columns:
+                    df = df.set_index("datetime")
+                df.index = pd.to_datetime(df.index, utc=True)
+                tf = timeframe or dataset.timeframe or "M1"
+                df = _resample_ticks(df["price"], tf)
+
+            df = df.head(rows)
+
+        # Sanitise ±inf so they don't become null in the JSON response.
+        df = df.replace([np.inf, -np.inf], np.nan)
         df.index = df.index.astype(str)
-        return df.reset_index().rename(columns={df.index.name or "index": "datetime"}).to_dict(orient="records")
+        records = df.reset_index().rename(columns={df.index.name or "index": "datetime"})
+        return records.to_dict(orient="records")
 
 
 data_service = DataService()

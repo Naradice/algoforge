@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { CsvUploadForm, type ColMap } from "@/components/csv-upload-form";
 
 // ── Field definitions per datasource type ────────────────────────────────────
 
@@ -36,19 +37,14 @@ const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: "to_ts", label: "To Date", type: "date", placeholder: "", hint: "Leave blank for today" },
   ],
   ddm_simulation: [
+    { key: "model", label: "Model Version", type: "select", options: ["v3", "v1"], hint: "V3 adds WMA trend-following feedback (original paper). V1 is the simpler base model — use to diagnose drift issues." },
     { key: "timeframe", label: "Timeframe", type: "select", options: TIMEFRAME_OPTIONS },
-    {
-      key: "length", label: "Output Candles", type: "number",
-      placeholder: "1000",
-      hint: "Number of OHLC candles to generate",
-    },
     { key: "initial_price", label: "Initial Price", type: "number", placeholder: "100.0" },
-    {
-      key: "tick_time", label: "Seconds per Tick", type: "number",
-      placeholder: "1.0",
-      hint: "Simulated time per iteration. Trades only happen when bid ≥ ask, so trade density per candle is determined by agent dynamics, not directly by this value.",
-    },
-    { key: "num_agent", label: "Number of Agents", type: "number", placeholder: "50" },
+    { key: "spread", label: "Spread", type: "number", placeholder: "1.0", hint: "Bid-ask spread in price units" },
+    { key: "num_agent", label: "Number of Agents", type: "number", placeholder: "300", hint: "More agents = lower volatility (original default: 300)" },
+    { key: "max_volatility", label: "Max Volatility", type: "number", placeholder: "0.02", hint: "Upper bound of per-agent price tendency per step" },
+    { key: "min_volatility", label: "Min Volatility", type: "number", placeholder: "0.01", hint: "Lower bound of per-agent price tendency per step" },
+    { key: "trade_unit", label: "Trade Unit", type: "number", placeholder: "0.001", hint: "Minimum price increment (pips)" },
     { key: "seed", label: "Random Seed", type: "number", placeholder: "42" },
   ],
   web_report: [],
@@ -64,11 +60,14 @@ const TYPE_DEFAULTS: Record<string, Record<string, string>> = {
     to_ts: "",
   },
   ddm_simulation: {
+    model: "v3",
     timeframe: "M1",
-    length: "1000",
     initial_price: "100",
-    tick_time: "1",
-    num_agent: "50",
+    spread: "1",
+    num_agent: "300",
+    max_volatility: "0.02",
+    min_volatility: "0.01",
+    trade_unit: "0.001",
     seed: "42",
   },
   web_report: {},
@@ -93,7 +92,7 @@ const TYPE_DESCRIPTIONS: Record<string, { label: string; description: string; st
   manual_upload: {
     label: "Manual Upload",
     description:
-      "Upload a CSV file as a dataset directly. After creating this datasource go to the Datasets page and use the Upload button.",
+      "Upload a CSV file from your computer as a dataset. The CSV must contain a 'close' column. Optionally include open, high, low, volume.",
   },
 };
 
@@ -104,12 +103,16 @@ export default function NewDatasourcePage() {
   const [name, setName] = useState("");
   const [type, setType] = useState("ohlc_download");
   const [values, setValues] = useState<Record<string, string>>(TYPE_DEFAULTS["ohlc_download"]);
+  const [runForever, setRunForever] = useState(false);
+  const [lengthValue, setLengthValue] = useState("1000");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleTypeChange(t: string) {
     setType(t);
     setValues(TYPE_DEFAULTS[t] ?? {});
+    setRunForever(false);
+    setLengthValue("1000");
   }
 
   function handleFieldChange(key: string, value: string) {
@@ -129,7 +132,26 @@ export default function NewDatasourcePage() {
         cfg[f.key] = raw;
       }
     }
+    if (type === "ddm_simulation" && !runForever) {
+      const n = Number(lengthValue);
+      if (!isNaN(n) && n > 0) cfg["length"] = n;
+      // runForever → omit length → backend runs endlessly
+    }
     return cfg;
+  }
+
+  async function createDatasource(): Promise<number> {
+    const res = await fetch("/api/v1/datasources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, type, config: buildConfig() }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error?.message ?? body.detail ?? "Failed to create datasource");
+    }
+    const body = await res.json();
+    return (body.data ?? body).id;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -137,18 +159,37 @@ export default function NewDatasourcePage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/datasources", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type, config: buildConfig() }),
-      });
-      if (!res.ok) {
-        const body = await res.json();
-        throw new Error(body.error?.message ?? body.detail ?? "Failed to create datasource");
+      const dsId = await createDatasource();
+      router.push(`/data/datasources/${dsId}`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleUpload(file: File, symbol: string, timeframe: string, colMap: ColMap) {
+    setSaving(true);
+    setError(null);
+    try {
+      const dsId = await createDatasource();
+      const form = new FormData();
+      form.append("file", file);
+      form.append("datasource_id", String(dsId));
+      if (symbol) form.append("symbol", symbol);
+      if (timeframe) form.append("timeframe", timeframe);
+      if (colMap.close)    form.append("close_col",    colMap.close);
+      if (colMap.open)     form.append("open_col",     colMap.open);
+      if (colMap.high)     form.append("high_col",     colMap.high);
+      if (colMap.low)      form.append("low_col",      colMap.low);
+      if (colMap.volume)   form.append("volume_col",   colMap.volume);
+      if (colMap.datetime) form.append("datetime_col", colMap.datetime);
+      const upRes = await fetch("/api/v1/datasets/upload", { method: "POST", body: form });
+      if (!upRes.ok) {
+        const upBody = await upRes.json().catch(() => ({}));
+        throw new Error(upBody.error?.message ?? upBody.detail ?? "File upload failed");
       }
-      const body = await res.json();
-      const ds = body.data ?? body;
-      router.push(`/data/datasources/${ds.id}`);
+      router.push(`/data/datasources/${dsId}`);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -192,9 +233,33 @@ export default function NewDatasourcePage() {
         </div>
 
         {/* Type-specific config fields */}
-        {fields.length > 0 && (
+        {(fields.length > 0 || type === "ddm_simulation") && (
           <div className="rounded border border-gray-800 bg-gray-900 p-4 space-y-4">
             <p className="text-xs font-medium text-gray-400 uppercase">Configuration</p>
+            {type === "ddm_simulation" && (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={runForever}
+                    onChange={(e) => setRunForever(e.target.checked)}
+                    className="w-4 h-4 accent-brand-500"
+                  />
+                  <span className="text-sm text-white">Run forever</span>
+                </label>
+                {!runForever && (
+                  <Field label="Output Candles" hint="Number of OHLC candles to generate">
+                    <input
+                      type="number"
+                      className="md-input w-full"
+                      value={lengthValue}
+                      onChange={(e) => setLengthValue(e.target.value)}
+                      placeholder="1000"
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
             {fields.map((f) => (
               <Field key={f.key} label={f.label} hint={f.hint}>
                 {f.type === "select" ? (
@@ -230,13 +295,20 @@ export default function NewDatasourcePage() {
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={saving || typeInfo?.status === "not-implemented"}
-          className="w-full rounded bg-brand-500 py-2 text-sm text-white hover:bg-sky-400 disabled:opacity-40"
-        >
-          {saving ? "Creating…" : "Create Datasource"}
-        </button>
+        {type === "manual_upload" ? (
+          <div className="rounded border border-gray-800 bg-gray-900 p-4 space-y-4">
+            <p className="text-xs font-medium text-gray-400 uppercase">Upload CSV</p>
+            <CsvUploadForm uploading={saving} onUpload={handleUpload} />
+          </div>
+        ) : (
+          <button
+            type="submit"
+            disabled={saving || typeInfo?.status === "not-implemented"}
+            className="w-full rounded bg-brand-500 py-2 text-sm text-white hover:bg-sky-400 disabled:opacity-40"
+          >
+            {saving ? "Creating…" : "Create Datasource"}
+          </button>
+        )}
       </form>
 
     </div>

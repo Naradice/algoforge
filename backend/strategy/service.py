@@ -64,9 +64,9 @@ class StrategyService:
         await self.get_run(db, strategy_id, run_id)
         return await strategy_repo.get_metrics(db, run_id)
 
-    async def get_trades(self, db: AsyncSession, strategy_id: int, run_id: int) -> list:
+    async def get_trades(self, db: AsyncSession, strategy_id: int, run_id: int, offset: int = 0, limit: int = 100) -> tuple[list, int]:
         await self.get_run(db, strategy_id, run_id)
-        return await strategy_repo.get_trades(db, run_id)
+        return await strategy_repo.get_trades(db, run_id, offset=offset, limit=limit)
 
     async def get_chat_history(self, db: AsyncSession, strategy_id: int, run_id: int) -> list:
         await self.get_run(db, strategy_id, run_id)

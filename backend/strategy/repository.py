@@ -65,9 +65,19 @@ class StrategyRepository:
         await db.execute(update(StrategyRun).where(StrategyRun.id == run_id).values(**kwargs))
         return await self.get_run(db, run_id)
 
-    async def get_trades(self, db: AsyncSession, run_id: int) -> list[Trade]:
-        result = await db.execute(select(Trade).where(Trade.run_id == run_id).order_by(Trade.opened_at))
-        return list(result.scalars().all())
+    async def get_trades(
+        self,
+        db: AsyncSession,
+        run_id: int,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[Trade], int]:
+        base = select(Trade).where(Trade.run_id == run_id)
+        total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+        items = (await db.execute(
+            base.order_by(Trade.opened_at).offset(offset).limit(limit)
+        )).scalars().all()
+        return list(items), total
 
     async def get_metrics(self, db: AsyncSession, run_id: int) -> dict[str, float]:
         result = await db.execute(select(RunMetric).where(RunMetric.run_id == run_id))

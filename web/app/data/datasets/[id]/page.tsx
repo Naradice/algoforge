@@ -1,16 +1,752 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import useSWR, { mutate } from "swr";
 import { useParams } from "next/navigation";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
-import { ACFPlot } from "@/components/acf-plot";
-import { CCDFPlot } from "@/components/ccdf-plot";
-import { QQPlot } from "@/components/qq-plot";
+import {
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ReferenceLine,
+  ResponsiveContainer,
+} from "recharts";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type Tab = "overview" | "preview" | "characteristics";
+type CharsTab = "endogenous" | "exogenous";
+type SeasonalityView = "hour_day" | "hour_week" | "weekday_month" | "day_month" | "month_year";
+
+// Keys that the backend writes one-by-one into metrics; each maps to one chart section.
+// Order matches the backend registry (fastest → slowest) so charts appear progressively.
+const ENDOGENOUS_KEYS = ["return_dist", "ccdf", "diffusion", "acf", "vol_clustering", "qq"] as const;
+const EXOGENOUS_KEYS = ["exogenous_jump_tail", "exogenous_cdf", "exogenous_rolling_mean", "exogenous_long_lag_acf", "exogenous_seasonality"] as const;
+
+// ── Chart helpers ─────────────────────────────────────────────────────────────
+
+const COLOR = "#60a5fa";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const NoShape = (_: any): React.ReactElement => <g />;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const SmallDot = ({ cx, cy, fill }: any): React.ReactElement => (
+  <circle cx={cx} cy={cy} r={2.5} fill={fill} opacity={0.85} />
+);
+
+const CHART_STYLE = {
+  contentStyle: { background: "#111827", border: "1px solid #374151", fontSize: 10 },
+  labelStyle: { color: "#9ca3af" },
+};
+
+const DAY_COLORS = ["#60a5fa", "#34d399", "#f59e0b", "#f87171", "#a78bfa", "#fb923c", "#22d3ee"];
+const SEASON_COLORS = ["#60a5fa", "#34d399", "#f59e0b", "#f87171", "#a78bfa", "#fb923c", "#22d3ee", "#4ade80"];
+
+const SEASON_VIEWS: { id: SeasonalityView; label: string; desc: string }[] = [
+  { id: "hour_day",      label: "Hour / Day",      desc: "Average by hour of day (0–23 h)" },
+  { id: "hour_week",     label: "Hour / Week",      desc: "Intraday pattern across the full week" },
+  { id: "weekday_month", label: "Weekday / Month",  desc: "Day-of-week pattern by week of month" },
+  { id: "day_month",     label: "Day / Month",      desc: "Day-of-month (1–31) pattern by year" },
+  { id: "month_year",    label: "Month / Year",     desc: "Monthly pattern by year" },
+];
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+// ── Endogenous charts ─────────────────────────────────────────────────────────
+
+function ReturnDistSection({ full }: { full: FullMetrics }) {
+  const { stats, return_dist } = full;
+  const lg = (v: number | null) => (v !== null && v > 0) ? Math.log10(v) : null;
+  const histData = return_dist.centers
+    .map((x, j) => { const y = lg(return_dist.hist[j]); return y !== null ? { x, y } : null; })
+    .filter((d): d is { x: number; y: number } => d !== null);
+  const normalData = return_dist.centers
+    .map((x, j) => { const y = lg(return_dist.normal_pdf[j]); return y !== null ? { x, y } : null; })
+    .filter((d): d is { x: number; y: number } => d !== null);
+  const laplaceData = return_dist.centers
+    .map((x, j) => { const y = lg(return_dist.laplace_pdf[j]); return y !== null ? { x, y } : null; })
+    .filter((d): d is { x: number; y: number } => d !== null);
+
+  return (
+    <Section title="Statistics — Return Distribution">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-2">
+        {[
+          { label: "N", value: stats.n.toLocaleString() },
+          { label: "Mean", value: stats.mean.toExponential(2) },
+          { label: "Std", value: stats.std.toExponential(2) },
+          { label: "Skewness", value: stats.skewness.toFixed(3) },
+          { label: "Kurtosis", value: stats.kurtosis.toFixed(2) },
+          { label: "Hurst", value: isNaN(stats.hurst) ? "—" : stats.hurst.toFixed(3) },
+        ].map(({ label, value }) => (
+          <div key={label} className="rounded border border-gray-800 bg-gray-950 p-2">
+            <p className="text-xs text-gray-500 uppercase">{label}</p>
+            <p className="mt-0.5 text-sm font-bold text-white font-mono">{value}</p>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-gray-600 italic">Normal: skew=0, kurtosis=3, Hurst≈0.5</p>
+      <p className="text-xs text-gray-600">Dots: empirical · dashed: Normal · dotted: Laplace (log scale)</p>
+      <ResponsiveContainer width="100%" height={270}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="x" name="log return" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "log return", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="y" name="Density" tick={{ fontSize: 10, fill: "#6b7280" }}
+            tickFormatter={(v: number) => `10^${v.toFixed(0)}`} width={56}
+            label={{ value: "log Density", angle: -90, position: "insideLeft", fill: "#6b7280", fontSize: 11 }} />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => Math.pow(10, v).toExponential(3)} />
+          <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11 }} />
+          <Scatter name="Empirical" data={histData} fill={COLOR} shape={SmallDot} />
+          <Scatter name="Normal" data={normalData} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.2, strokeDasharray: "5 3" }} shape={NoShape} legendType="none" />
+          <Scatter name="Laplace" data={laplaceData} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.2, strokeDasharray: "2 2" }} shape={NoShape} legendType="none" />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function CcdfSection({ full }: { full: FullMetrics }) {
+  const data = full.ccdf_hist.x
+    .map((x, j) => {
+      const y = full.ccdf_hist.y[j];
+      return (y !== null && y > 0 && x > 0) ? { x: Math.log10(x), y: Math.log10(y) } : null;
+    })
+    .filter((d): d is { x: number; y: number } => d !== null);
+  return (
+    <Section title="Fat Tail — CCDF (log-log)">
+      <p className="text-xs text-gray-600">P(|r| &gt; x) vs |r|. Heavy tails deviate above the Normal reference.</p>
+      <ResponsiveContainer width="100%" height={270}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="x" name="|log return|" tick={{ fontSize: 10, fill: "#6b7280" }}
+            tickFormatter={(v: number) => `10^${v.toFixed(1)}`}
+            label={{ value: "|log return|", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="y" name="P(|r|>x)" tick={{ fontSize: 10, fill: "#6b7280" }}
+            tickFormatter={(v: number) => `10^${v.toFixed(0)}`} width={56}
+            label={{ value: "P(|r|>x)", angle: -90, position: "insideLeft", fill: "#6b7280", fontSize: 11 }} />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => Math.pow(10, v).toExponential(3)} />
+          <Scatter name="CCDF" data={data} fill={COLOR} line={{ stroke: COLOR, strokeWidth: 1.5 }} shape={SmallDot} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function AcfSection({ full }: { full: FullMetrics }) {
+  const rData = full.acf_returns.map((v, lag) => ({ lag, acf: v }));
+  const absData = full.acf_abs_returns.map((v, lag) => ({ lag, acf: v }));
+  return (
+    <Section title="Autocorrelation — returns r (dashed) and |r| (solid)">
+      <p className="text-xs text-gray-600">Significant positive ACF of |r| at many lags signals volatility clustering.</p>
+      <ResponsiveContainer width="100%" height={270}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="lag" name="Lag" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "Lag", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="acf" name="ACF" tick={{ fontSize: 10, fill: "#6b7280" }} width={44} />
+          <ReferenceLine y={0} stroke="#374151" strokeDasharray="2 2" />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => v.toFixed(4)} />
+          <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11 }} />
+          <Scatter name="ACF(r)" data={rData} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.5, strokeDasharray: "5 3" }} shape={NoShape} />
+          <Scatter name="ACF(|r|)" data={absData} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.5 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function DiffusionSection({ full }: { full: FullMetrics }) {
+  const data = full.diffusion.lags
+    .map((lag, j) => {
+      const v = full.diffusion.vars[j];
+      return (lag > 0 && v > 0) ? { lag: Math.log10(lag), v: Math.log10(v) } : null;
+    })
+    .filter((d): d is { lag: number; v: number } => d !== null);
+  return (
+    <Section title="Diffusion Scaling — Var(lag) / Var(1) (log-log)">
+      <p className="text-xs text-gray-600">Slope ≈ 1 indicates random-walk diffusion; slope &gt; 1 suggests super-diffusion.</p>
+      <ResponsiveContainer width="100%" height={270}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="lag" name="Lag" tick={{ fontSize: 10, fill: "#6b7280" }}
+            tickFormatter={(v: number) => `10^${v.toFixed(1)}`}
+            label={{ value: "Lag", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="v" name="Var ratio" tick={{ fontSize: 10, fill: "#6b7280" }} width={52}
+            tickFormatter={(v: number) => `10^${v.toFixed(1)}`} />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => Math.pow(10, v).toFixed(4)} />
+          <Scatter name="Diffusion" data={data} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.5 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function VolClusteringSection({ full }: { full: FullMetrics }) {
+  const data = full.volatility_clustering.map((v, lag) => ({ lag, acf: v }));
+  return (
+    <Section title="Volatility Clustering — ACF of |r| (lags 0–100)">
+      <p className="text-xs text-gray-600">Real markets show slowly-decaying positive autocorrelation in absolute returns.</p>
+      <ResponsiveContainer width="100%" height={270}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="lag" name="Lag" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "Lag", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="acf" name="ACF" tick={{ fontSize: 10, fill: "#6b7280" }} width={44} />
+          <ReferenceLine y={0} stroke="#374151" strokeDasharray="2 2" />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => v.toFixed(4)} />
+          <Scatter name="ACF(|r|)" data={data} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.5 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function QqSection({ full }: { full: FullMetrics }) {
+  const tVals = full.qq.map((p) => p.t);
+  const mn = Math.min(...tVals);
+  const mx = Math.max(...tVals);
+  const { slope, intercept } = full.qq_line;
+  const fitLine = [
+    { t: mn, s: slope * mn + intercept },
+    { t: mx, s: slope * mx + intercept },
+  ];
+  return (
+    <Section title="QQ Plot vs Normal Distribution">
+      <p className="text-xs text-gray-600">Points along the diagonal indicate normality; heavy tails bow outward.</p>
+      <ResponsiveContainer width="100%" height={270}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="t" name="Theoretical" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "Theoretical quantile", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="s" name="Sample" tick={{ fontSize: 10, fill: "#6b7280" }} width={56}
+            tickFormatter={(v: number) => v.toExponential(1)}
+            label={{ value: "Sample quantile", angle: -90, position: "insideLeft", fill: "#6b7280", fontSize: 11 }} />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => v.toExponential(4)} />
+          <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11 }} />
+          <Scatter name="Normal fit" data={fitLine} fill="#4b5563"
+            line={{ stroke: "#4b5563", strokeDasharray: "4 2" }} shape={NoShape} legendType="none" />
+          <Scatter name="Sample" data={full.qq} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.5 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+// ── Exogenous charts ──────────────────────────────────────────────────────────
+
+// ── Seasonality shared helpers ────────────────────────────────────────────────
+
+function SeasonSubChart({
+  title,
+  data,
+  xKey,
+  yKey,
+  xLabel,
+  yLabel,
+  xTickFormatter,
+  yTickFormatter,
+  referenceXLines,
+  xLabelFormatter,
+  series,
+  height = 220,
+  yZeroRef = false,
+}: {
+  title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data?: any;
+  xKey?: string;
+  yKey?: string;
+  xLabel?: string;
+  yLabel?: string;
+  xTickFormatter?: (v: number) => string;
+  yTickFormatter?: (v: number) => string;
+  referenceXLines?: number[];
+  xLabelFormatter?: (v: number) => string;
+  series?: { name: string; color: string; pts: { x: number; y: number }[] }[];
+  height?: number;
+  yZeroRef?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-1">{title}</p>
+      <ResponsiveContainer width="100%" height={height}>
+        <ScatterChart margin={{ top: 4, right: 8, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey={xKey ?? "x"} tick={{ fontSize: 10, fill: "#6b7280" }}
+            tickFormatter={xTickFormatter}
+            label={xLabel ? { value: xLabel, position: "insideBottom", offset: -14, fill: "#6b7280", fontSize: 11 } : undefined} />
+          <YAxis type="number" dataKey={yKey ?? "y"} tick={{ fontSize: 10, fill: "#6b7280" }} width={58}
+            tickFormatter={yTickFormatter ?? ((v: number) => v.toExponential(1))}
+            label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft", fill: "#6b7280", fontSize: 11 } : undefined} />
+          {yZeroRef && <ReferenceLine y={0} stroke="#374151" strokeDasharray="2 2" />}
+          {referenceXLines?.map((x) => <ReferenceLine key={x} x={x} stroke="#374151" strokeDasharray="2 2" />)}
+          <Tooltip {...CHART_STYLE}
+            formatter={(v: number) => v.toExponential(4)}
+            labelFormatter={xLabelFormatter ? (v: number) => xLabelFormatter(v) : undefined} />
+          <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11 }} />
+          {(series ?? []).map((s) => (
+            <Scatter key={s.name} name={s.name} data={s.pts}
+              fill={s.color} line={{ stroke: s.color, strokeWidth: 1.5 }} shape={NoShape} />
+          ))}
+        </ScatterChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function hasVol(arr: (number | null)[]): boolean {
+  return arr.some((v) => v !== null);
+}
+
+// ── Unified SeasonalityPanel ──────────────────────────────────────────────────
+
+function SeasonalityPanel({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
+  const [view, setView] = useState<SeasonalityView>("hour_week");
+  const intrad = ex.intraday_seasonality;
+  const seas = ex.seasonality;
+
+  return (
+    <Section title="Seasonality">
+      {/* View tabs */}
+      <div className="flex gap-1 flex-wrap">
+        {SEASON_VIEWS.map(({ id, label }) => (
+          <button key={id} onClick={() => setView(id)}
+            className={`text-xs px-3 py-1.5 rounded transition-colors ${
+              view === id ? "bg-brand-500 text-white" : "bg-gray-800 text-gray-400 hover:text-white"
+            }`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-gray-600">{SEASON_VIEWS.find((v) => v.id === view)?.desc}</p>
+
+      {/* ── Hour / Day ────────────────────────────────────────────────────── */}
+      {view === "hour_day" && (
+        intrad ? (() => {
+          // handle both old field names (mean/std) and new (return_mean/return_std)
+          const rmean = intrad.return_mean ?? intrad.mean ?? [];
+          const rstd  = intrad.return_std  ?? intrad.std  ?? [];
+          return (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
+            <SeasonSubChart
+              title="Return mean by hour"
+              series={[{ name: "return mean", color: COLOR,
+                pts: intrad.hours.map((h, j) => ({ x: h, y: rmean[j] })).filter((p) => p.y !== undefined) }]}
+              xKey="x" yKey="y" xLabel="Hour (UTC)"
+              xTickFormatter={(v) => String(v)} yZeroRef
+            />
+            <SeasonSubChart
+              title="Return std by hour"
+              series={[{ name: "return std", color: "#f59e0b",
+                pts: intrad.hours.map((h, j) => ({ x: h, y: rstd[j] })).filter((p) => p.y !== undefined) }]}
+              xKey="x" yKey="y" xLabel="Hour (UTC)"
+              xTickFormatter={(v) => String(v)}
+            />
+            {intrad.volume_mean && hasVol(intrad.volume_mean) && (
+              <SeasonSubChart
+                title="Volume mean by hour"
+                series={[{ name: "volume mean", color: "#34d399",
+                  pts: intrad.hours.map((h, j) => ({ x: h, y: intrad.volume_mean![j] ?? NaN }))
+                    .filter((p) => !isNaN(p.y)) }]}
+                xKey="x" yKey="y" xLabel="Hour (UTC)"
+                xTickFormatter={(v) => String(v)}
+                yTickFormatter={(v) => v.toFixed(1)}
+              />
+            )}
+          </div>
+        );})() : <p className="text-xs text-gray-500">No intraday data.</p>
+      )}
+
+      {/* ── Hour / Week ───────────────────────────────────────────────────── */}
+      {view === "hour_week" && (
+        seas ? (
+          <div className="space-y-4 pt-1">
+            {/* Return chart */}
+            <SeasonSubChart
+              title="Return mean — intraday across the week"
+              series={seas.weekly.days.map((day, d) => ({
+                name: day.label,
+                color: DAY_COLORS[d % DAY_COLORS.length],
+                pts: day.slots
+                  .map((x, j) => { const y = day.return_mean[j]; return y !== null ? { x, y } : null; })
+                  .filter((p): p is { x: number; y: number } => p !== null),
+              }))}
+              xKey="x" yKey="y" xLabel="Day of week (time →)"
+              xTickFormatter={(v) => {
+                const i = seas.weekly.day_boundaries.indexOf(v);
+                return i >= 0 ? seas.weekly.days[i]?.label ?? "" : "";
+              }}
+              xLabelFormatter={(slot) => {
+                const di = Math.floor(slot / seas.weekly.counts_per_day);
+                return `${seas.weekly.days[di]?.label ?? ""} ${seas.weekly.time_labels[slot % seas.weekly.counts_per_day] ?? ""}`;
+              }}
+              referenceXLines={seas.weekly.day_boundaries.slice(1, 7)}
+              yZeroRef height={250}
+            />
+            {/* Volume chart */}
+            {seas.weekly.days.some((d) => hasVol(d.volume)) && (
+              <SeasonSubChart
+                title="Volume mean — intraday across the week"
+                series={seas.weekly.days.map((day, d) => ({
+                  name: day.label,
+                  color: DAY_COLORS[d % DAY_COLORS.length],
+                  pts: day.slots
+                    .map((x, j) => { const y = day.volume[j]; return y !== null ? { x, y } : null; })
+                    .filter((p): p is { x: number; y: number } => p !== null),
+                }))}
+                xKey="x" yKey="y" xLabel="Day of week (time →)"
+                xTickFormatter={(v) => {
+                  const i = seas.weekly.day_boundaries.indexOf(v);
+                  return i >= 0 ? seas.weekly.days[i]?.label ?? "" : "";
+                }}
+                xLabelFormatter={(slot) => {
+                  const di = Math.floor(slot / seas.weekly.counts_per_day);
+                  return `${seas.weekly.days[di]?.label ?? ""} ${seas.weekly.time_labels[slot % seas.weekly.counts_per_day] ?? ""}`;
+                }}
+                referenceXLines={seas.weekly.day_boundaries.slice(1, 7)}
+                yTickFormatter={(v) => v.toFixed(1)} height={250}
+              />
+            )}
+          </div>
+        ) : <p className="text-xs text-gray-500">No seasonality data.</p>
+      )}
+
+      {/* ── Weekday / Month ───────────────────────────────────────────────── */}
+      {view === "weekday_month" && (
+        seas ? (
+          <div className="space-y-4 pt-1">
+            <SeasonSubChart
+              title="Return mean by day-of-week, per week of month"
+              series={seas.monthly.weeks.map((wk, i) => ({
+                name: wk.label,
+                color: SEASON_COLORS[i % SEASON_COLORS.length],
+                pts: wk.days
+                  .map((x, j) => { const y = wk.return_mean[j]; return y !== null ? { x, y } : null; })
+                  .filter((p): p is { x: number; y: number } => p !== null),
+              }))}
+              xKey="x" yKey="y" xLabel="Day of week"
+              xTickFormatter={(v) => seas.monthly.day_labels[v] ?? ""}
+              xLabelFormatter={(v) => seas.monthly.day_labels[v] ?? ""}
+              yZeroRef height={240}
+            />
+            {seas.monthly.weeks.some((wk) => hasVol(wk.volume)) && (
+              <SeasonSubChart
+                title="Volume mean by day-of-week, per week of month"
+                series={seas.monthly.weeks.map((wk, i) => ({
+                  name: wk.label,
+                  color: SEASON_COLORS[i % SEASON_COLORS.length],
+                  pts: wk.days
+                    .map((x, j) => { const y = wk.volume[j]; return y !== null ? { x, y } : null; })
+                    .filter((p): p is { x: number; y: number } => p !== null),
+                }))}
+                xKey="x" yKey="y" xLabel="Day of week"
+                xTickFormatter={(v) => seas.monthly.day_labels[v] ?? ""}
+                xLabelFormatter={(v) => seas.monthly.day_labels[v] ?? ""}
+                yTickFormatter={(v) => v.toFixed(1)} height={240}
+              />
+            )}
+          </div>
+        ) : <p className="text-xs text-gray-500">No seasonality data.</p>
+      )}
+
+      {/* ── Day / Month ───────────────────────────────────────────────────── */}
+      {view === "day_month" && (
+        seas ? (
+          <div className="space-y-4 pt-1">
+            <SeasonSubChart
+              title="Return mean by day of month, per year"
+              series={seas.day_of_month.series.map((s, i) => ({
+                name: s.label,
+                color: SEASON_COLORS[i % SEASON_COLORS.length],
+                pts: s.days
+                  .map((x, j) => { const y = s.return_mean[j]; return y !== null ? { x, y } : null; })
+                  .filter((p): p is { x: number; y: number } => p !== null),
+              }))}
+              xKey="x" yKey="y" xLabel="Day of month"
+              xTickFormatter={(v) => String(v)} yZeroRef height={240}
+            />
+            {seas.day_of_month.series.some((s) => hasVol(s.volume)) && (
+              <SeasonSubChart
+                title="Volume mean by day of month, per year"
+                series={seas.day_of_month.series.map((s, i) => ({
+                  name: s.label,
+                  color: SEASON_COLORS[i % SEASON_COLORS.length],
+                  pts: s.days
+                    .map((x, j) => { const y = s.volume[j]; return y !== null ? { x, y } : null; })
+                    .filter((p): p is { x: number; y: number } => p !== null),
+                }))}
+                xKey="x" yKey="y" xLabel="Day of month"
+                xTickFormatter={(v) => String(v)}
+                yTickFormatter={(v) => v.toFixed(1)} height={240}
+              />
+            )}
+          </div>
+        ) : <p className="text-xs text-gray-500">No seasonality data.</p>
+      )}
+
+      {/* ── Month / Year ──────────────────────────────────────────────────── */}
+      {view === "month_year" && (
+        seas ? (
+          <div className="space-y-4 pt-1">
+            <SeasonSubChart
+              title="Return mean by month, per year"
+              series={seas.yearly.series.map((s, i) => ({
+                name: s.label,
+                color: SEASON_COLORS[i % SEASON_COLORS.length],
+                pts: s.months
+                  .map((x, j) => { const y = s.return_mean[j]; return y !== null ? { x, y } : null; })
+                  .filter((p): p is { x: number; y: number } => p !== null),
+              }))}
+              xKey="x" yKey="y" xLabel="Month"
+              xTickFormatter={(v) => seas.yearly.month_labels[v - 1] ?? ""}
+              xLabelFormatter={(v) => seas.yearly.month_labels[v - 1] ?? ""}
+              yZeroRef height={240}
+            />
+            {seas.yearly.series.some((s) => hasVol(s.volume)) && (
+              <SeasonSubChart
+                title="Volume mean by month, per year"
+                series={seas.yearly.series.map((s, i) => ({
+                  name: s.label,
+                  color: SEASON_COLORS[i % SEASON_COLORS.length],
+                  pts: s.months
+                    .map((x, j) => { const y = s.volume[j]; return y !== null ? { x, y } : null; })
+                    .filter((p): p is { x: number; y: number } => p !== null),
+                }))}
+                xKey="x" yKey="y" xLabel="Month"
+                xTickFormatter={(v) => seas.yearly.month_labels[v - 1] ?? ""}
+                xLabelFormatter={(v) => seas.yearly.month_labels[v - 1] ?? ""}
+                yTickFormatter={(v) => v.toFixed(1)} height={240}
+              />
+            )}
+          </div>
+        ) : <p className="text-xs text-gray-500">No seasonality data.</p>
+      )}
+    </Section>
+  );
+}
+
+function JumpTailSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
+  if (!ex.jump_tail) return null;
+  const jt = ex.jump_tail;
+  return (
+    <Section title="Jump / Tail Statistics">
+      <p className="text-xs text-gray-600">Jump rate = fraction of returns exceeding ±3σ. Quantiles show tail heaviness.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="border-b border-gray-800">
+              {["Jump rate (>|3σ|)", "3σ threshold", "q0.1%", "q1%", "q99%", "q99.9%"].map((h) => (
+                <th key={h} className="py-2 px-3 text-right text-gray-500 font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="text-right py-2 px-3 text-gray-300 font-mono">{(jt.jump_rate * 100).toFixed(3)}%</td>
+              <td className="text-right py-2 px-3 text-gray-300 font-mono">{jt.threshold_3sigma.toExponential(3)}</td>
+              <td className="text-right py-2 px-3 text-gray-300 font-mono">{jt.q001.toExponential(3)}</td>
+              <td className="text-right py-2 px-3 text-gray-300 font-mono">{jt.q01.toExponential(3)}</td>
+              <td className="text-right py-2 px-3 text-gray-300 font-mono">{jt.q99.toExponential(3)}</td>
+              <td className="text-right py-2 px-3 text-gray-300 font-mono">{jt.q999.toExponential(3)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+function CdfSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
+  if (!ex.cdf) return null;
+  const data = ex.cdf.x.map((x, j) => ({ x, y: ex.cdf!.y[j] }));
+  return (
+    <Section title="CDF — Cumulative Distribution of Returns">
+      <p className="text-xs text-gray-600">Empirical CDF of log-returns. S-curve shape; fat tails bow wider than Normal.</p>
+      <ResponsiveContainer width="100%" height={270}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="x" name="log return" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "log return", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="y" name="CDF" domain={[0, 1]} tick={{ fontSize: 10, fill: "#6b7280" }} width={44}
+            label={{ value: "CDF", angle: -90, position: "insideLeft", fill: "#6b7280", fontSize: 11 }} />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => v.toFixed(4)} />
+          <Scatter name="CDF" data={data} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.5 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function RollingMeanSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
+  if (!ex.rolling_mean) return null;
+  const rm = ex.rolling_mean;
+  const data = rm.index.map((x, j) => ({ x, y: rm.values[j] }));
+  return (
+    <Section title="Drift / Rolling Mean of Returns">
+      <p className="text-xs text-gray-600">
+        Rolling mean of log-returns (window ≈ 5% of series). Should hover near zero for a drift-free market.
+      </p>
+      <ResponsiveContainer width="100%" height={270}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="x" name="Position" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "Position (candle)", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="y" name="Rolling mean" tick={{ fontSize: 10, fill: "#6b7280" }} width={56}
+            tickFormatter={(v: number) => v.toExponential(1)} />
+          <ReferenceLine y={0} stroke="#374151" strokeDasharray="2 2" />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => v.toExponential(4)} />
+          <Scatter name={`Rolling mean (w=${rm.window})`} data={data} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.2 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function LongLagAcfSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
+  if (!ex.long_lag_acf) return null;
+  const la = ex.long_lag_acf;
+  const data = la.lags.map((lag, j) => ({ lag, acf: la.values[j] }));
+  return (
+    <Section title="Long-lag ACF of Returns">
+      <p className="text-xs text-gray-600">ACF of log-returns up to lag 200. Values near zero indicate no long-range linear autocorrelation.</p>
+      <div className="overflow-x-auto mb-3">
+        <table className="text-xs border-collapse">
+          <thead>
+            <tr className="border-b border-gray-800">
+              {[10, 20, 30, 40, 50].map((lg) => (
+                <th key={lg} className="py-1 px-3 text-right text-gray-500">lag {lg}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {[10, 20, 30, 40, 50].map((lg) => (
+                <td key={lg} className="py-1 px-3 text-right text-gray-300 font-mono">
+                  {la.highlights[String(lg)] != null ? la.highlights[String(lg)].toFixed(4) : "—"}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ResponsiveContainer width="100%" height={260}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="lag" name="Lag" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "Lag", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="acf" name="ACF" tick={{ fontSize: 10, fill: "#6b7280" }} width={44} />
+          <ReferenceLine y={0} stroke="#374151" strokeDasharray="2 2" />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => v.toFixed(4)} />
+          <Scatter name="Long-lag ACF" data={data} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.2 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+// ── CharacteristicsPanel ──────────────────────────────────────────────────────
+
+function CharacteristicsPanel({ metrics }: { metrics: Record<string, any> }) {
+  const [charsTab, setCharsTab] = useState<CharsTab>("endogenous");
+  const fullRaw = metrics?.full ?? null;
+  const full: FullMetrics | null = fullRaw && !fullRaw.error ? fullRaw : null;
+
+  if (!full) {
+    // Fallback: basic stats only
+    const basicStats = metrics?.basic_stats;
+    return (
+      <div className="space-y-4">
+        {basicStats && (
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Rows" value={basicStats.row_count?.toLocaleString()} />
+            <StatCard label="Hurst" value={basicStats.hurst?.toFixed(4)} hint="0.5 = random, >0.5 = trending" />
+            <StatCard label="Return std" value={basicStats.return_std?.toExponential(3)} />
+          </div>
+        )}
+        {fullRaw?.error && (
+          <p className="text-xs text-red-400 bg-red-900/20 border border-red-800 rounded px-3 py-2">
+            Full analysis failed: {fullRaw.error}
+          </p>
+        )}
+        <div className="rounded border border-gray-800 bg-gray-900 p-4">
+          <p className="text-xs text-gray-400 mb-2 uppercase">Raw metrics (JSON)</p>
+          <pre className="text-xs text-gray-500 overflow-x-auto max-h-64">{JSON.stringify(metrics, null, 2)}</pre>
+        </div>
+      </div>
+    );
+  }
+
+  const hasExogenous = !!full.exogenous;
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-tabs */}
+      <div className="flex gap-1 border-b border-gray-800">
+        {(["endogenous", "exogenous"] as CharsTab[]).map((t) => (
+          <button key={t} onClick={() => setCharsTab(t)}
+            className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors capitalize ${
+              charsTab === t ? "border-brand-500 text-brand-500" : "border-transparent text-gray-400 hover:text-white"
+            }`}>
+            {t}
+            {t === "exogenous" && !hasExogenous && <span className="ml-1 text-xs text-gray-600">(n/a)</span>}
+          </button>
+        ))}
+      </div>
+
+      {charsTab === "endogenous" && (
+        <div className="space-y-4">
+          <ReturnDistSection full={full} />
+          <CcdfSection full={full} />
+          <AcfSection full={full} />
+          <DiffusionSection full={full} />
+          <VolClusteringSection full={full} />
+          <QqSection full={full} />
+        </div>
+      )}
+
+      {charsTab === "exogenous" && (
+        <div className="space-y-4">
+          {!hasExogenous ? (
+            <p className="text-sm text-gray-500">No exogenous data available for this dataset.</p>
+          ) : (
+            <>
+              <SeasonalityPanel ex={full.exogenous!} />
+              <JumpTailSection ex={full.exogenous!} />
+              <CdfSection ex={full.exogenous!} />
+              <RollingMeanSection ex={full.exogenous!} />
+              <LongLagAcfSection ex={full.exogenous!} />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DatasetDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,15 +754,50 @@ export default function DatasetDetailPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [deleting, setDeleting] = useState(false);
   const [renamingName, setRenamingName] = useState<string | null>(null);
-  const { data: dataset } = useSWR(`/api/v1/datasets/${id}`, fetcher);
-  const { data: chars } = useSWR(tab === "characteristics" ? `/api/v1/datasets/${id}/characteristics` : null, fetcher);
+  const [computingChars, setComputingChars] = useState(false);
+  const [computingElapsed, setComputingElapsed] = useState(0);
+  const computingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isRunning = (d: any) => d?.status === "running";
+  const { data: dataset } = useSWR(`/api/v1/datasets/${id}`, fetcher, {
+    refreshInterval: (data) => isRunning(data) ? 3000 : 0,
+  });
+  const { data: chars } = useSWR(
+    tab === "characteristics" ? `/api/v1/datasets/${id}/characteristics` : null,
+    fetcher,
+    { refreshInterval: computingChars ? 2000 : 0 },
+  );
   const [previewTimeframe, setPreviewTimeframe] = useState<string>("");
   const tfParam = previewTimeframe ? `&timeframe=${previewTimeframe}` : "";
-  const { data: preview } = useSWR(tab === "preview" && dataset?.status === "ready" ? `/api/v1/datasets/${id}/preview?rows=200${tfParam}` : null, fetcher);
+  const canPreview = dataset?.status === "ready" || dataset?.status === "running";
+  const { data: preview } = useSWR(
+    tab === "preview" && canPreview ? `/api/v1/datasets/${id}/preview?rows=200${tfParam}` : null,
+    fetcher,
+    { refreshInterval: tab === "preview" && isRunning(dataset) ? 5000 : 0 },
+  );
+  const { data: liveProgress } = useSWR(
+    isRunning(dataset) ? `/api/v1/datasets/${id}/live-progress` : null,
+    fetcher,
+    { refreshInterval: 3000 },
+  );
+
+  // Stop polling and timer once characteristics data arrives
+  if (computingChars && chars) {
+    setComputingChars(false);
+    if (computingTimerRef.current) {
+      clearInterval(computingTimerRef.current);
+      computingTimerRef.current = null;
+    }
+  }
+
+  // Cleanup timer on unmount
+  useEffect(() => () => { if (computingTimerRef.current) clearInterval(computingTimerRef.current); }, []);
 
   async function computeChars() {
+    setComputingChars(true);
+    setComputingElapsed(0);
+    if (computingTimerRef.current) clearInterval(computingTimerRef.current);
+    computingTimerRef.current = setInterval(() => setComputingElapsed((s) => s + 1), 1000);
     await fetch(`/api/v1/datasets/${id}/characteristics/compute`, { method: "POST" });
-    mutate(`/api/v1/datasets/${id}/characteristics`);
   }
 
   async function renameDataset() {
@@ -93,14 +864,16 @@ export default function DatasetDetailPage() {
             {dataset?.row_count && <span>{dataset.row_count.toLocaleString()} rows</span>}
           </div>
         </div>
-        {dataset?.status === "ready" && (
+        {dataset && (
           <div className="flex gap-2">
-            <a
-              href={`/api/v1/datasets/${id}/download${previewTimeframe ? `?timeframe=${previewTimeframe}` : ""}`}
-              className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-400 hover:text-white"
-            >
-              Download CSV
-            </a>
+            {dataset.status === "ready" && (
+              <a
+                href={`/api/v1/datasets/${id}/download${previewTimeframe ? `?timeframe=${previewTimeframe}` : ""}`}
+                className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-400 hover:text-white"
+              >
+                Download CSV
+              </a>
+            )}
             <button
               onClick={deleteDataset}
               disabled={deleting}
@@ -141,6 +914,16 @@ export default function DatasetDetailPage() {
       {/* Preview */}
       {tab === "preview" && (
         <div className="space-y-3">
+          {isRunning(dataset) && (
+            <div className="flex items-center gap-2 rounded border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-300">
+              <span className="inline-block w-2 h-2 rounded-full bg-brand-400 animate-pulse" />
+              Simulation running —{" "}
+              {liveProgress
+                ? <>{liveProgress.total_trades?.toLocaleString() ?? 0} ticks generated (batch {(liveProgress.batch_num ?? 0) + 1})</>
+                : "waiting for first batch…"
+              }
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <label className="text-xs text-gray-400 uppercase">Timeframe</label>
             <select
@@ -154,31 +937,31 @@ export default function DatasetDetailPage() {
             </select>
             <span className="text-xs text-gray-500">(applies to tick datasets)</span>
           </div>
-        <div className="overflow-x-auto">
-          {!preview && <p className="text-gray-400 text-sm">Loading preview…</p>}
-          {preview && preview.length > 0 && (
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-gray-800 text-gray-400 uppercase">
-                  {Object.keys(preview[0]).map((col) => (
-                    <th key={col} className="py-2 pr-4 whitespace-nowrap">{col}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.slice(0, 50).map((row: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-800/40">
-                    {Object.values(row).map((v: any, j: number) => (
-                      <td key={j} className="py-1.5 pr-4 text-gray-300 whitespace-nowrap font-mono">
-                        {typeof v === "number" ? v.toFixed(5) : String(v)}
-                      </td>
+          <div className="overflow-x-auto">
+            {!preview && <p className="text-gray-400 text-sm">Loading preview…</p>}
+            {preview && preview.length > 0 && (
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-gray-800 text-gray-400 uppercase">
+                    {Object.keys(preview[0]).map((col) => (
+                      <th key={col} className="py-2 pr-4 whitespace-nowrap">{col}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                </thead>
+                <tbody>
+                  {preview.slice(0, 50).map((row: any, i: number) => (
+                    <tr key={i} className="border-b border-gray-800/40">
+                      {Object.values(row).map((v: any, j: number) => (
+                        <td key={j} className="py-1.5 pr-4 text-gray-300 whitespace-nowrap font-mono">
+                          {typeof v === "number" ? v.toFixed(5) : String(v)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
 
@@ -187,10 +970,25 @@ export default function DatasetDetailPage() {
         <div className="space-y-4">
           {!chars && (
             <div className="flex items-center gap-3">
-              <p className="text-gray-400 text-sm">No characteristics computed yet.</p>
-              <button onClick={computeChars} className="rounded bg-brand-500 px-3 py-1.5 text-xs text-white hover:bg-sky-400">
-                Compute now
-              </button>
+              {computingChars ? (
+                <div className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4 text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <p className="text-gray-400 text-sm">
+                    Computing characteristics… {computingElapsed}s elapsed
+                    {computingElapsed > 90 && <span className="text-yellow-500 ml-1">(large dataset — may take a few minutes)</span>}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-gray-400 text-sm">No characteristics computed yet.</p>
+                  <button onClick={computeChars} className="rounded bg-brand-500 px-3 py-1.5 text-xs text-white hover:bg-sky-400">
+                    Compute now
+                  </button>
+                </>
+              )}
             </div>
           )}
           {chars && (
@@ -214,61 +1012,6 @@ function InfoCard({ label, value, mono }: { label: string; value: string; mono?:
     <div className="rounded border border-gray-800 bg-gray-900 p-3">
       <p className="text-xs text-gray-400 uppercase">{label}</p>
       <p className={`mt-1 text-white ${mono ? "font-mono text-xs" : "text-sm font-medium"}`}>{value}</p>
-    </div>
-  );
-}
-
-function CharacteristicsPanel({ metrics }: { metrics: Record<string, any> }) {
-  const fullStats = metrics?.full?.stats;
-  const plots = metrics?.plots;
-
-  return (
-    <div className="space-y-4">
-      {fullStats && (
-        <div className="grid grid-cols-3 gap-3">
-          <StatCard label="Rows" value={fullStats.n?.toLocaleString()} />
-          <StatCard label="Hurst" value={fullStats.hurst?.toFixed(4)} hint="0.5 = random, >0.5 = trending" />
-          <StatCard label="Kurtosis" value={fullStats.kurtosis?.toFixed(4)} hint=">3 = fat tails" />
-          <StatCard label="Skewness" value={fullStats.skewness?.toFixed(4)} />
-          <StatCard label="Return std" value={fullStats.std?.toExponential(3)} />
-          <StatCard label="Return mean" value={fullStats.mean?.toExponential(3)} />
-        </div>
-      )}
-      {metrics?.basic_stats && !fullStats && (
-        <div className="grid grid-cols-3 gap-3">
-          <StatCard label="Rows" value={metrics.basic_stats.row_count?.toLocaleString()} />
-          <StatCard label="Hurst" value={metrics.basic_stats.hurst?.toFixed(4)} />
-          <StatCard label="Return std" value={metrics.basic_stats.return_std?.toExponential(3)} />
-        </div>
-      )}
-      {plots && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {plots.acf && (
-            <div className="rounded border border-gray-800 bg-gray-900 p-4">
-              <ACFPlot data={plots.acf} title="ACF (Returns)" />
-            </div>
-          )}
-          {plots.pacf && (
-            <div className="rounded border border-gray-800 bg-gray-900 p-4">
-              <ACFPlot data={plots.pacf} title="PACF (Returns)" />
-            </div>
-          )}
-          {plots.ccdf && (
-            <div className="rounded border border-gray-800 bg-gray-900 p-4">
-              <CCDFPlot data={plots.ccdf} />
-            </div>
-          )}
-          {plots.qq && (
-            <div className="rounded border border-gray-800 bg-gray-900 p-4">
-              <QQPlot data={plots.qq} />
-            </div>
-          )}
-        </div>
-      )}
-      <div className="rounded border border-gray-800 bg-gray-900 p-4">
-        <p className="text-xs text-gray-400 mb-2 uppercase">Raw metrics (JSON)</p>
-        <pre className="text-xs text-gray-500 overflow-x-auto max-h-64">{JSON.stringify(metrics, null, 2)}</pre>
-      </div>
     </div>
   );
 }

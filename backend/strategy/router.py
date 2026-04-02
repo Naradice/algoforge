@@ -17,7 +17,7 @@ from strategy.models import (
     ChatMessageCreate, ChatMessageRead,
 )
 from strategy.service import strategy_service
-from arq_pool import enqueue
+from celery_app import enqueue
 from events import event_bus
 
 router = APIRouter(prefix="/strategies", tags=["strategy"])
@@ -113,10 +113,12 @@ async def get_run_trades(
     pagination: Pagination = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    trades = await strategy_service.get_trades(db, strategy_id, run_id)
-    total = len(trades)
-    page_trades = trades[pagination.offset: pagination.offset + pagination.page_size]
-    return DataResponse(data=page_trades, meta=Meta(total=total, page=pagination.page, page_size=pagination.page_size))
+    trades, total = await strategy_service.get_trades(
+        db, strategy_id, run_id,
+        offset=pagination.offset,
+        limit=pagination.page_size,
+    )
+    return DataResponse(data=trades, meta=Meta(total=total, page=pagination.page, page_size=pagination.page_size))
 
 
 # ── Chat ───────────────────────────────────────────────────────────────────────
