@@ -88,16 +88,18 @@ class AlreadyRunningError(RuntimeError):
 async def enqueue(task_name: str, *args) -> None:
     """Enqueue a background task.
 
-    With Redis: uses apply_async() with a deterministic task_id for dedup.
-      A Redis SET NX lock prevents duplicate enqueue of the same entity while
-      the previous run is still in-flight.
+    With Redis: uses a deterministic Redis lock key for dedup, but assigns a
+      fresh UUID as the Celery task_id each time.  Using a fixed task_id caused
+      previously-revoked tasks to be permanently blacklisted by Celery, making
+      the job un-runnable until the worker restarted.
 
     Without Redis (ALGOFORGE_NO_REDIS=1): runs the Celery task synchronously
       in a thread pool so the FastAPI event loop is not blocked.
 
     Raises AlreadyRunningError if the dedup lock is already held.
     """
-    task_id = f"{task_name}:{args[0] if args else 'noarg'}"
+    import uuid
+    lock_id = f"{task_name}:{args[0] if args else 'noarg'}"
 
     if _NO_REDIS:
         # Inline fallback: run the sync Celery task in a thread.
@@ -111,10 +113,10 @@ async def enqueue(task_name: str, *args) -> None:
     # first is still running is a visible error (not a silent drop).
     redis = _get_redis()
     if redis is not None:
-        lock_key = f"algoforge:enqueued:{task_id}"
+        lock_key = f"algoforge:enqueued:{lock_id}"
         acquired = redis.set(lock_key, "1", nx=True, ex=3600)
         if not acquired:
-            logger.warning(f"enqueue: lock already held for {task_id}")
+            logger.warning(f"enqueue: lock already held for {lock_id}")
             raise AlreadyRunningError(
                 f"A {task_name} job is already queued or running. "
                 "Wait for it to finish, or run scripts/clear-stuck-jobs.bat if it is stuck."
@@ -123,5 +125,7 @@ async def enqueue(task_name: str, *args) -> None:
     import celery_worker as _w
     task_fn = getattr(_w, task_name)
     entity_id = args[0] if args else "noarg"
-    logger.info(f"enqueue → Redis: {task_name}({entity_id})  task_id={task_id}")
-    task_fn.apply_async(args=list(args), task_id=task_id)
+    # Use a fresh UUID so a previously-revoked deterministic ID never blocks re-runs.
+    celery_task_id = str(uuid.uuid4())
+    logger.info(f"enqueue → Redis: {task_name}({entity_id})  celery_task_id={celery_task_id}")
+    task_fn.apply_async(args=list(args), task_id=celery_task_id)

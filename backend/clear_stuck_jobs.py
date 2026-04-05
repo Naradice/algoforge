@@ -1,6 +1,6 @@
 """Clear orphaned Celery dedup lock keys from Redis.
 
-Run via:  scripts\clear-stuck-jobs.bat
+Run via:  scripts/clear-stuck-jobs.bat
 Or directly:  python backend/clear_stuck_jobs.py
 """
 import os

@@ -29,6 +29,25 @@ DATASET_NOT_READY = "DATASET_NOT_READY"
 COLLECTION_JOB_NOT_FOUND = "COLLECTION_JOB_NOT_FOUND"
 
 
+def _revoke_collection_task(job_id: int) -> None:
+    """Clear the dedup lock for a collection job so it can be re-enqueued.
+
+    Celery task IDs are now UUIDs (not deterministic), so we cannot revoke the
+    old task by ID.  We only delete the Redis lock key so enqueue() won't raise
+    AlreadyRunningError.  The old worker process will keep running until the
+    collection container is restarted, but the new run will write fresh data
+    after _clear_artifact_dir() removes the stale partitions.
+    Best-effort: failures are silently ignored.
+    """
+    import os
+    try:
+        import redis as _redis
+        r = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+        r.delete(f"algoforge:enqueued:run_collection_job:{job_id}")
+    except Exception:
+        pass
+
+
 class DataService:
     async def list_datasources(self, db: AsyncSession, offset: int = 0, limit: int = 20) -> tuple[list[Datasource], int]:
         return await data_repo.get_datasources(db, offset=offset, limit=limit)
@@ -78,8 +97,14 @@ class DataService:
         return await data_repo.get_characteristics(db, dataset_id)
 
     async def trigger_collection(self, db: AsyncSession, job_id: int):
-        """Enqueue a run_collection_job Celery task and return the job."""
+        """Enqueue a run_collection_job Celery task and return the job.
+
+        If the job is already running (status=running or dedup lock held), the
+        existing Celery task is revoked first so the new run starts cleanly
+        without a concurrent instance writing to the same artifact directory.
+        """
         job = await self.get_collection_job(db, job_id)
+        _revoke_collection_task(job_id)
         from celery_app import enqueue
         await enqueue("run_collection_job", job_id)
         return job

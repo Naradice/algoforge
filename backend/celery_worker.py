@@ -71,7 +71,29 @@ def _release_lock(task_name: str, entity_id) -> None:
 
 @celery_app.task(name="celery_worker.run_collection_job", bind=False)
 def run_collection_job(job_id: int) -> dict:
-    return asyncio.run(_run_collection_job(job_id))
+    # For endless DDM jobs the task never returns, so the Redis dedup lock
+    # (TTL=1h) would expire and allow a second concurrent instance to start.
+    # Renew it every 30 min in a background thread for the lifetime of this task.
+    import threading
+
+    _lock_key = f"algoforge:enqueued:run_collection_job:{job_id}"
+    _stop_renewer = threading.Event()
+
+    def _renew_lock():
+        while not _stop_renewer.wait(timeout=1800):  # every 30 min
+            try:
+                import redis as _r
+                r = _r.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+                r.expire(_lock_key, 3600)
+            except Exception:
+                pass
+
+    renewer = threading.Thread(target=_renew_lock, daemon=True)
+    renewer.start()
+    try:
+        return asyncio.run(_run_collection_job(job_id))
+    finally:
+        _stop_renewer.set()
 
 
 async def _run_collection_job(job_id: int) -> dict:
@@ -98,7 +120,7 @@ async def _run_collection_job(job_id: int) -> dict:
             is_ddm = source.type == "ddm_simulation"
             pre_dataset_id = None
 
-            await db.execute(update(CollectionJob).where(CollectionJob.id == job_id).values(status="running"))
+            await db.execute(update(CollectionJob).where(CollectionJob.id == job_id).values(status="running", last_error=None))
 
             if is_ddm:
                 artifact_rel = f"datasets/src_{source.id}/ddm_ticks"

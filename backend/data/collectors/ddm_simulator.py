@@ -337,10 +337,30 @@ def _clear_artifact_dir(out_dir: Path) -> None:
     if not out_dir.exists():
         return
     import shutil
+    import time
+
+    def _rmtree(path: Path) -> None:
+        """rmtree with retry for Windows ENOTEMPTY (unreleased file handles)."""
+        for attempt in range(4):
+            try:
+                shutil.rmtree(path)
+                return
+            except OSError:
+                if attempt < 3:
+                    time.sleep(0.3)
+                else:
+                    # Last resort: delete parquet files individually, then dirs
+                    for f in path.glob("**/*.parquet"):
+                        try:
+                            f.unlink()
+                        except OSError:
+                            pass
+                    shutil.rmtree(path, ignore_errors=True)
+
     # Remove Hive partition subdirectories (year=YYYY/)
     for p in out_dir.iterdir():
         if p.is_dir() and p.name.startswith("year="):
-            shutil.rmtree(p)
+            _rmtree(p)
     # Also remove any legacy batch_*.parquet files from old layout
     for f in out_dir.glob("batch_*.parquet"):
         f.unlink()
