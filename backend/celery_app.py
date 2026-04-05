@@ -81,6 +81,10 @@ def _get_redis() -> Any | None:
 # enqueue() — drop-in replacement for arq_pool.enqueue()
 # ---------------------------------------------------------------------------
 
+class AlreadyRunningError(RuntimeError):
+    """Raised when a dedup lock is already held for this entity."""
+
+
 async def enqueue(task_name: str, *args) -> None:
     """Enqueue a background task.
 
@@ -90,6 +94,8 @@ async def enqueue(task_name: str, *args) -> None:
 
     Without Redis (ALGOFORGE_NO_REDIS=1): runs the Celery task synchronously
       in a thread pool so the FastAPI event loop is not blocked.
+
+    Raises AlreadyRunningError if the dedup lock is already held.
     """
     task_id = f"{task_name}:{args[0] if args else 'noarg'}"
 
@@ -102,14 +108,17 @@ async def enqueue(task_name: str, *args) -> None:
         return
 
     # Dedup: use Redis SET NX so a second enqueue for the same entity while the
-    # first is still running is silently dropped.
+    # first is still running is a visible error (not a silent drop).
     redis = _get_redis()
     if redis is not None:
         lock_key = f"algoforge:enqueued:{task_id}"
         acquired = redis.set(lock_key, "1", nx=True, ex=3600)
         if not acquired:
-            logger.info(f"enqueue: skipped duplicate {task_id}")
-            return
+            logger.warning(f"enqueue: lock already held for {task_id}")
+            raise AlreadyRunningError(
+                f"A {task_name} job is already queued or running. "
+                "Wait for it to finish, or run scripts/clear-stuck-jobs.bat if it is stuck."
+            )
 
     import celery_worker as _w
     task_fn = getattr(_w, task_name)

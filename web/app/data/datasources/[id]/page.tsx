@@ -17,6 +17,7 @@ interface FieldDef {
   label: string;
   type: "text" | "number" | "select" | "date";
   options?: string[];
+  optionDescriptions?: Record<string, string>;
   placeholder?: string;
   hint?: string;
 }
@@ -42,8 +43,45 @@ const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: "seed", label: "Random Seed", type: "number", placeholder: "42" },
   ],
   web_report: [
-    { key: "url", label: "URL", type: "text", placeholder: "https://…" },
-    { key: "selector", label: "CSS Selector", type: "text", placeholder: "table" },
+    {
+      key: "url", label: "URL", type: "text",
+      placeholder: "https://www.example.com/reports",
+      hint: "Landing page containing report links",
+    },
+    {
+      key: "ext", label: "File Type", type: "select",
+      options: ["pdf", "html", "mp3", "txt"],
+    },
+    {
+      key: "subfolder", label: "Subfolder", type: "text",
+      placeholder: "mizuho",
+      hint: "Output directory name (under artifacts/web_reports/)",
+    },
+    {
+      key: "filename", label: "Filename Template", type: "text",
+      placeholder: "{YYYYMMDD}.pdf",
+      hint: "Placeholders: {YYYYMMDD} {YYMMDD} {YYYYMM} {YYMM} {filename} {basefilename}",
+    },
+    {
+      key: "type", label: "Fetch Method", type: "select",
+      options: ["load", "goto_load", "goto_download", "load_rep"],
+      optionDescriptions: {
+        load:          "Direct HTTP download (httpx). Fast and simple — use for public links with no bot protection. Will get 403 on Akamai/CDN-protected sites.",
+        goto_load:     "Opens the URL in a real browser and saves the rendered page as a PDF. Use when the target is an HTML page you want to archive as PDF, not a file download.",
+        goto_download: "Uses the browser's fetch() to download the file in-page, carrying real browser headers and cookies. Required for Akamai/CDN-protected PDFs — most Japanese broker sites (Mizuho, Sony Finance, MUFG, etc.) need this.",
+        load_rep:      "Plain HTTP download saved as HTML source. Use to archive a page's raw HTML. Fast, but shares the same CDN limitations as load — won't work on bot-protected sites.",
+      },
+    },
+    {
+      key: "unique", label: "Deduplication", type: "select",
+      options: ["segment", "checksum", "text"],
+      hint: "segment: skip if file exists. checksum: skip if content unchanged. text: skip if link text unchanged.",
+    },
+    {
+      key: "interval_days", label: "Interval (days)", type: "number",
+      placeholder: "1",
+      hint: "Minimum days between downloads. Leave blank to always run.",
+    },
   ],
   manual_upload: [],
 };
@@ -84,6 +122,11 @@ export default function DatasourceDetailPage() {
     fetcher,
     { refreshInterval: (data) => (data?.some?.((j: any) => j.status === "running") || Date.now() < pollUntil ? 2000 : 0) }
   );
+  const { data: webReportFiles, mutate: mutateFiles } = useSWR(
+    ds?.type === "web_report" ? `/api/v1/datasources/${id}/web-report/files` : null,
+    fetcher,
+    { refreshInterval: (data) => (jobs?.some?.((j: any) => j.status === "running") ? 5000 : 0) }
+  );
   const { data: uploadedDatasets, mutate: mutateDatasets } = useSWR(
     ds?.type === "manual_upload" ? `/api/v1/datasets?datasource_id=${id}` : null,
     fetcher,
@@ -92,6 +135,7 @@ export default function DatasourceDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [webReportCustom, setWebReportCustom] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [pollUntil, setPollUntil] = useState(0);
@@ -105,6 +149,11 @@ export default function DatasourceDetailPage() {
     const storedLength = ds?.config?.length;
     setRunForever(storedLength == null);
     setLengthValue(storedLength != null ? String(storedLength) : "1000");
+    setWebReportCustom(
+      ds?.type === "web_report" && ds?.config?.custom != null
+        ? JSON.stringify(ds.config.custom, null, 2)
+        : ""
+    );
     setEditing(true);
   }
 
@@ -113,9 +162,15 @@ export default function DatasourceDetailPage() {
   }
 
   async function saveEdit() {
+    if (ds?.type === "web_report" && webReportCustom.trim()) {
+      try { JSON.parse(webReportCustom); } catch { toast("Custom Steps JSON is invalid", "error"); return; }
+    }
     setSaving(true);
     try {
       const baseConfig = valuesToConfig(ds?.type ?? "", editValues);
+      if (ds?.type === "web_report" && webReportCustom.trim()) {
+        baseConfig["custom"] = JSON.parse(webReportCustom);
+      }
       if (ds?.type === "ddm_simulation") {
         if (!runForever) {
           const n = Number(lengthValue);
@@ -185,28 +240,34 @@ export default function DatasourceDetailPage() {
     setPollUntil(Date.now() + 300_000); // poll for up to 5 minutes after queuing
   }
 
+  function extractApiError(body: any, fallback: string): string {
+    return body?.detail?.message ?? body?.error?.message ?? body?.detail ?? fallback;
+  }
+
   async function startCollection() {
     const res = await fetch(`/api/v1/datasources/${id}/collect`, { method: "POST" });
+    const body = await res.json().catch(() => ({}));
     if (res.ok) {
       toast("Collection queued", "success");
       triggerPoll();
     } else {
-      const body = await res.json().catch(() => ({}));
-      toast(body.error?.message ?? "Failed to start collection", "error");
+      toast(extractApiError(body, "Failed to start collection"), "error");
     }
     mutate(`/api/v1/collection-jobs?datasource_id=${id}`);
+    mutateFiles?.();
   }
 
   async function runJob(jobId: number) {
     const res = await fetch(`/api/v1/collection-jobs/${jobId}/run`, { method: "POST" });
+    const body = await res.json().catch(() => ({}));
     if (res.ok) {
       toast("Collection queued", "success");
       triggerPoll();
     } else {
-      const body = await res.json().catch(() => ({}));
-      toast(body.error?.message ?? "Failed to queue job", "error");
+      toast(extractApiError(body, "Failed to queue job"), "error");
     }
     mutate(`/api/v1/collection-jobs?datasource_id=${id}`);
+    mutateFiles?.();
   }
 
   const hasJobs = jobs && jobs.length > 0;
@@ -264,6 +325,12 @@ export default function DatasourceDetailPage() {
                   </div>
                 );
               })}
+              {ds.type === "web_report" && ds.config.custom != null && (
+                <div className="col-span-2">
+                  <p className="text-xs text-gray-500 uppercase">Custom Steps</p>
+                  <pre className="text-xs text-gray-300 mt-1 overflow-x-auto">{JSON.stringify(ds.config.custom, null, 2)}</pre>
+                </div>
+              )}
             </div>
           ) : (
             <pre className="text-xs text-gray-300 overflow-x-auto">{JSON.stringify(ds.config, null, 2)}</pre>
@@ -287,13 +354,20 @@ export default function DatasourceDetailPage() {
             <div key={f.key} className="space-y-1">
               <label className="text-xs text-gray-400 uppercase">{f.label}</label>
               {f.type === "select" ? (
-                <select
-                  className="md-input w-full"
-                  value={editValues[f.key] ?? ""}
-                  onChange={(e) => setEditValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                >
-                  {f.options?.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
+                <>
+                  <select
+                    className="md-input w-full"
+                    value={editValues[f.key] ?? ""}
+                    onChange={(e) => setEditValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  >
+                    {f.options?.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {f.optionDescriptions?.[editValues[f.key]] && (
+                    <p className="text-xs text-gray-400 bg-gray-800/60 rounded px-2 py-1.5 mt-1">
+                      {f.optionDescriptions[editValues[f.key]]}
+                    </p>
+                  )}
+                </>
               ) : f.type === "date" ? (
                 <input
                   type="date"
@@ -339,7 +413,20 @@ export default function DatasourceDetailPage() {
               )}
             </div>
           )}
-          {fields.length === 0 && ds?.type !== "ddm_simulation" && (
+          {ds?.type === "web_report" && (
+            <div className="space-y-1">
+              <label className="text-xs text-gray-400 uppercase">Custom Steps (JSON)</label>
+              <textarea
+                className="md-input w-full font-mono text-xs"
+                rows={8}
+                value={webReportCustom}
+                onChange={(e) => setWebReportCustom(e.target.value)}
+                placeholder={`[{\n  "type": "link_parse",\n  "targets": [{\n    "value": ".*\\.pdf",\n    "ext": "pdf",\n    "filename": "{YYMMDD}.pdf",\n    "type": "goto_download",\n    "unique": "text",\n    "interval_days": 1\n  }]\n}]`}
+              />
+              <p className="text-xs text-gray-500">Optional. Leave blank for a direct download. Use link_parse / element_parse for multi-step scraping.</p>
+            </div>
+          )}
+          {fields.length === 0 && ds?.type !== "ddm_simulation" && ds?.type !== "web_report" && (
             <p className="text-xs text-gray-500">No configurable fields for this datasource type.</p>
           )}
           <div className="flex gap-2 pt-2">
@@ -393,6 +480,69 @@ export default function DatasourceDetailPage() {
           )}
           {uploadedDatasets && uploadedDatasets.length === 0 && (
             <p className="text-sm text-gray-500">No datasets yet. Upload a CSV file above.</p>
+          )}
+        </section>
+      )}
+
+      {/* Downloaded Files (web_report only) */}
+      {ds?.type === "web_report" && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wide">Downloaded Files</h2>
+            <button
+              onClick={() => mutateFiles?.()}
+              className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {!webReportFiles && (
+            <p className="text-sm text-gray-500">No files downloaded yet. Run a collection job to download reports.</p>
+          )}
+          {webReportFiles && webReportFiles.length === 0 && (
+            <p className="text-sm text-gray-500">No files downloaded yet.</p>
+          )}
+          {webReportFiles && webReportFiles.length > 0 && (
+            <div className="rounded border border-gray-800 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800 text-left">
+                    <th className="px-4 py-2 text-xs text-gray-400 font-medium">Filename</th>
+                    <th className="px-4 py-2 text-xs text-gray-400 font-medium">Size</th>
+                    <th className="px-4 py-2 text-xs text-gray-400 font-medium">Downloaded</th>
+                    <th className="px-4 py-2 text-xs text-gray-400 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {webReportFiles.map((f: any) => (
+                    <tr key={f.path} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                      <td className="px-4 py-2 font-mono text-xs text-white">{f.name}</td>
+                      <td className="px-4 py-2 text-gray-400 text-xs tabular-nums">
+                        {f.size_bytes >= 1024 * 1024
+                          ? `${(f.size_bytes / 1024 / 1024).toFixed(1)} MB`
+                          : f.size_bytes >= 1024
+                          ? `${(f.size_bytes / 1024).toFixed(1)} KB`
+                          : `${f.size_bytes} B`}
+                      </td>
+                      <td className="px-4 py-2 text-gray-400 text-xs">
+                        {new Date(f.modified_at).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <a
+                          href={`/api/v1/datasources/${id}/web-report/files/${f.path}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-brand-400 hover:text-brand-300 hover:underline"
+                        >
+                          Open
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       )}

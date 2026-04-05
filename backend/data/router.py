@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -18,6 +21,123 @@ from data.service import data_service
 from data.repository import data_repo
 
 router = APIRouter(prefix="", tags=["data"])
+
+
+# ── Web-report link preview ───────────────────────────────────────────────────
+
+class WebReportPreviewRequest(BaseModel):
+    url: str
+    ext: str | None = None
+
+
+@router.post("/datasources/web-report/preview-links")
+async def preview_web_report_links(body: WebReportPreviewRequest):
+    """
+    Navigate to *url* with a headless browser and return all <a> links found,
+    annotated with whether they match the requested file extension.
+    Runs Playwright synchronously in a thread-pool executor.
+    """
+    import logging
+    from data.collectors.web_report import preview_links
+    try:
+        links = await asyncio.get_event_loop().run_in_executor(
+            None, preview_links, body.url, body.ext
+        )
+    except Exception as exc:
+        logging.getLogger(__name__).exception("[preview_links] scan failed for %s", body.url)
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail={"code": "SCAN_FAILED", "message": str(exc)})
+    matched = sum(1 for l in links if l["matches_ext"])
+    return DataResponse(data=links, meta={"total": len(links), "matches": matched})
+
+
+class WebReportTestRequest(BaseModel):
+    url: str
+    fetch_type: str = "load"
+    ext: str | None = None
+
+
+@router.post("/datasources/web-report/test-fetch")
+async def test_web_report_fetch(body: WebReportTestRequest):
+    """
+    Test whether the configured fetch method can access *url*.
+    Returns HTTP status, content-type, file size, and links (for HTML responses).
+    Runs synchronously in a thread-pool executor.
+    """
+    import logging
+    from data.collectors.web_report import test_fetch
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, test_fetch, body.url, body.fetch_type, body.ext
+        )
+    except Exception as exc:
+        logging.getLogger(__name__).exception("[test_fetch] failed for %s", body.url)
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail={"code": "TEST_FAILED", "message": str(exc)})
+    return DataResponse(data=result)
+
+
+# ── Web-report file browser ───────────────────────────────────────────────────
+
+@router.get("/datasources/{datasource_id}/web-report/files")
+async def list_web_report_files(datasource_id: int, db: AsyncSession = Depends(get_db)):
+    """List files downloaded by a web_report datasource."""
+    import os
+    from datetime import datetime, timezone
+    from pathlib import Path
+    from fastapi import HTTPException
+
+    item = await data_service.get_datasource(db, datasource_id)
+    if item.type != "web_report":
+        raise HTTPException(status_code=404, detail="Not a web_report datasource")
+
+    subfolder = (item.config or {}).get("subfolder") or f"src_{datasource_id}"
+    store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
+    report_dir = store / "web_reports" / subfolder
+
+    if not report_dir.exists():
+        return DataResponse(data=[], meta={"total": 0})
+
+    files = []
+    for f in sorted(report_dir.rglob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
+        if f.is_file():
+            stat = f.stat()
+            rel = f.relative_to(report_dir)
+            files.append({
+                "name": f.name,
+                "path": str(rel).replace("\\", "/"),
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            })
+
+    return DataResponse(data=files, meta={"total": len(files)})
+
+
+@router.get("/datasources/{datasource_id}/web-report/files/{file_path:path}")
+async def serve_web_report_file(datasource_id: int, file_path: str, db: AsyncSession = Depends(get_db)):
+    """Serve a downloaded web report file."""
+    import os
+    from pathlib import Path
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    item = await data_service.get_datasource(db, datasource_id)
+    if item.type != "web_report":
+        raise HTTPException(status_code=404, detail="Not a web_report datasource")
+
+    subfolder = (item.config or {}).get("subfolder") or f"src_{datasource_id}"
+    store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
+    report_dir = store / "web_reports" / subfolder
+
+    # Prevent path traversal
+    target = (report_dir / file_path).resolve()
+    if not str(target).startswith(str(report_dir.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(str(target))
 
 
 # ── Datasources ────────────────────────────────────────────────────────────────
@@ -56,7 +176,12 @@ async def delete_datasource(datasource_id: int, db: AsyncSession = Depends(get_d
 
 @router.post("/datasources/{datasource_id}/collect", status_code=202)
 async def trigger_collection(datasource_id: int, db: AsyncSession = Depends(get_db)):
-    job = await data_service.trigger_datasource_collection(db, datasource_id)
+    from fastapi import HTTPException
+    from celery_app import AlreadyRunningError
+    try:
+        job = await data_service.trigger_datasource_collection(db, datasource_id)
+    except AlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail={"code": "ALREADY_RUNNING", "message": str(exc)})
     return DataResponse(data={"job_id": job.id, "status": job.status})
 
 
@@ -258,8 +383,13 @@ async def get_collection_job(job_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/collection-jobs/{job_id}/run", response_model=DataResponse[CollectionJobRead], status_code=202)
 async def run_collection_job(job_id: int, db: AsyncSession = Depends(get_db)):
-    """Trigger an immediate collection run (enqueues an arq job)."""
-    item = await data_service.trigger_collection(db, job_id)
+    """Trigger an immediate collection run."""
+    from fastapi import HTTPException
+    from celery_app import AlreadyRunningError
+    try:
+        item = await data_service.trigger_collection(db, job_id)
+    except AlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail={"code": "ALREADY_RUNNING", "message": str(exc)})
     return DataResponse(data=item)
 
 
