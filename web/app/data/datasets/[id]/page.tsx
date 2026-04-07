@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import useSWR, { mutate } from "swr";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
@@ -24,10 +24,14 @@ type Tab = "overview" | "preview" | "characteristics";
 type CharsTab = "endogenous" | "exogenous";
 type SeasonalityView = "hour_day" | "hour_week" | "weekday_month" | "day_month" | "month_year";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FullMetrics = Record<string, any>;
+
 // Keys that the backend writes one-by-one into metrics; each maps to one chart section.
 // Order matches the backend registry (fastest → slowest) so charts appear progressively.
 const ENDOGENOUS_KEYS = ["return_dist", "ccdf", "diffusion", "acf", "vol_clustering", "qq"] as const;
 const EXOGENOUS_KEYS = ["exogenous_jump_tail", "exogenous_cdf", "exogenous_rolling_mean", "exogenous_long_lag_acf", "exogenous_seasonality"] as const;
+const ALL_CHAR_KEYS = [...ENDOGENOUS_KEYS, ...EXOGENOUS_KEYS] as const;
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 
@@ -67,17 +71,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 // ── Endogenous charts ─────────────────────────────────────────────────────────
 
-function ReturnDistSection({ full }: { full: FullMetrics }) {
-  const { stats, return_dist } = full;
+function ReturnDistSection({ m }: { m: FullMetrics }) {
+  const stats = m.stats;
   const lg = (v: number | null) => (v !== null && v > 0) ? Math.log10(v) : null;
-  const histData = return_dist.centers
-    .map((x, j) => { const y = lg(return_dist.hist[j]); return y !== null ? { x, y } : null; })
+  const histData = m.centers
+    .map((x, j) => { const y = lg(m.hist[j]); return y !== null ? { x, y } : null; })
     .filter((d): d is { x: number; y: number } => d !== null);
-  const normalData = return_dist.centers
-    .map((x, j) => { const y = lg(return_dist.normal_pdf[j]); return y !== null ? { x, y } : null; })
+  const normalData = m.centers
+    .map((x, j) => { const y = lg(m.normal_pdf[j]); return y !== null ? { x, y } : null; })
     .filter((d): d is { x: number; y: number } => d !== null);
-  const laplaceData = return_dist.centers
-    .map((x, j) => { const y = lg(return_dist.laplace_pdf[j]); return y !== null ? { x, y } : null; })
+  const laplaceData = m.centers
+    .map((x, j) => { const y = lg(m.laplace_pdf[j]); return y !== null ? { x, y } : null; })
     .filter((d): d is { x: number; y: number } => d !== null);
 
   return (
@@ -120,10 +124,10 @@ function ReturnDistSection({ full }: { full: FullMetrics }) {
   );
 }
 
-function CcdfSection({ full }: { full: FullMetrics }) {
-  const data = full.ccdf_hist.x
+function CcdfSection({ m }: { m: FullMetrics }) {
+  const data = m.x
     .map((x, j) => {
-      const y = full.ccdf_hist.y[j];
+      const y = m.y[j];
       return (y !== null && y > 0 && x > 0) ? { x: Math.log10(x), y: Math.log10(y) } : null;
     })
     .filter((d): d is { x: number; y: number } => d !== null);
@@ -147,9 +151,9 @@ function CcdfSection({ full }: { full: FullMetrics }) {
   );
 }
 
-function AcfSection({ full }: { full: FullMetrics }) {
-  const rData = full.acf_returns.map((v, lag) => ({ lag, acf: v }));
-  const absData = full.acf_abs_returns.map((v, lag) => ({ lag, acf: v }));
+function AcfSection({ m }: { m: FullMetrics }) {
+  const rData = m.returns.map((v, lag) => ({ lag, acf: v }));
+  const absData = m.abs_returns.map((v, lag) => ({ lag, acf: v }));
   return (
     <Section title="Autocorrelation — returns r (dashed) and |r| (solid)">
       <p className="text-xs text-gray-600">Significant positive ACF of |r| at many lags signals volatility clustering.</p>
@@ -172,10 +176,10 @@ function AcfSection({ full }: { full: FullMetrics }) {
   );
 }
 
-function DiffusionSection({ full }: { full: FullMetrics }) {
-  const data = full.diffusion.lags
+function DiffusionSection({ m }: { m: FullMetrics }) {
+  const data = m.lags
     .map((lag, j) => {
-      const v = full.diffusion.vars[j];
+      const v = m.vars[j];
       return (lag > 0 && v > 0) ? { lag: Math.log10(lag), v: Math.log10(v) } : null;
     })
     .filter((d): d is { lag: number; v: number } => d !== null);
@@ -199,8 +203,8 @@ function DiffusionSection({ full }: { full: FullMetrics }) {
   );
 }
 
-function VolClusteringSection({ full }: { full: FullMetrics }) {
-  const data = full.volatility_clustering.map((v, lag) => ({ lag, acf: v }));
+function VolClusteringSection({ m }: { m: FullMetrics }) {
+  const data = m.values.map((v, lag) => ({ lag, acf: v }));
   return (
     <Section title="Volatility Clustering — ACF of |r| (lags 0–100)">
       <p className="text-xs text-gray-600">Real markets show slowly-decaying positive autocorrelation in absolute returns.</p>
@@ -220,11 +224,11 @@ function VolClusteringSection({ full }: { full: FullMetrics }) {
   );
 }
 
-function QqSection({ full }: { full: FullMetrics }) {
-  const tVals = full.qq.map((p) => p.t);
+function QqSection({ m }: { m: FullMetrics }) {
+  const tVals = m.points.map((p) => p.t);
   const mn = Math.min(...tVals);
   const mx = Math.max(...tVals);
-  const { slope, intercept } = full.qq_line;
+  const { slope, intercept } = m.line;
   const fitLine = [
     { t: mn, s: slope * mn + intercept },
     { t: mx, s: slope * mx + intercept },
@@ -244,7 +248,7 @@ function QqSection({ full }: { full: FullMetrics }) {
           <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11 }} />
           <Scatter name="Normal fit" data={fitLine} fill="#4b5563"
             line={{ stroke: "#4b5563", strokeDasharray: "4 2" }} shape={NoShape} legendType="none" />
-          <Scatter name="Sample" data={full.qq} fill={COLOR}
+          <Scatter name="Sample" data={m.points} fill={COLOR}
             line={{ stroke: COLOR, strokeWidth: 1.5 }} shape={NoShape} />
         </ScatterChart>
       </ResponsiveContainer>
@@ -320,10 +324,10 @@ function hasVol(arr: (number | null)[]): boolean {
 
 // ── Unified SeasonalityPanel ──────────────────────────────────────────────────
 
-function SeasonalityPanel({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
+function SeasonalityPanel({ m }: { m: FullMetrics }) {
   const [view, setView] = useState<SeasonalityView>("hour_week");
-  const intrad = ex.intraday_seasonality;
-  const seas = ex.seasonality;
+  const intrad = m.intraday;
+  const seas = m.seasonality;
 
   return (
     <Section title="Seasonality">
@@ -545,9 +549,9 @@ function SeasonalityPanel({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> })
   );
 }
 
-function JumpTailSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
-  if (!ex.jump_tail) return null;
-  const jt = ex.jump_tail;
+function JumpTailSection({ m }: { m: FullMetrics }) {
+  if (!m) return null;
+  const jt = m;
   return (
     <Section title="Jump / Tail Statistics">
       <p className="text-xs text-gray-600">Jump rate = fraction of returns exceeding ±3σ. Quantiles show tail heaviness.</p>
@@ -576,9 +580,9 @@ function JumpTailSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) 
   );
 }
 
-function CdfSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
-  if (!ex.cdf) return null;
-  const data = ex.cdf.x.map((x, j) => ({ x, y: ex.cdf!.y[j] }));
+function CdfSection({ m }: { m: FullMetrics }) {
+  if (!m) return null;
+  const data = m.x.map((x, j) => ({ x, y: m.y[j] }));
   return (
     <Section title="CDF — Cumulative Distribution of Returns">
       <p className="text-xs text-gray-600">Empirical CDF of log-returns. S-curve shape; fat tails bow wider than Normal.</p>
@@ -598,9 +602,9 @@ function CdfSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
   );
 }
 
-function RollingMeanSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
-  if (!ex.rolling_mean) return null;
-  const rm = ex.rolling_mean;
+function RollingMeanSection({ m }: { m: FullMetrics }) {
+  if (!m) return null;
+  const rm = m;
   const data = rm.index.map((x, j) => ({ x, y: rm.values[j] }));
   return (
     <Section title="Drift / Rolling Mean of Returns">
@@ -624,9 +628,9 @@ function RollingMeanSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> 
   );
 }
 
-function LongLagAcfSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }) {
-  if (!ex.long_lag_acf) return null;
-  const la = ex.long_lag_acf;
+function LongLagAcfSection({ m }: { m: FullMetrics }) {
+  if (!m) return null;
+  const la = m;
   const data = la.lags.map((lag, j) => ({ lag, acf: la.values[j] }));
   return (
     <Section title="Long-lag ACF of Returns">
@@ -669,40 +673,39 @@ function LongLagAcfSection({ ex }: { ex: NonNullable<FullMetrics["exogenous"]> }
 
 // ── CharacteristicsPanel ──────────────────────────────────────────────────────
 
+function SkeletonSection({ title }: { title: string }) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3 animate-pulse">
+      <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">{title}</h3>
+      <div className="h-[270px] bg-gray-800/50 rounded" />
+    </div>
+  );
+}
+
 function CharacteristicsPanel({ metrics }: { metrics: Record<string, any> }) {
   const [charsTab, setCharsTab] = useState<CharsTab>("endogenous");
-  const fullRaw = metrics?.full ?? null;
-  const full: FullMetrics | null = fullRaw && !fullRaw.error ? fullRaw : null;
+  const m = metrics;
 
-  if (!full) {
-    // Fallback: basic stats only
-    const basicStats = metrics?.basic_stats;
-    return (
-      <div className="space-y-4">
-        {basicStats && (
-          <div className="grid grid-cols-3 gap-3">
-            <StatCard label="Rows" value={basicStats.row_count?.toLocaleString()} />
-            <StatCard label="Hurst" value={basicStats.hurst?.toFixed(4)} hint="0.5 = random, >0.5 = trending" />
-            <StatCard label="Return std" value={basicStats.return_std?.toExponential(3)} />
-          </div>
-        )}
-        {fullRaw?.error && (
-          <p className="text-xs text-red-400 bg-red-900/20 border border-red-800 rounded px-3 py-2">
-            Full analysis failed: {fullRaw.error}
-          </p>
-        )}
-        <div className="rounded border border-gray-800 bg-gray-900 p-4">
-          <p className="text-xs text-gray-400 mb-2 uppercase">Raw metrics (JSON)</p>
-          <pre className="text-xs text-gray-500 overflow-x-auto max-h-64">{JSON.stringify(metrics, null, 2)}</pre>
-        </div>
-      </div>
-    );
-  }
+  const isComputing = ALL_CHAR_KEYS.some((k) => !(k in m));
+  const doneCount = ALL_CHAR_KEYS.filter((k) => k in m).length;
 
-  const hasExogenous = !!full.exogenous;
+  const exoAllDone = EXOGENOUS_KEYS.every((k) => k in m);
+  const exoHasData = EXOGENOUS_KEYS.some((k) => k in m && !m[k]?.error);
+  const hasExogenous = exoHasData || !exoAllDone;
 
   return (
     <div className="space-y-4">
+      {/* Progress indicator while computing */}
+      {isComputing && (
+        <div className="flex items-center gap-2 text-xs text-gray-400">
+          <svg className="animate-spin h-3 w-3 text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Computing… {doneCount}/{ALL_CHAR_KEYS.length} analyses done
+        </div>
+      )}
+
       {/* Sub-tabs */}
       <div className="flex gap-1 border-b border-gray-800">
         {(["endogenous", "exogenous"] as CharsTab[]).map((t) => (
@@ -718,26 +721,48 @@ function CharacteristicsPanel({ metrics }: { metrics: Record<string, any> }) {
 
       {charsTab === "endogenous" && (
         <div className="space-y-4">
-          <ReturnDistSection full={full} />
-          <CcdfSection full={full} />
-          <AcfSection full={full} />
-          <DiffusionSection full={full} />
-          <VolClusteringSection full={full} />
-          <QqSection full={full} />
+          {m.return_dist && !m.return_dist.error
+            ? <ReturnDistSection m={m.return_dist} />
+            : <SkeletonSection title="Statistics — Return Distribution" />}
+          {m.ccdf && !m.ccdf.error
+            ? <CcdfSection m={m.ccdf} />
+            : <SkeletonSection title="Fat Tail — CCDF (log-log)" />}
+          {m.acf && !m.acf.error
+            ? <AcfSection m={m.acf} />
+            : <SkeletonSection title="Autocorrelation — returns r and |r|" />}
+          {m.diffusion && !m.diffusion.error
+            ? <DiffusionSection m={m.diffusion} />
+            : <SkeletonSection title="Diffusion Scaling" />}
+          {m.vol_clustering && !m.vol_clustering.error
+            ? <VolClusteringSection m={m.vol_clustering} />
+            : <SkeletonSection title="Volatility Clustering" />}
+          {m.qq && !m.qq.error
+            ? <QqSection m={m.qq} />
+            : <SkeletonSection title="QQ Plot vs Normal Distribution" />}
         </div>
       )}
 
       {charsTab === "exogenous" && (
         <div className="space-y-4">
-          {!hasExogenous ? (
+          {exoAllDone && !exoHasData ? (
             <p className="text-sm text-gray-500">No exogenous data available for this dataset.</p>
           ) : (
             <>
-              <SeasonalityPanel ex={full.exogenous!} />
-              <JumpTailSection ex={full.exogenous!} />
-              <CdfSection ex={full.exogenous!} />
-              <RollingMeanSection ex={full.exogenous!} />
-              <LongLagAcfSection ex={full.exogenous!} />
+              {m.exogenous_seasonality && !m.exogenous_seasonality.error
+                ? <SeasonalityPanel m={m.exogenous_seasonality} />
+                : (!exoAllDone && <SkeletonSection title="Seasonality" />)}
+              {m.exogenous_jump_tail && !m.exogenous_jump_tail.error
+                ? <JumpTailSection m={m.exogenous_jump_tail} />
+                : (!exoAllDone && <SkeletonSection title="Jump / Tail Statistics" />)}
+              {m.exogenous_cdf && !m.exogenous_cdf.error
+                ? <CdfSection m={m.exogenous_cdf} />
+                : (!exoAllDone && <SkeletonSection title="CDF — Cumulative Distribution" />)}
+              {m.exogenous_rolling_mean && !m.exogenous_rolling_mean.error
+                ? <RollingMeanSection m={m.exogenous_rolling_mean} />
+                : (!exoAllDone && <SkeletonSection title="Drift / Rolling Mean" />)}
+              {m.exogenous_long_lag_acf && !m.exogenous_long_lag_acf.error
+                ? <LongLagAcfSection m={m.exogenous_long_lag_acf} />
+                : (!exoAllDone && <SkeletonSection title="Long-lag ACF" />)}
             </>
           )}
         </div>
@@ -750,27 +775,49 @@ function CharacteristicsPanel({ metrics }: { metrics: Record<string, any> }) {
 
 export default function DatasetDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("overview");
   const [deleting, setDeleting] = useState(false);
   const [renamingName, setRenamingName] = useState<string | null>(null);
+  const [showComparePicker, setShowComparePicker] = useState(false);
+  const [compareSearch, setCompareSearch] = useState("");
+  const { data: allDatasets } = useSWR(
+    showComparePicker ? "/api/v1/datasets?page_size=200" : null,
+    fetcher,
+  );
   const [computingChars, setComputingChars] = useState(false);
   const [computingElapsed, setComputingElapsed] = useState(0);
   const computingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Timestamp of the row that existed when recompute was triggered; used to
+  // distinguish the new row from the stale one still in the DB during the delay
+  // between enqueue and worker creating the empty row.
+  const computeTriggeredAtRef = useRef<string | null>(null);
   const isRunning = (d: any) => d?.status === "running";
   const { data: dataset } = useSWR(`/api/v1/datasets/${id}`, fetcher, {
     refreshInterval: (data) => isRunning(data) ? 3000 : 0,
   });
-  const { data: chars } = useSWR(
-    tab === "characteristics" ? `/api/v1/datasets/${id}/characteristics` : null,
+  const { data: datasource } = useSWR(
+    dataset?.datasource_id ? `/api/v1/datasources/${dataset.datasource_id}` : null,
     fetcher,
-    { refreshInterval: computingChars ? 2000 : 0 },
+  );
+
+  const isWebReport = datasource?.type === "web_report";
+
+  const { data: chars } = useSWR(
+    !isWebReport && tab === "characteristics" ? `/api/v1/datasets/${id}/characteristics` : null,
+    fetcher,
+    { refreshInterval: (data) => {
+      if (computingChars) return 2000;
+      if (data && ALL_CHAR_KEYS.some((k) => !(k in (data.metrics ?? {})))) return 2000;
+      return 0;
+    }},
   );
   const [previewTimeframe, setPreviewTimeframe] = useState<string>("");
   const tfParam = previewTimeframe ? `&timeframe=${previewTimeframe}` : "";
   const canPreview = dataset?.status === "ready" || dataset?.status === "running";
   const { data: preview } = useSWR(
-    tab === "preview" && canPreview ? `/api/v1/datasets/${id}/preview?rows=200${tfParam}` : null,
+    !isWebReport && tab === "preview" && canPreview ? `/api/v1/datasets/${id}/preview?rows=200${tfParam}` : null,
     fetcher,
     { refreshInterval: tab === "preview" && isRunning(dataset) ? 5000 : 0 },
   );
@@ -779,10 +826,23 @@ export default function DatasetDetailPage() {
     fetcher,
     { refreshInterval: 3000 },
   );
+  const [fileShowAll, setFileShowAll] = useState(false);
+  const { data: webFiles, mutate: mutateFiles } = useSWR(
+    isWebReport && dataset?.datasource_id
+      ? `/api/v1/datasources/${dataset.datasource_id}/web-report/files`
+      : null,
+    fetcher,
+  );
 
-  // Stop polling and timer once characteristics data arrives
-  if (computingChars && chars) {
+  // Stop polling and timer only when a row *newer* than the one that existed
+  // when recompute was triggered has all its keys. This prevents the stale row
+  // (which already has all keys) from immediately cancelling the poll.
+  const isNewerRow = !computeTriggeredAtRef.current ||
+    (chars?.computed_at && new Date(chars.computed_at) > new Date(computeTriggeredAtRef.current));
+  const charsComplete = chars && isNewerRow && ALL_CHAR_KEYS.every((k) => k in (chars.metrics ?? {}));
+  if (computingChars && charsComplete) {
     setComputingChars(false);
+    computeTriggeredAtRef.current = null;
     if (computingTimerRef.current) {
       clearInterval(computingTimerRef.current);
       computingTimerRef.current = null;
@@ -793,6 +853,8 @@ export default function DatasetDetailPage() {
   useEffect(() => () => { if (computingTimerRef.current) clearInterval(computingTimerRef.current); }, []);
 
   async function computeChars() {
+    // Record the current row's timestamp so we can ignore it when checking completion.
+    computeTriggeredAtRef.current = chars?.computed_at ?? new Date().toISOString();
     setComputingChars(true);
     setComputingElapsed(0);
     if (computingTimerRef.current) clearInterval(computingTimerRef.current);
@@ -866,12 +928,20 @@ export default function DatasetDetailPage() {
         </div>
         {dataset && (
           <div className="flex gap-2">
-            {dataset.status === "ready" && (
+            {!isWebReport && dataset.status === "ready" && (
               <a
                 href={`/api/v1/datasets/${id}/download${previewTimeframe ? `?timeframe=${previewTimeframe}` : ""}`}
                 className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-400 hover:text-white"
               >
                 Download CSV
+              </a>
+            )}
+            {isWebReport && dataset.datasource_id && (
+              <a
+                href={`/data/datasources/${dataset.datasource_id}`}
+                className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-400 hover:text-white"
+              >
+                ← Datasource
               </a>
             )}
             <button
@@ -885,8 +955,75 @@ export default function DatasetDetailPage() {
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-800">
+      {/* ── Web report dataset: file browser ── */}
+      {isWebReport && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <InfoCard label="Collected" value={dataset?.from_ts ? new Date(dataset.from_ts).toLocaleString() : "—"} />
+            <InfoCard label="Files this run" value={dataset?.row_count?.toLocaleString() ?? "—"} />
+            <InfoCard label="Subfolder" value={dataset?.artifact_path ?? "—"} mono />
+          </div>
+
+          <div className="rounded border border-gray-800 bg-gray-900 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                Downloaded Files
+                {webFiles && <span className="ml-2 text-gray-600 normal-case font-normal">{webFiles.length} total</span>}
+              </h2>
+              <button onClick={() => mutateFiles()} className="text-xs text-gray-500 hover:text-white">Refresh</button>
+            </div>
+
+            {!webFiles && <p className="text-sm text-gray-500">Loading…</p>}
+            {webFiles && webFiles.length === 0 && <p className="text-sm text-gray-500">No files downloaded yet.</p>}
+            {webFiles && webFiles.length > 0 && (
+              <>
+                <div className="rounded border border-gray-800 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-800 text-left">
+                        <th className="px-4 py-2 text-xs text-gray-400 font-medium">Filename</th>
+                        <th className="px-4 py-2 text-xs text-gray-400 font-medium">Size</th>
+                        <th className="px-4 py-2 text-xs text-gray-400 font-medium">Downloaded</th>
+                        <th className="px-4 py-2 text-xs text-gray-400 font-medium"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(fileShowAll ? webFiles : webFiles.slice(0, 20)).map((f: any) => (
+                        <tr key={f.path} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                          <td className="px-4 py-2 font-mono text-xs text-white">{f.name}</td>
+                          <td className="px-4 py-2 text-gray-400 text-xs tabular-nums">
+                            {f.size_bytes >= 1048576 ? `${(f.size_bytes / 1048576).toFixed(1)} MB`
+                              : f.size_bytes >= 1024 ? `${(f.size_bytes / 1024).toFixed(1)} KB`
+                              : `${f.size_bytes} B`}
+                          </td>
+                          <td className="px-4 py-2 text-gray-400 text-xs">{new Date(f.modified_at).toLocaleString()}</td>
+                          <td className="px-4 py-2 text-right">
+                            <a href={`/api/v1/datasources/${dataset?.datasource_id}/web-report/files/${f.path}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="text-xs text-brand-400 hover:text-brand-300 hover:underline">
+                              Open
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {webFiles.length > 20 && (
+                    <div className="px-4 py-2 border-t border-gray-800">
+                      <button onClick={() => setFileShowAll((v) => !v)} className="text-xs text-gray-500 hover:text-white">
+                        {fileShowAll ? "Show less" : `Show all ${webFiles.length} files`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Time-series dataset: tabs ── */}
+      {!isWebReport && <div className="flex gap-1 border-b border-gray-800">
         {(["overview", "preview", "characteristics"] as Tab[]).map((t) => (
           <button
             key={t}
@@ -898,10 +1035,10 @@ export default function DatasetDetailPage() {
             {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* Overview */}
-      {tab === "overview" && dataset && (
+      {!isWebReport && tab === "overview" && dataset && (
         <div className="grid grid-cols-2 gap-4">
           <InfoCard label="From" value={dataset.from_ts ? new Date(dataset.from_ts).toLocaleDateString() : "—"} />
           <InfoCard label="To" value={dataset.to_ts ? new Date(dataset.to_ts).toLocaleDateString() : "—"} />
@@ -912,7 +1049,7 @@ export default function DatasetDetailPage() {
       )}
 
       {/* Preview */}
-      {tab === "preview" && (
+      {!isWebReport && tab === "preview" && (
         <div className="space-y-3">
           {isRunning(dataset) && (
             <div className="flex items-center gap-2 rounded border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-300">
@@ -966,7 +1103,7 @@ export default function DatasetDetailPage() {
       )}
 
       {/* Characteristics */}
-      {tab === "characteristics" && (
+      {!isWebReport && tab === "characteristics" && (
         <div className="space-y-4">
           {!chars && (
             <div className="flex items-center gap-3">
@@ -993,13 +1130,64 @@ export default function DatasetDetailPage() {
           )}
           {chars && (
             <>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setCompareSearch(""); setShowComparePicker(true); }}
+                  className="rounded border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-500 hover:text-white">
+                  Compare with…
+                </button>
                 <button onClick={computeChars} className="rounded bg-gray-700 px-3 py-1.5 text-xs text-white hover:bg-gray-600">
                   Recompute
                 </button>
               </div>
               <CharacteristicsPanel metrics={chars.metrics} />
             </>
+          )}
+
+          {/* Compare picker modal */}
+          {showComparePicker && (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+              onClick={() => setShowComparePicker(false)}>
+              <div className="bg-gray-900 border border-gray-700 rounded-lg w-96 max-h-[480px] flex flex-col"
+                onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+                  <h3 className="text-sm font-medium text-white">Compare with another dataset</h3>
+                  <button onClick={() => setShowComparePicker(false)}
+                    className="text-gray-500 hover:text-white text-lg leading-none">×</button>
+                </div>
+                <div className="px-4 py-2 border-b border-gray-800">
+                  <input
+                    autoFocus
+                    value={compareSearch}
+                    onChange={(e) => setCompareSearch(e.target.value)}
+                    placeholder="Search by name or symbol…"
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                </div>
+                <div className="overflow-y-auto flex-1">
+                  {!allDatasets && <p className="text-xs text-gray-500 px-4 py-3">Loading…</p>}
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {(allDatasets ?? []).filter((d: any) =>
+                    d.id !== Number(id) &&
+                    (d.name.toLowerCase().includes(compareSearch.toLowerCase()) ||
+                      (d.symbol ?? "").toLowerCase().includes(compareSearch.toLowerCase()))
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  ).map((d: any) => (
+                    <button key={d.id}
+                      onClick={() => { setShowComparePicker(false); router.push(`/data/compare?ids=${id},${d.id}`); }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-gray-800 border-b border-gray-800/40 transition-colors">
+                      <p className="text-sm text-white">{d.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {[d.symbol, d.timeframe, d.row_count ? d.row_count.toLocaleString() + " rows" : null]
+                          .filter(Boolean).join(" · ")}
+                      </p>
+                    </button>
+                  ))}
+                  {allDatasets && (allDatasets as any[]).filter((d: any) => d.id !== Number(id)).length === 0 && (
+                    <p className="text-xs text-gray-500 px-4 py-3">No other datasets found.</p>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

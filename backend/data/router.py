@@ -381,6 +381,21 @@ async def get_collection_job(job_id: int, db: AsyncSession = Depends(get_db)):
     return DataResponse(data=item)
 
 
+@router.post("/collection-jobs/{job_id}/reset", response_model=DataResponse[CollectionJobRead])
+async def reset_collection_job(job_id: int, db: AsyncSession = Depends(get_db)):
+    """Force-reset a stuck job from 'running' back to 'idle'. Use after an ungraceful worker restart."""
+    from sqlalchemy import update
+    from data.models import CollectionJob
+    from data.service import _revoke_collection_task
+    _revoke_collection_task(job_id)
+    await db.execute(
+        update(CollectionJob).where(CollectionJob.id == job_id).values(status="idle", last_error="Reset after worker restart")
+    )
+    await db.commit()
+    item = await data_service.get_collection_job(db, job_id)
+    return DataResponse(data=item)
+
+
 @router.post("/collection-jobs/{job_id}/run", response_model=DataResponse[CollectionJobRead], status_code=202)
 async def run_collection_job(job_id: int, db: AsyncSession = Depends(get_db)):
     """Trigger an immediate collection run."""

@@ -80,6 +80,8 @@ services:
       API_URL: http://backend:8000
       NEXT_PUBLIC_API_URL: http://localhost:8000
       NEXT_PUBLIC_WS_URL: ws://localhost:8000
+      # Enable polling so Next.js detects file changes from Windows host via volume mount
+      WATCHPACK_POLLING: "true"
     depends_on:
       - backend
     volumes:

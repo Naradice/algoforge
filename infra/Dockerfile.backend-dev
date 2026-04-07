@@ -12,4 +12,7 @@ RUN pip install --no-cache-dir --no-deps /deps/finance_client
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Install Playwright browser binaries (needed for web_report collector)
-RUN playwright install chromium --with-deps
+# Install Chrome (not just bundled Chromium) — gives an authentic fingerprint
+# that bypasses Akamai/CDN bot detection, matching the Windows dev behaviour
+# where _launch_browser() picks up the real Chrome via channel="chrome".
+RUN playwright install chrome --with-deps

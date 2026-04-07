@@ -74,7 +74,14 @@ _UA = (
     "Chrome/119.0.0.0 Safari/537.36"
 )
 # Launch arg + init script that hides the automation fingerprint
-_STEALTH_ARGS = ["--disable-blink-features=AutomationControlled"]
+_STEALTH_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    # Required when running as root inside Docker
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    # Prevents crashes due to /dev/shm size limits in Docker
+    "--disable-dev-shm-usage",
+]
 _STEALTH_SCRIPT = "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
 
 
@@ -303,8 +310,15 @@ def test_fetch(url: str, fetch_type: str, ext: str | None = None) -> dict:
         page = ctx.new_page()
         try:
             if fetch_type == "goto_download":
-                # Issue the request via browser fetch() — same path as the actual collector
+                # Navigate to origin first so fetch() runs with a proper Origin header
+                # (fetch from about:blank sends Origin: null which many servers reject)
                 try:
+                    _parsed = urlparse(url)
+                    _origin = f"{_parsed.scheme}://{_parsed.netloc}/"
+                    try:
+                        page.goto(_origin, wait_until="domcontentloaded", timeout=30_000)
+                    except Exception:
+                        page.goto("about:blank")
                     info = page.evaluate(
                         """async (u) => {
                             const r = await fetch(u);
@@ -387,7 +401,7 @@ class CollectResult:
 # ── Public entry point ────────────────────────────────────────────────────────
 
 
-def collect(datasource_id: int, config: dict) -> CollectResult:
+def collect(datasource_id: int, config: dict, *, force: bool = False) -> CollectResult:
     url: str = config["url"]
     ext: str = config.get("ext", "pdf")
     subfolder: str = config.get("subfolder", f"src_{datasource_id}")
@@ -403,7 +417,8 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     (reports_root / _CHECKSUM_DIR).mkdir(parents=True, exist_ok=True)
 
     state_file = reports_root / _STATE_FILE
-    if interval_days is not None and not _should_run(url, interval_days, state_file):
+    if not force and interval_days is not None and not _should_run(url, interval_days, state_file):
+        logger.info("[collect] skipping %s — interval_days=%s not elapsed", url, interval_days)
         files = [f for f in out_dir.rglob("*") if f.is_file()]
         now = datetime.now(tz=timezone.utc)
         return CollectResult(
@@ -424,7 +439,7 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
             if _save_file(url, dest, fetch_type, unique, reports_root, browser_state):
                 files_downloaded += 1
         else:
-            files_downloaded = _process_custom(url, custom, out_dir, reports_root, browser_state)
+            files_downloaded = _process_custom(url, custom, out_dir, reports_root, browser_state, force=force)
     finally:
         _close_browser(browser_state)
 
@@ -443,7 +458,8 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
 
 
 def _process_custom(
-    page_url: str, steps: list, out_dir: Path, reports_root: Path, browser_state: list
+    page_url: str, steps: list, out_dir: Path, reports_root: Path, browser_state: list,
+    *, force: bool = False,
 ) -> int:
     total = 0
     for step in steps:
@@ -457,7 +473,7 @@ def _process_custom(
                 for link in links:
                     if re.search(pattern, link.get("href") or ""):
                         href = _abs_url(link["href"], page_url)
-                        total += _handle_target(href, link.get("text", ""), target, out_dir, reports_root, browser_state)
+                        total += _handle_target(href, link.get("text", ""), target, out_dir, reports_root, browser_state, force=force)
 
         elif step_type == "element_parse":
             for target in targets:
@@ -466,7 +482,7 @@ def _process_custom(
                 for val in _extract_elements(page_url, selector, browser_state):
                     if re.search(pattern, val or ""):
                         abs_val = _abs_url(val, page_url)
-                        total += _handle_target(abs_val, val, target, out_dir, reports_root, browser_state)
+                        total += _handle_target(abs_val, val, target, out_dir, reports_root, browser_state, force=force)
 
     return total
 
@@ -478,14 +494,16 @@ def _handle_target(
     out_dir: Path,
     reports_root: Path,
     browser_state: list,
+    *,
+    force: bool = False,
 ) -> int:
     inner_custom = target.get("custom")
     if inner_custom:
-        return _process_custom(url, inner_custom, out_dir, reports_root, browser_state)
+        return _process_custom(url, inner_custom, out_dir, reports_root, browser_state, force=force)
 
     interval_days = target.get("interval_days", 1)
     state_file = reports_root / _STATE_FILE
-    if interval_days is not None and not _should_run(url, interval_days, state_file):
+    if not force and interval_days is not None and not _should_run(url, interval_days, state_file):
         return 0
 
     ext = target.get("ext", "pdf")
@@ -519,7 +537,8 @@ def _save_file(
     if fetch_type == "load":
         try:
             data = _http_binary(url)
-        except Exception:
+        except Exception as exc:
+            logger.warning("[save_file] load failed for %s: %s", url, exc)
             return False
         if not _dedup_ok(unique, dest, data, checksum_file, link_text):
             return False
@@ -533,13 +552,15 @@ def _save_file(
                 return False
             try:
                 _playwright_save_pdf(url, dest, browser_state)
-            except Exception:
+            except Exception as exc:
+                logger.warning("[save_file] goto_load failed for %s: %s", url, exc)
                 return False
             return dest.exists()
         else:
             try:
                 data = _playwright_fetch_binary(url, browser_state)
-            except Exception:
+            except Exception as exc:
+                logger.warning("[save_file] goto_download failed for %s: %s", url, exc)
                 return False
             if not _dedup_ok(unique, dest, data, checksum_file, link_text):
                 return False
@@ -615,9 +636,11 @@ def _playwright_save_pdf(url: str, dest: Path, state: list) -> None:
     page = browser.new_page()
     try:
         try:
-            page.goto(url, wait_until="networkidle", timeout=60_000)
+            response = page.goto(url, wait_until="networkidle", timeout=60_000)
         except PWTimeout:
-            pass
+            response = None
+        if response is not None and response.status >= 400:
+            raise RuntimeError(f"HTTP {response.status} navigating to {url}")
         page.pdf(path=str(dest), format="A4", print_background=False)
     finally:
         page.close()
@@ -627,10 +650,16 @@ def _playwright_fetch_binary(url: str, state: list) -> bytes:
     from playwright.sync_api import TimeoutError as PWTimeout
 
     browser = _init_browser(state)
-    # Use a blank page to issue a fetch() in the browser context (bypasses CDN blocks)
     page = browser.new_page()
     try:
-        page.goto("about:blank")
+        # Navigate to the origin first so fetch() runs with a proper Origin header
+        # (fetch from about:blank sends Origin: null which many servers reject)
+        parsed = urlparse(url)
+        origin_url = f"{parsed.scheme}://{parsed.netloc}/"
+        try:
+            page.goto(origin_url, wait_until="domcontentloaded", timeout=30_000)
+        except Exception:
+            page.goto("about:blank")
         data = page.evaluate(
             """async (u) => {
                 const r = await fetch(u);
@@ -719,7 +748,8 @@ def _dedup_ok(unique, dest: Path, data: bytes, checksum_file: Path, link_text: s
         payload = link_text.encode() if unique == "text" else data
         new_hash = hashlib.sha256(payload).hexdigest()
         if checksum_file.exists() and checksum_file.read_text().strip() == new_hash:
-            return False
+            # Skip only if the file is also still on disk — re-download if it was deleted
+            return not dest.exists()
         return True
 
     return True

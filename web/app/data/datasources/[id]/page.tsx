@@ -8,6 +8,16 @@ import { useParams } from "next/navigation";
 import { useToast } from "@/lib/toast";
 import { CsvUploadForm, type ColMap } from "@/components/csv-upload-form";
 
+type TestResult = {
+  success: boolean;
+  status_code?: number;
+  content_type?: string;
+  size_bytes?: number;
+  title?: string;
+  links?: { href: string; text: string; filename: string; matches_ext: boolean }[];
+  error?: string;
+};
+
 // ── Config field definitions (shared with new-datasource page) ────────────────
 
 const TIMEFRAME_OPTIONS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
@@ -143,6 +153,60 @@ export default function DatasourceDetailPage() {
   const [lengthValue, setLengthValue] = useState("1000");
   const [uploading, setUploading] = useState(false);
 
+  // Test-fetch state (web_report only)
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [testShowLinks, setTestShowLinks] = useState(false);
+
+  async function handleTestFetch() {
+    const cfg = ds?.config ?? {};
+    const url = cfg.url;
+    const fetch_type = cfg.type ?? "load";
+    const ext = cfg.ext ?? undefined;
+    if (!url) return;
+    setTestLoading(true);
+    setTestError(null);
+    setTestResult(null);
+    setTestShowLinks(false);
+    try {
+      const res = await fetch("/api/v1/datasources/web-report/test-fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, fetch_type, ext }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTestError(body.error?.message ?? body.detail?.message ?? "Test failed");
+        return;
+      }
+      setTestResult(body.data ?? null);
+    } finally {
+      setTestLoading(false);
+    }
+  }
+
+  async function applyLinkParseConfig(matchCount: number) {
+    const cfg = ds?.config ?? {};
+    const ext = cfg.ext ?? "pdf";
+    const linkFetchType = cfg.type === "goto_load" ? "goto_download" : (cfg.type ?? "load");
+    const steps = [{ type: "link_parse", targets: [{ value: `.*\\.${ext}`, ext, filename: `{YYYYMMDD}_{filename}`, type: linkFetchType, unique: "text", interval_days: cfg.interval_days ?? 1 }] }];
+    const newConfig = { ...cfg, custom: steps };
+    const res = await fetch(`/api/v1/datasources/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: newConfig }),
+    });
+    if (res.ok) {
+      toast(`Configured to download all ${matchCount} files`, "success");
+      mutate(`/api/v1/datasources/${id}`);
+      setTestResult(null);
+    } else {
+      const body = await res.json().catch(() => ({}));
+      toast(body.error?.message ?? "Failed to update", "error");
+    }
+  }
+
   function startEdit() {
     setEditName(ds?.name ?? "");
     setEditValues(configToValues(ds?.config ?? {}));
@@ -270,6 +334,17 @@ export default function DatasourceDetailPage() {
     mutateFiles?.();
   }
 
+  async function resetJob(jobId: number) {
+    const res = await fetch(`/api/v1/collection-jobs/${jobId}/reset`, { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      toast("Job reset — you can now run it again", "success");
+    } else {
+      toast(extractApiError(body, "Failed to reset job"), "error");
+    }
+    mutate(`/api/v1/collection-jobs?datasource_id=${id}`);
+  }
+
   const hasJobs = jobs && jobs.length > 0;
   const fields = TYPE_FIELD_DEFS[ds?.type ?? ""] ?? [];
 
@@ -327,8 +402,8 @@ export default function DatasourceDetailPage() {
               })}
               {ds.type === "web_report" && ds.config.custom != null && (
                 <div className="col-span-2">
-                  <p className="text-xs text-gray-500 uppercase">Custom Steps</p>
-                  <pre className="text-xs text-gray-300 mt-1 overflow-x-auto">{JSON.stringify(ds.config.custom, null, 2)}</pre>
+                  <p className="text-xs text-gray-500 uppercase">Link following</p>
+                  <p className="text-sm text-green-400">✓ Configured to follow and download matching links</p>
                 </div>
               )}
             </div>
@@ -413,19 +488,6 @@ export default function DatasourceDetailPage() {
               )}
             </div>
           )}
-          {ds?.type === "web_report" && (
-            <div className="space-y-1">
-              <label className="text-xs text-gray-400 uppercase">Custom Steps (JSON)</label>
-              <textarea
-                className="md-input w-full font-mono text-xs"
-                rows={8}
-                value={webReportCustom}
-                onChange={(e) => setWebReportCustom(e.target.value)}
-                placeholder={`[{\n  "type": "link_parse",\n  "targets": [{\n    "value": ".*\\.pdf",\n    "ext": "pdf",\n    "filename": "{YYMMDD}.pdf",\n    "type": "goto_download",\n    "unique": "text",\n    "interval_days": 1\n  }]\n}]`}
-              />
-              <p className="text-xs text-gray-500">Optional. Leave blank for a direct download. Use link_parse / element_parse for multi-step scraping.</p>
-            </div>
-          )}
           {fields.length === 0 && ds?.type !== "ddm_simulation" && ds?.type !== "web_report" && (
             <p className="text-xs text-gray-500">No configurable fields for this datasource type.</p>
           )}
@@ -441,6 +503,111 @@ export default function DatasourceDetailPage() {
               Cancel
             </button>
           </div>
+        </section>
+      )}
+
+      {/* Test Fetch (web_report, view mode) */}
+      {ds?.type === "web_report" && !editing && (
+        <section className="rounded border border-gray-800 bg-gray-900 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xs font-medium text-gray-400 uppercase">Test Fetch Method</h2>
+              <p className="text-xs text-gray-600 mt-0.5">Verify the configured fetch method can access the URL</p>
+            </div>
+            <button
+              onClick={handleTestFetch}
+              disabled={testLoading || !ds?.config?.url}
+              className="rounded border border-gray-700 px-3 py-1 text-xs text-gray-300 hover:border-gray-400 hover:text-white disabled:opacity-40 shrink-0 ml-3"
+            >
+              {testLoading ? "Testing…" : "Test"}
+            </button>
+          </div>
+          {testError && <p className="text-xs text-red-400">{testError}</p>}
+          {testResult && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-semibold ${testResult.success ? "bg-green-900/50 text-green-300" : "bg-red-900/50 text-red-300"}`}>
+                  {testResult.success ? "✓ Success" : "✗ Failed"}
+                </span>
+                {testResult.status_code !== undefined && <span className="text-gray-400">HTTP {testResult.status_code}</span>}
+                {testResult.content_type && <span className="text-gray-400">{testResult.content_type.split(";")[0]}</span>}
+                {testResult.size_bytes !== undefined && (
+                  <span className="text-gray-400">
+                    {testResult.size_bytes >= 1048576
+                      ? `${(testResult.size_bytes / 1048576).toFixed(1)} MB`
+                      : testResult.size_bytes >= 1024
+                      ? `${(testResult.size_bytes / 1024).toFixed(1)} KB`
+                      : `${testResult.size_bytes} B`}
+                  </span>
+                )}
+                {testResult.title && <span className="text-gray-400 truncate max-w-[240px]" title={testResult.title}>&ldquo;{testResult.title}&rdquo;</span>}
+              </div>
+              {testResult.error && <p className="text-xs text-red-400">{testResult.error}</p>}
+              {testResult.links && testResult.links.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-gray-400">
+                      <span className={testResult.links.filter(l => l.matches_ext).length === 0 ? "text-amber-400" : "text-green-400"}>
+                        {testResult.links.filter(l => l.matches_ext).length} matching .{ds?.config?.ext}
+                      </span>
+                      {" · "}{testResult.links.length} total links
+                    </p>
+                    {testResult.links.filter(l => l.matches_ext).length > 0 && !ds?.config?.custom && (
+                      <button
+                        onClick={() => applyLinkParseConfig(testResult!.links!.filter(l => l.matches_ext).length)}
+                        className="rounded bg-brand-500 px-2 py-1 text-xs text-white hover:bg-sky-400 shrink-0 ml-2"
+                      >
+                        Configure to download all {testResult.links.filter(l => l.matches_ext).length} files
+                      </button>
+                    )}
+                    {ds?.config?.custom && testResult.links.filter(l => l.matches_ext).length > 0 && (
+                      <span className="text-xs text-green-400 shrink-0 ml-2">✓ Already configured</span>
+                    )}
+                  </div>
+                  <div className="rounded border border-gray-700 overflow-hidden text-xs">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-gray-800/60 text-left">
+                          <th className="px-3 py-1.5 text-gray-400 font-medium">Filename / URL</th>
+                          <th className="px-3 py-1.5 text-gray-400 font-medium">Link text</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(testShowLinks
+                          ? testResult.links
+                          : testResult.links.filter(l => l.matches_ext).length > 0
+                            ? testResult.links.filter(l => l.matches_ext)
+                            : testResult.links
+                        ).slice(0, testShowLinks ? 300 : 20).map((link, i) => (
+                          <tr key={i} className={`border-t border-gray-700/50 hover:bg-gray-800/20 ${link.matches_ext ? "" : "opacity-50"}`}>
+                            <td className="px-3 py-1.5 font-mono">
+                              <a href={link.href} target="_blank" rel="noopener noreferrer"
+                                className="text-brand-400 hover:underline truncate block max-w-[220px]" title={link.href}>
+                                {link.filename || link.href}
+                              </a>
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-300 truncate max-w-[160px]">{link.text || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="px-3 py-1.5 border-t border-gray-700/50">
+                      {!testShowLinks && testResult.links.length > 20 && (
+                        <button type="button" onClick={() => setTestShowLinks(true)} className="text-xs text-gray-500 hover:text-white">
+                          Show all {testResult.links.length} links
+                        </button>
+                      )}
+                      {testShowLinks && (
+                        <button type="button" onClick={() => setTestShowLinks(false)} className="text-xs text-gray-500 hover:text-white">
+                          Collapse
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -582,13 +749,24 @@ export default function DatasourceDetailPage() {
                   <p className="text-xs text-red-400 max-w-sm">{job.last_error}</p>
                 )}
               </div>
-              <button
-                onClick={() => runJob(job.id)}
-                disabled={job.status === "running"}
-                className="rounded bg-gray-700 px-3 py-1.5 text-xs text-white hover:bg-gray-600 disabled:opacity-40"
-              >
-                {job.status === "running" ? "Running…" : "Run now"}
-              </button>
+              <div className="flex gap-2">
+                {job.status === "running" && (
+                  <button
+                    onClick={() => resetJob(job.id)}
+                    className="rounded border border-red-800 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20"
+                    title="Force-reset a stuck job after an ungraceful worker restart"
+                  >
+                    Reset
+                  </button>
+                )}
+                <button
+                  onClick={() => runJob(job.id)}
+                  disabled={job.status === "running"}
+                  className="rounded bg-gray-700 px-3 py-1.5 text-xs text-white hover:bg-gray-600 disabled:opacity-40"
+                >
+                  {job.status === "running" ? "Running…" : "Run now"}
+                </button>
+              </div>
             </div>
           ))}
         </section>

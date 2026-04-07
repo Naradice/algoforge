@@ -158,7 +158,14 @@ async def _run_collection_job(job_id: int) -> dict:
 
         collect_result = None
         try:
-            collect_result = _run_collector(source.type, source.id, source.config)
+            import functools
+            logger.info(f"[job {job_id}] starting collector: type={source.type} config={source.config}")
+            loop = asyncio.get_event_loop()
+            collect_result = await loop.run_in_executor(
+                None,
+                functools.partial(_run_collector, source.type, source.id, source.config),
+            )
+            logger.info(f"[job {job_id}] collector finished: {collect_result}")
         except NotImplementedError as e:
             async with factory() as db:
                 await db.execute(
@@ -252,6 +259,8 @@ def _run_collector(datasource_type: str, datasource_id: int, config: dict):
         from data.collectors.ddm_simulator import collect
     elif datasource_type == "web_report":
         from data.collectors.web_report import collect
+        # Always force on manual runs; interval_days is enforced by the scheduler
+        return collect(datasource_id, config, force=True)
     else:
         raise ValueError(f"Unknown datasource type: {datasource_type!r}")
     return collect(datasource_id, config)
