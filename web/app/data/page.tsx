@@ -1,17 +1,23 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 
 export default function DataPage() {
   const { data: datasources, isLoading } = useSWR("/api/v1/datasources", fetcher);
-  const { data: datasets } = useSWR("/api/v1/datasets", fetcher, {
+  const { data: datasets } = useSWR("/api/v1/datasets?page_size=500", fetcher, {
     refreshInterval: (data) => data?.some?.((d: any) => d.status === "running") ? 3000 : 10000,
   });
   const { data: allJobs } = useSWR("/api/v1/collection-jobs?page_size=100", fetcher, {
     refreshInterval: (data) => data?.some?.((j: any) => j.status === "running") ? 3000 : 10000,
   });
+
+  // ── Filters ────────────────────────────────────────────────────────────────
+  const [search, setSearch] = useState("");
+  const [filterTimeframe, setFilterTimeframe] = useState("");
+  const [filterSourceType, setFilterSourceType] = useState("");
 
   const jobByDatasource = new Map<number, { status: string; last_error?: string; last_run_at?: string }>();
   if (allJobs) {
@@ -19,6 +25,48 @@ export default function DataPage() {
       if (!jobByDatasource.has(job.datasource_id)) jobByDatasource.set(job.datasource_id, job);
     }
   }
+
+  // datasource_id → type lookup
+  const dsTypeById = useMemo(() => {
+    const m = new Map<number, string>();
+    if (datasources) for (const ds of datasources as { id: number; type: string }[]) m.set(ds.id, ds.type);
+    return m;
+  }, [datasources]);
+
+  // Derive available filter options from data
+  const timeframeOptions = useMemo(() => {
+    if (!datasets) return [];
+    const seen = new Set<string>();
+    for (const d of datasets as any[]) if (d.timeframe) seen.add(d.timeframe);
+    return Array.from(seen).sort();
+  }, [datasets]);
+
+  const sourceTypeOptions = useMemo(() => {
+    if (!datasets || !datasources) return [];
+    const seen = new Set<string>();
+    for (const d of datasets as any[]) {
+      const t = dsTypeById.get(d.datasource_id);
+      if (t) seen.add(t);
+    }
+    return Array.from(seen).sort();
+  }, [datasets, datasources, dsTypeById]);
+
+  // Apply filters
+  const filteredDatasets = useMemo(() => {
+    if (!datasets) return [];
+    const q = search.trim().toLowerCase();
+    return (datasets as any[]).filter((d) => {
+      if (q && !d.name?.toLowerCase().includes(q) && !d.symbol?.toLowerCase().includes(q)) return false;
+      if (filterTimeframe && d.timeframe !== filterTimeframe) return false;
+      if (filterSourceType) {
+        const t = dsTypeById.get(d.datasource_id);
+        if (t !== filterSourceType) return false;
+      }
+      return true;
+    });
+  }, [datasets, search, filterTimeframe, filterSourceType, dsTypeById]);
+
+  const hasFilters = search || filterTimeframe || filterSourceType;
 
   return (
     <div className="space-y-8 max-w-5xl">
@@ -69,13 +117,70 @@ export default function DataPage() {
 
       {/* Datasets */}
       <section className="md-section">
-        <h2 className="md-label-md">Datasets ({datasets?.length ?? "…"})</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="md-label-md">
+            Datasets{" "}
+            <span className="text-gray-500 font-normal">
+              ({hasFilters ? `${filteredDatasets.length} of ${datasets?.length ?? "…"}` : (datasets?.length ?? "…")})
+            </span>
+          </h2>
+        </div>
+
+        {/* Filter bar */}
+        {datasets && datasets.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            <input
+              type="search"
+              placeholder="Search name or symbol…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="md-input text-sm flex-1 min-w-[160px] max-w-xs"
+            />
+            {timeframeOptions.length > 0 && (
+              <select
+                value={filterTimeframe}
+                onChange={(e) => setFilterTimeframe(e.target.value)}
+                className="md-input text-sm w-auto"
+              >
+                <option value="">All timeframes</option>
+                {timeframeOptions.map((tf) => (
+                  <option key={tf} value={tf}>{tf}</option>
+                ))}
+              </select>
+            )}
+            {sourceTypeOptions.length > 0 && (
+              <select
+                value={filterSourceType}
+                onChange={(e) => setFilterSourceType(e.target.value)}
+                className="md-input text-sm w-auto"
+              >
+                <option value="">All source types</option>
+                {sourceTypeOptions.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            )}
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={() => { setSearch(""); setFilterTimeframe(""); setFilterSourceType(""); }}
+                className="text-xs text-gray-500 hover:text-white px-2"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
 
         {datasets && datasets.length === 0 && (
           <p className="md-body-md text-gray-400">No datasets yet. Run a collection job to generate one.</p>
         )}
 
-        {datasets && datasets.length > 0 && (
+        {datasets && datasets.length > 0 && filteredDatasets.length === 0 && (
+          <p className="md-body-md text-gray-400">No datasets match the current filters.</p>
+        )}
+
+        {filteredDatasets.length > 0 && (
           <div className="md-card overflow-hidden">
             <table className="md-table">
               <thead>
@@ -83,13 +188,14 @@ export default function DataPage() {
                   <th className="pl-5">Name</th>
                   <th>Symbol</th>
                   <th>Timeframe</th>
+                  <th>Source type</th>
                   <th>Rows</th>
                   <th>Status</th>
                   <th className="pr-5">Created</th>
                 </tr>
               </thead>
               <tbody>
-                {datasets.map((d: any) => (
+                {filteredDatasets.map((d: any) => (
                   <tr key={d.id}>
                     <td className="pl-5">
                       <a href={`/data/datasets/${d.id}`} className="text-brand-400 hover:text-brand-300 font-medium hover:underline">
@@ -98,6 +204,11 @@ export default function DataPage() {
                     </td>
                     <td className="text-gray-300 font-mono text-xs">{d.symbol ?? "—"}</td>
                     <td>{d.timeframe ? <span className="md-chip">{d.timeframe}</span> : <span className="text-gray-500">—</span>}</td>
+                    <td>
+                      {dsTypeById.get(d.datasource_id)
+                        ? <span className="md-chip">{dsTypeById.get(d.datasource_id)}</span>
+                        : <span className="text-gray-500">—</span>}
+                    </td>
                     <td className="tabular-nums text-gray-200">
                       {d.status === "running" ? (
                         <span className="flex items-center gap-1">

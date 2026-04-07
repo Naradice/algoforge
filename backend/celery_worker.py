@@ -261,6 +261,8 @@ def _run_collector(datasource_type: str, datasource_id: int, config: dict):
         from data.collectors.web_report import collect
         # Always force on manual runs; interval_days is enforced by the scheduler
         return collect(datasource_id, config, force=True)
+    elif datasource_type == "economic_calendar":
+        from data.collectors.economic_calendar import collect
     else:
         raise ValueError(f"Unknown datasource type: {datasource_type!r}")
     return collect(datasource_id, config)

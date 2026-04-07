@@ -89,6 +89,33 @@ const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
       hint: "Minimum days between downloads. Leave blank to always run.",
     },
   ],
+  economic_calendar: [
+    {
+      key: "source", label: "Provider", type: "select",
+      options: ["alpha_vantage", "fred"],
+      optionDescriptions: {
+        alpha_vantage: "Alpha Vantage economic indicators API. Requires a free API key from alphavantage.co.",
+        fred: "Federal Reserve Economic Data (FRED). Requires a free API key from fred.stlouisfed.org.",
+      },
+    },
+    {
+      key: "api_key", label: "API Key", type: "text",
+      placeholder: "your_api_key_here",
+      hint: "Alpha Vantage: get free key at alphavantage.co/support/#api-key. FRED: fred.stlouisfed.org/docs/api/api_key.html",
+    },
+    {
+      key: "indicators", label: "Indicators", type: "text",
+      placeholder: "CPI,NONFARM_PAYROLL,UNEMPLOYMENT,FEDERAL_FUNDS_RATE",
+      hint: "Alpha Vantage: CPI, NONFARM_PAYROLL, UNEMPLOYMENT, FEDERAL_FUNDS_RATE, REAL_GDP, RETAIL_SALES, DURABLES, TREASURY_YIELD, INFLATION. FRED: use series IDs e.g. CPIAUCSL, PAYEMS, UNRATE, FEDFUNDS, GDP.",
+    },
+    {
+      key: "interval", label: "Interval", type: "select",
+      options: ["monthly", "quarterly", "annual"],
+      hint: "Alpha Vantage only. Controls the release frequency of the fetched series.",
+    },
+    { key: "from_ts", label: "From Date", type: "date" },
+    { key: "to_ts", label: "To Date", type: "date", placeholder: "", hint: "Leave blank for today" },
+  ],
   manual_upload: [],
 };
 
@@ -120,6 +147,14 @@ const TYPE_DEFAULTS: Record<string, Record<string, string>> = {
     unique: "segment",
     interval_days: "1",
   },
+  economic_calendar: {
+    source: "alpha_vantage",
+    api_key: "",
+    indicators: "CPI,NONFARM_PAYROLL,UNEMPLOYMENT,FEDERAL_FUNDS_RATE",
+    interval: "monthly",
+    from_ts: "2020-01-01",
+    to_ts: "",
+  },
   manual_upload: {},
 };
 
@@ -136,6 +171,11 @@ const TYPE_DESCRIPTIONS: Record<string, { label: string; description: string; st
   web_report: {
     label: "Web Report",
     description: "Download financial reports (PDF, HTML, audio) from institution websites using Playwright. Mirrors cyclic_downloader source.json schema.",
+  },
+  economic_calendar: {
+    label: "Economic Calendar",
+    description:
+      "Download historical economic indicator releases (CPI, NFP, unemployment, Fed rate decisions) from Alpha Vantage or FRED. Stored as long-format parquet indexed by release date.",
   },
   manual_upload: {
     label: "Manual Upload",
@@ -285,6 +325,9 @@ export default function NewDatasourcePage() {
     if (type === "ddm_simulation" && !runForever) {
       const n = Number(lengthValue);
       if (!isNaN(n) && n > 0) cfg["length"] = n;
+    }
+    if (type === "economic_calendar" && typeof cfg["indicators"] === "string") {
+      cfg["indicators"] = (cfg["indicators"] as string).split(",").map((s) => s.trim()).filter(Boolean);
     }
     return cfg;
   }
