@@ -45,6 +45,7 @@ class StrategyRun(Base):
     message: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     dataset_id: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)  # soft FK → datasets.id
     broker_client: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    walk_forward_ratio: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     from_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     to_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -84,6 +85,10 @@ class Trade(Base):
     profit: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     opened_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(sa.Text, nullable=True)  # signal | sl | tp | end_of_data
+    phase: Mapped[str | None] = mapped_column(sa.Text, nullable=True)        # is | oos
+    mae: Mapped[float | None] = mapped_column(sa.Float, nullable=True)       # max adverse excursion
+    mfe: Mapped[float | None] = mapped_column(sa.Float, nullable=True)       # max favorable excursion
 
     run: Mapped[StrategyRun] = relationship("StrategyRun", back_populates="trades")
 
@@ -156,6 +161,7 @@ class StrategyRunCreate(BaseModel):
     mode: str  # backtest | paper | live
     dataset_id: int | None = None
     broker_client: str | None = None
+    walk_forward_ratio: float | None = None  # 0.7 → 70% in-sample, 30% OOS
     from_ts: datetime | None = None
     to_ts: datetime | None = None
 
@@ -171,6 +177,7 @@ class StrategyRunRead(BaseModel):
     message: str | None
     dataset_id: int | None
     broker_client: str | None
+    walk_forward_ratio: float | None
     from_ts: datetime | None
     to_ts: datetime | None
     started_at: datetime | None

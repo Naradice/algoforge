@@ -295,7 +295,7 @@ async def preview_dataset(dataset_id: int, rows: int = 100, timeframe: str | Non
 
 @router.post("/datasets/upload", status_code=202)
 async def upload_dataset(
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(..., description="One or more CSV or ZIP files."),
     datasource_id: int | None = Form(None),
     symbol: str | None = Form(None),
     timeframe: str | None = Form(None),
@@ -305,16 +305,32 @@ async def upload_dataset(
     low_col: str | None = Form(None),
     volume_col: str | None = Form(None),
     datetime_col: str | None = Form(None),
+    append_to: int | None = Form(None, description="Append into this existing dataset ID instead of creating a new one."),
+    merge: bool = Form(True, description="Merge all files/CSVs into one dataset (True) or create one dataset per file (False)."),
     db: AsyncSession = Depends(get_db),
 ):
+    """Upload one or more CSV or ZIP files to create or append to a dataset.
+
+    - **Single CSV**: creates one dataset (or appends when `append_to` is set).
+    - **Single ZIP**: the ZIP is unpacked; all CSVs inside are merged into one dataset
+      when `merge=True`, or each becomes its own dataset when `merge=False`.
+    - **Multiple files** (CSV or ZIP, any mix): all data is merged into one dataset
+      when `merge=True`, or one dataset is created per file when `merge=False`.
+    - Column names are auto-detected from the first file; use `*_col` to override.
+    """
     col_map = {k: v for k, v in {
         "close": close_col, "open": open_col, "high": high_col,
         "low": low_col, "volume": volume_col, "datetime": datetime_col,
     }.items() if v}
-    dataset = await data_service.create_dataset_from_upload(
-        db, file, datasource_id=datasource_id, symbol=symbol, timeframe=timeframe, col_map=col_map or None,
+    datasets = await data_service.create_dataset_from_upload(
+        db, files,
+        datasource_id=datasource_id, symbol=symbol, timeframe=timeframe,
+        col_map=col_map or None, append_to=append_to, merge=merge,
     )
-    return DataResponse(data={"dataset_id": dataset.id, "status": dataset.status})
+    data: dict = {"dataset_id": datasets[0].id, "status": datasets[0].status}
+    if len(datasets) > 1:
+        data["dataset_ids"] = [d.id for d in datasets]
+    return DataResponse(data=data)
 
 
 @router.post("/datasets/{dataset_id}/analyze", status_code=202)

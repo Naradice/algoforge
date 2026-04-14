@@ -6,6 +6,87 @@ import useSWR, { mutate } from "swr";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
+import { StrategyEditor } from "@/components/strategy-editor";
+
+// ---------------------------------------------------------------------------
+// Metrics panel — handles combined / IS / OOS split view
+// ---------------------------------------------------------------------------
+
+const METRIC_FORMAT: Record<string, (v: number) => string> = {
+  win_rate:              (v) => `${(v * 100).toFixed(1)}%`,
+  total_trades:          (v) => String(Math.round(v)),
+  max_consecutive_losses:(v) => String(Math.round(v)),
+  max_positions:         (v) => String(Math.round(v)),
+};
+
+function fmtMetric(key: string, val: number): string {
+  const base = key.replace(/^(is_|oos_)/, "");
+  const fmt = METRIC_FORMAT[base];
+  if (fmt) return fmt(val);
+  const pct = ["sl_pct", "tp_pct", "slippage_pct", "commission_pct",
+               "daily_loss_limit_pct", "avg_mae", "avg_mfe"].includes(base);
+  return pct ? `${(val * 100).toFixed(2)}%` : val.toFixed(4);
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded bg-gray-900 px-3 py-2">
+      <p className="text-xs text-gray-500 leading-tight">{label.replace(/_/g, " ")}</p>
+      <p className="text-sm font-mono text-white">{value}</p>
+    </div>
+  );
+}
+
+function MetricsPanel({ metrics }: { metrics: Record<string, number> }) {
+  const hasWF = Object.keys(metrics).some((k) => k.startsWith("is_") || k.startsWith("oos_"));
+
+  const combinedKeys = Object.keys(metrics).filter((k) => !k.startsWith("is_") && !k.startsWith("oos_"));
+  const isKeys       = Object.keys(metrics).filter((k) => k.startsWith("is_"));
+  const oosKeys      = Object.keys(metrics).filter((k) => k.startsWith("oos_"));
+
+  return (
+    <div className="space-y-3">
+      {hasWF && (
+        <div className="flex gap-2 text-xs">
+          <span className="rounded bg-sky-900/60 px-2 py-0.5 text-sky-300">IS = in-sample</span>
+          <span className="rounded bg-amber-900/60 px-2 py-0.5 text-amber-300">OOS = out-of-sample</span>
+        </div>
+      )}
+
+      {/* Combined */}
+      <div>
+        {hasWF && <p className="mb-1 text-xs text-gray-500">Combined</p>}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {combinedKeys.map((k) => (
+            <MetricCard key={k} label={k} value={fmtMetric(k, metrics[k])} />
+          ))}
+        </div>
+      </div>
+
+      {/* IS / OOS side by side */}
+      {hasWF && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <p className="mb-1 text-xs text-sky-400">In-sample</p>
+            <div className="grid grid-cols-2 gap-2">
+              {isKeys.map((k) => (
+                <MetricCard key={k} label={k.replace("is_", "")} value={fmtMetric(k, metrics[k])} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-amber-400">Out-of-sample</p>
+            <div className="grid grid-cols-2 gap-2">
+              {oosKeys.map((k) => (
+                <MetricCard key={k} label={k.replace("oos_", "")} value={fmtMetric(k, metrics[k])} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Chat panel with WebSocket
@@ -154,6 +235,7 @@ export default function StrategyDetailPage() {
   const [showRunForm, setShowRunForm] = useState(false);
   const [mode, setMode] = useState("backtest");
   const [datasetId, setDatasetId] = useState("");
+  const [walkForwardRatio, setWalkForwardRatio] = useState(0);
   const [starting, setStarting] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -170,33 +252,27 @@ export default function StrategyDetailPage() {
   );
 
   const [stopping, setStopping] = useState<number | null>(null);
+  const [deletingRun, setDeletingRun] = useState<number | null>(null);
+  const [deletingStrategy, setDeletingStrategy] = useState(false);
 
   const [editingDef, setEditingDef] = useState(false);
-  const [defText, setDefText] = useState("");
   const [savingDef, setSavingDef] = useState(false);
   const [defError, setDefError] = useState<string | null>(null);
+  const editedDefRef = useRef<object>({});
 
   function startEditDef() {
-    setDefText(JSON.stringify(strategy.definition, null, 2));
     setDefError(null);
     setEditingDef(true);
   }
 
   async function saveDef() {
     setDefError(null);
-    let parsed: object;
-    try {
-      parsed = JSON.parse(defText);
-    } catch {
-      setDefError("Invalid JSON");
-      return;
-    }
     setSavingDef(true);
     try {
       const res = await fetch(`/api/v1/strategies/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ definition: parsed }),
+        body: JSON.stringify({ definition: editedDefRef.current }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -226,6 +302,7 @@ export default function StrategyDetailPage() {
         body: JSON.stringify({
           mode,
           dataset_id: datasetId ? parseInt(datasetId) : null,
+          walk_forward_ratio: walkForwardRatio > 0 ? walkForwardRatio / 100 : null,
         }),
       });
       if (!res.ok) {
@@ -238,6 +315,40 @@ export default function StrategyDetailPage() {
       mutate(`/api/v1/strategies/${id}/runs`);
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function deleteStrategy() {
+    if (!confirm(`Delete "${strategy.name}" and all its runs? This cannot be undone.`)) return;
+    setDeletingStrategy(true);
+    try {
+      const res = await fetch(`/api/v1/strategies/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        toast("Failed to delete strategy", "error");
+        return;
+      }
+      toast("Strategy deleted", "success");
+      window.location.href = "/strategy";
+    } finally {
+      setDeletingStrategy(false);
+    }
+  }
+
+  async function deleteRun(runId: number) {
+    if (!confirm("Delete this run and all its results? This cannot be undone.")) return;
+    setDeletingRun(runId);
+    try {
+      const res = await fetch(`/api/v1/strategies/${id}/runs/${runId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast(body.detail ?? "Failed to delete run", "error");
+        return;
+      }
+      if (selectedRun === runId) setSelectedRun(null);
+      toast("Run deleted", "success");
+      mutate(`/api/v1/strategies/${id}/runs`);
+    } finally {
+      setDeletingRun(null);
     }
   }
 
@@ -273,9 +384,18 @@ export default function StrategyDetailPage() {
             Created {new Date(strategy.created_at).toLocaleDateString()}
           </p>
         </div>
-        <a href="/strategy" className="text-sm text-gray-400 hover:text-white">
-          ← Back
-        </a>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={deleteStrategy}
+            disabled={deletingStrategy}
+            className="rounded border border-red-800 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/30 disabled:opacity-50"
+          >
+            {deletingStrategy ? "Deleting…" : "Delete Strategy"}
+          </button>
+          <a href="/strategy" className="text-sm text-gray-400 hover:text-white">
+            ← Back
+          </a>
+        </div>
       </div>
 
       {/* Definition */}
@@ -305,13 +425,13 @@ export default function StrategyDetailPage() {
           </>
         )}
         {editingDef && (
-          <div className="space-y-2">
-            <textarea
-              value={defText}
-              onChange={(e) => setDefText(e.target.value)}
-              rows={14}
-              className="w-full rounded border border-gray-700 bg-gray-900 p-3 font-mono text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
+          <div className="space-y-3">
+            <div className="rounded border border-gray-700 bg-gray-950 p-4">
+              <StrategyEditor
+                initialDefinition={strategy.definition}
+                onChange={(def) => { editedDefRef.current = def; }}
+              />
+            </div>
             {defError && <p className="text-xs text-red-400">{defError}</p>}
             <div className="flex gap-2">
               <button
@@ -386,21 +506,39 @@ export default function StrategyDetailPage() {
               </select>
             </div>
             {mode === "backtest" && (
-              <div>
-                <label className="mb-1 block text-xs text-gray-400">Dataset</label>
-                <select
-                  value={datasetId}
-                  onChange={(e) => setDatasetId(e.target.value)}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                >
-                  <option value="">Select dataset…</option>
-                  {datasets?.map((d: any) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} ({d.row_count} rows)
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-400">Dataset</label>
+                  <select
+                    value={datasetId}
+                    onChange={(e) => setDatasetId(e.target.value)}
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  >
+                    <option value="">Select dataset…</option>
+                    {datasets?.map((d: any) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} ({d.row_count} rows)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-400">
+                    Walk-forward split — in-sample:{" "}
+                    <span className="text-white font-mono">
+                      {walkForwardRatio === 0 ? "disabled" : `${walkForwardRatio}% IS / ${100 - walkForwardRatio}% OOS`}
+                    </span>
+                  </label>
+                  <input
+                    type="range" min={0} max={90} step={5} value={walkForwardRatio}
+                    onChange={(e) => setWalkForwardRatio(Number(e.target.value))}
+                    className="w-full accent-sky-500"
+                  />
+                  <p className="mt-0.5 text-xs text-gray-600">
+                    0 = off. Splits data chronologically; metrics reported separately for each half.
+                  </p>
+                </div>
+              </>
             )}
             {runError && <p className="text-xs text-red-400">{runError}</p>}
             <div className="flex gap-2">
@@ -422,7 +560,18 @@ export default function StrategyDetailPage() {
         )}
 
         {runs && runs.length === 0 && (
-          <p className="text-sm text-gray-500">No runs yet.</p>
+          <div className="rounded-lg border border-dashed border-gray-700 px-6 py-10 text-center">
+            <p className="text-gray-300 font-medium text-sm mb-1">No runs yet</p>
+            <p className="text-gray-500 text-xs mb-4">Start a backtest to see results here.</p>
+            {!showRunForm && (
+              <button
+                onClick={() => setShowRunForm(true)}
+                className="rounded bg-brand-500 px-3 py-1.5 text-xs text-white hover:bg-sky-400"
+              >
+                Start first run
+              </button>
+            )}
+          </div>
         )}
 
         {runs && runs.length > 0 && (
@@ -469,7 +618,16 @@ export default function StrategyDetailPage() {
                     >
                       Detail →
                     </a>
-                    <span className="text-gray-500">{selectedRun === run.id ? "▲ Hide" : "▼ Show"}</span>
+                    <span className="text-gray-500 mr-3">{selectedRun === run.id ? "▲ Hide" : "▼ Show"}</span>
+                    {!["pending", "running"].includes(run.status) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteRun(run.id); }}
+                        disabled={deletingRun === run.id}
+                        className="text-red-500 hover:text-red-400 disabled:opacity-50"
+                      >
+                        {deletingRun === run.id ? "…" : "Delete"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -486,23 +644,7 @@ export default function StrategyDetailPage() {
           </h2>
 
           {runMetrics && Object.keys(runMetrics).length > 0 && (
-            <div>
-              <h3 className="mb-2 text-xs text-gray-500">Metrics</h3>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {Object.entries(runMetrics).map(([key, val]) => (
-                  <div key={key} className="rounded bg-gray-900 px-3 py-2">
-                    <p className="text-xs text-gray-500">{key.replace(/_/g, " ")}</p>
-                    <p className="text-sm font-mono text-white">
-                      {typeof val === "number"
-                        ? key === "win_rate" ? `${(val * 100).toFixed(1)}%`
-                        : key === "total_trades" ? String(val)
-                        : val.toFixed(4)
-                        : String(val)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <MetricsPanel metrics={runMetrics} />
           )}
 
           {runTrades && runTrades.length > 0 && (
@@ -512,6 +654,7 @@ export default function StrategyDetailPage() {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-gray-800 text-gray-500 uppercase">
+                      <th className="py-1 pr-3">Phase</th>
                       <th className="py-1 pr-3">Symbol</th>
                       <th className="py-1 pr-3">Dir</th>
                       <th className="py-1 pr-3">Entry</th>
@@ -519,8 +662,10 @@ export default function StrategyDetailPage() {
                       <th className="py-1 pr-3">SL</th>
                       <th className="py-1 pr-3">TP</th>
                       <th className="py-1 pr-3">PnL</th>
-                      <th className="py-1 pr-3">Opened</th>
-                      <th className="py-1">Closed</th>
+                      <th className="py-1 pr-3">MAE</th>
+                      <th className="py-1 pr-3">MFE</th>
+                      <th className="py-1 pr-3">Reason</th>
+                      <th className="py-1">Opened</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -531,6 +676,13 @@ export default function StrategyDetailPage() {
                           t.profit >= 0 ? "text-green-400" : "text-red-400"
                         }`}
                       >
+                        <td className="py-1 pr-3">
+                          {t.phase === "oos"
+                            ? <span className="rounded px-1 bg-amber-900/50 text-amber-300 text-[10px]">OOS</span>
+                            : t.phase === "is"
+                            ? <span className="rounded px-1 bg-sky-900/50 text-sky-300 text-[10px]">IS</span>
+                            : <span className="text-gray-600">—</span>}
+                        </td>
                         <td className="py-1 pr-3">{t.symbol}</td>
                         <td className="py-1 pr-3">{t.direction}</td>
                         <td className="py-1 pr-3 font-mono">{t.entry_price?.toFixed(4)}</td>
@@ -540,11 +692,11 @@ export default function StrategyDetailPage() {
                         <td className="py-1 pr-3 font-mono font-medium">
                           {t.profit >= 0 ? "+" : ""}{(t.profit * 100).toFixed(2)}%
                         </td>
-                        <td className="py-1 pr-3 text-gray-400">
-                          {new Date(t.opened_at).toLocaleDateString()}
-                        </td>
+                        <td className="py-1 pr-3 font-mono text-gray-500">{t.mae != null ? `${(t.mae * 100).toFixed(2)}%` : "—"}</td>
+                        <td className="py-1 pr-3 font-mono text-gray-500">{t.mfe != null ? `${(t.mfe * 100).toFixed(2)}%` : "—"}</td>
+                        <td className="py-1 pr-3 text-gray-500 text-[10px]">{t.exit_reason ?? "—"}</td>
                         <td className="py-1 text-gray-400">
-                          {new Date(t.closed_at).toLocaleDateString()}
+                          {new Date(t.opened_at).toLocaleDateString()}
                         </td>
                       </tr>
                     ))}

@@ -119,8 +119,30 @@ async def _run_collection_job(job_id: int) -> dict:
             timeframe = source.config.get("timeframe")
             is_ddm = source.type == "ddm_simulation"
             pre_dataset_id = None
+            incremental_context = None
 
             await db.execute(update(CollectionJob).where(CollectionJob.id == job_id).values(status="running", last_error=None))
+
+            if source.type == "ohlc_download":
+                existing_ds = (await db.execute(
+                    select(Dataset)
+                    .where(Dataset.datasource_id == source.id)
+                    .where(Dataset.status == "ready")
+                    .where(Dataset.to_ts.isnot(None))
+                    .where(Dataset.artifact_path.isnot(None))
+                    .order_by(Dataset.id.desc())
+                    .limit(1)
+                )).scalar_one_or_none()
+                if existing_ds is not None:
+                    incremental_context = {
+                        "dataset_id": existing_ds.id,
+                        "artifact_path": existing_ds.artifact_path,
+                        "to_ts": existing_ds.to_ts,
+                        "from_ts": existing_ds.from_ts,
+                    }
+                    await db.execute(
+                        update(Dataset).where(Dataset.id == existing_ds.id).values(status="running")
+                    )
 
             if is_ddm:
                 artifact_rel = f"datasets/src_{source.id}/ddm_ticks"
@@ -159,11 +181,11 @@ async def _run_collection_job(job_id: int) -> dict:
         collect_result = None
         try:
             import functools
-            logger.info(f"[job {job_id}] starting collector: type={source.type} config={source.config}")
+            logger.info(f"[job {job_id}] starting collector: type={source.type} incremental={incremental_context is not None} config={source.config}")
             loop = asyncio.get_event_loop()
             collect_result = await loop.run_in_executor(
                 None,
-                functools.partial(_run_collector, source.type, source.id, source.config),
+                functools.partial(_run_collector, source.type, source.id, source.config, incremental_context),
             )
             logger.info(f"[job {job_id}] collector finished: {collect_result}")
         except NotImplementedError as e:
@@ -184,7 +206,13 @@ async def _run_collection_job(job_id: int) -> dict:
                             status="error", last_error=str(e), last_run_at=datetime.now(timezone.utc)
                         )
                     )
-                    if pre_dataset_id is not None:
+                    if incremental_context is not None:
+                        await db.execute(
+                            update(Dataset).where(Dataset.id == incremental_context["dataset_id"]).values(
+                                status="error"
+                            )
+                        )
+                    elif pre_dataset_id is not None:
                         from data.collectors.ddm_simulator import read_meta
                         from datetime import datetime as dt
                         meta = read_meta(source.id)
@@ -209,7 +237,18 @@ async def _run_collection_job(job_id: int) -> dict:
             return {"error": str(e)}
 
         async with factory() as db:
-            if pre_dataset_id is not None:
+            if incremental_context is not None:
+                # Incremental: update the existing dataset row; preserve original from_ts
+                await db.execute(
+                    update(Dataset).where(Dataset.id == incremental_context["dataset_id"]).values(
+                        name=f"{source.name} {incremental_context['from_ts'].date()} to {collect_result.to_ts.date()}",
+                        to_ts=collect_result.to_ts,
+                        row_count=collect_result.row_count,
+                        status="ready",
+                    )
+                )
+                dataset_id = incremental_context["dataset_id"]
+            elif pre_dataset_id is not None:
                 await db.execute(
                     update(Dataset).where(Dataset.id == pre_dataset_id).values(
                         name=f"{source.name} {collect_result.from_ts.date()} to {collect_result.to_ts.date()}",
@@ -237,35 +276,73 @@ async def _run_collection_job(job_id: int) -> dict:
                 await db.refresh(dataset)
                 dataset_id = dataset.id
 
+            next_run_at = _compute_next_run(source.type, source.config, job.schedule_cron)
             await db.execute(
                 update(CollectionJob).where(CollectionJob.id == job_id).values(
-                    status="idle", last_run_at=datetime.now(timezone.utc), last_error=None
+                    status="idle", last_run_at=datetime.now(timezone.utc), last_error=None,
+                    next_run_at=next_run_at,
                 )
             )
             await db.commit()
 
         logger.info(f"Collection job {job_id} completed: dataset {dataset_id}, {collect_result.row_count} rows")
+
+        # Auto-trigger characteristics computation for all datasource types that
+        # produce numeric time-series data. Skip economic_calendar — its schema
+        # (indicator / value / unit) is not what the characteristics system expects.
+        if source.type != "economic_calendar":
+            compute_characteristics.apply_async(args=[dataset_id], queue="characteristics")
+            logger.info(f"[job {job_id}] auto-enqueued compute_characteristics for dataset {dataset_id}")
+
         return {"dataset_id": dataset_id, "row_count": collect_result.row_count}
     finally:
         await engine.dispose()
         _release_lock("run_collection_job", job_id)
 
 
-def _run_collector(datasource_type: str, datasource_id: int, config: dict):
+def _compute_next_run(datasource_type: str, config: dict, schedule_cron: str | None) -> "datetime | None":
+    """Return the next UTC datetime this job should run, or None (one-off)."""
+    from datetime import timedelta
+
+    # web_report uses interval_days from the datasource config
+    if datasource_type == "web_report":
+        interval_days = config.get("interval_days")
+        if interval_days is None:
+            return None  # one-off download
+        try:
+            return datetime.now(timezone.utc) + timedelta(days=int(interval_days))
+        except (TypeError, ValueError):
+            return None
+
+    # Other types use schedule_cron on the job (e.g. "0 9 * * *")
+    if schedule_cron:
+        try:
+            from apscheduler.triggers.cron import CronTrigger
+            trigger = CronTrigger.from_crontab(schedule_cron, timezone="UTC")
+            return trigger.get_next_fire_time(None, datetime.now(timezone.utc))
+        except Exception:
+            logger.warning(f"_compute_next_run: invalid schedule_cron {schedule_cron!r}")
+
+    return None
+
+
+def _run_collector(datasource_type: str, datasource_id: int, config: dict, incremental: dict | None = None):
     """Dispatch to the correct collector synchronously."""
     if datasource_type == "ohlc_download":
         from data.collectors.ohlc import collect
+        return collect(datasource_id, config, incremental=incremental)
     elif datasource_type == "ddm_simulation":
         from data.collectors.ddm_simulator import collect
+        return collect(datasource_id, config)
     elif datasource_type == "web_report":
         from data.collectors.web_report import collect
         # Always force on manual runs; interval_days is enforced by the scheduler
         return collect(datasource_id, config, force=True)
     elif datasource_type == "economic_calendar":
         from data.collectors.economic_calendar import collect
+        return collect(datasource_id, config)
     else:
         raise ValueError(f"Unknown datasource type: {datasource_type!r}")
-    return collect(datasource_id, config)
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +414,47 @@ async def _compute_characteristics(dataset_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Task 3 — train_model
+# Task 3 — tick_scheduler (Celery Beat, runs every 60 s)
+# ---------------------------------------------------------------------------
+
+@celery_app.task(name="celery_worker.tick_scheduler", bind=False)
+def tick_scheduler() -> None:
+    """Enqueue any collection jobs whose next_run_at is now due."""
+    asyncio.run(_tick_scheduler())
+
+
+async def _tick_scheduler() -> None:
+    from sqlalchemy import select
+    from data.models import CollectionJob
+
+    now = datetime.now(timezone.utc)
+    factory, engine = _make_db()
+    try:
+        async with factory() as db:
+            result = await db.execute(
+                select(CollectionJob).where(
+                    CollectionJob.enabled == True,  # noqa: E712
+                    CollectionJob.next_run_at.isnot(None),
+                    CollectionJob.next_run_at <= now,
+                    CollectionJob.status != "running",
+                )
+            )
+            jobs = result.scalars().all()
+
+        for job in jobs:
+            try:
+                _release_lock("run_collection_job", job.id)
+                from celery_app import enqueue
+                await enqueue("run_collection_job", job.id)
+                logger.info(f"[tick_scheduler] enqueued job {job.id} (next_run_at={job.next_run_at})")
+            except Exception as exc:
+                logger.warning(f"[tick_scheduler] could not enqueue job {job.id}: {exc}")
+    finally:
+        await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — train_model
 # ---------------------------------------------------------------------------
 
 @celery_app.task(name="celery_worker.train_model", bind=False)

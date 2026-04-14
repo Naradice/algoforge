@@ -152,7 +152,7 @@ async def test_rename_dataset(client):
 
     # Create a dataset by upload (simplest way to get a dataset record via API)
     csv_content = "datetime,open,high,low,close,volume\n2000-01-03 00:01:00,100,101,99,100,30\n"
-    files = {"file": ("data.csv", csv_content.encode(), "text/csv")}
+    files = [("files", ("data.csv", csv_content.encode(), "text/csv"))]
     data = {"datasource_id": str(ds_id)}
     upload_r = await client.post("/api/v1/datasets/upload", files=files, data=data)
     assert upload_r.status_code == 202, upload_r.text
@@ -170,7 +170,7 @@ async def test_delete_dataset(client):
     ds_id = cr.json()["data"]["id"]
 
     csv_content = "datetime,open,high,low,close,volume\n2000-01-03 00:01:00,100,101,99,100,30\n"
-    files = {"file": ("data.csv", csv_content.encode(), "text/csv")}
+    files = [("files", ("data.csv", csv_content.encode(), "text/csv"))]
     upload_r = await client.post("/api/v1/datasets/upload", files=files, data={"datasource_id": str(ds_id)})
     assert upload_r.status_code == 202
     dataset_id = upload_r.json()["data"]["dataset_id"]
@@ -192,7 +192,7 @@ async def test_dataset_preview_ready(client):
     csv_content = "datetime,open,high,low,close,volume\n" + "\n".join(
         f"2000-01-03 00:0{i}:00,100,101,99,100,30" for i in range(1, 6)
     ) + "\n"
-    files = {"file": ("data.csv", csv_content.encode(), "text/csv")}
+    files = [("files", ("data.csv", csv_content.encode(), "text/csv"))]
     upload_r = await client.post("/api/v1/datasets/upload", files=files)
     assert upload_r.status_code == 202
     dataset_id = upload_r.json()["data"]["dataset_id"]

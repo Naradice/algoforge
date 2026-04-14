@@ -6,8 +6,8 @@ import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 
 export default function DataPage() {
-  const { data: datasources, isLoading } = useSWR("/api/v1/datasources", fetcher);
-  const { data: datasets } = useSWR("/api/v1/datasets?page_size=500", fetcher, {
+  const { data: datasources, isLoading } = useSWR("/api/v1/datasources?page_size=1000", fetcher);
+  const { data: datasets } = useSWR("/api/v1/datasets?page_size=1000", fetcher, {
     refreshInterval: (data) => data?.some?.((d: any) => d.status === "running") ? 3000 : 10000,
   });
   const { data: allJobs } = useSWR("/api/v1/collection-jobs?page_size=100", fetcher, {

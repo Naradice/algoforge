@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { fetcher } from "@/lib/fetcher";
 import { EquityChart } from "@/components/equity-chart";
 import { MetricsGrid } from "@/components/metrics-grid";
+import { OHLCChart } from "@/components/ohlc-chart";
+import { OscillatorChart } from "@/components/oscillator-chart";
 import { useSSE } from "@/hooks/use-sse";
+import type { IndicatorSeries, MarketEvent } from "@/components/ohlc-chart";
 
 interface Trade {
   id: number;
@@ -15,10 +18,12 @@ interface Trade {
   entry_price: number;
   exit_price: number | null;
   volume: number;
+  sl_price: number | null;
+  tp_price: number | null;
   profit: number | null;
   opened_at: string;
   closed_at: string | null;
-  exit_reason?: string;
+  exit_reason: string | null;
 }
 
 interface RunEvent {
@@ -37,6 +42,7 @@ export default function RunDetailPage() {
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const strategyUrl = `/api/v1/strategies/${strategyId}`;
   const runUrl = `/api/v1/strategies/${strategyId}/runs/${runId}`;
@@ -44,6 +50,7 @@ export default function RunDetailPage() {
   const equityUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/equity`;
   const tradesUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/trades`;
   const chatUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/chat`;
+  const chartDataUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/chart-data`;
 
   const { data: strategy } = useSWR(strategyUrl, fetcher);
   const { data: run, mutate: mutateRun } = useSWR(runUrl, fetcher, {
@@ -55,6 +62,10 @@ export default function RunDetailPage() {
   const { data: equityData } = useSWR(equityUrl, fetcher);
   const { data: trades } = useSWR(tradesUrl, fetcher);
   const { data: chatHistory, mutate: mutateChat } = useSWR(chatUrl, fetcher);
+  const { data: chartData } = useSWR(
+    run?.status === "completed" ? chartDataUrl : null,
+    fetcher,
+  );
 
   const onSSEEvent = useCallback((data: unknown) => {
     setEvents((prev) => [data as RunEvent, ...prev].slice(0, 200));
@@ -75,18 +86,23 @@ export default function RunDetailPage() {
     }
   }
 
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory, sendingChat]);
+
   async function handleSendChat(e: React.FormEvent) {
     e.preventDefault();
     if (!chatInput.trim()) return;
     setSendingChat(true);
+    const msg = chatInput;
+    setChatInput("");
     try {
       await fetch(chatUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: chatInput }),
+        body: JSON.stringify({ message: msg }),
       });
-      setChatInput("");
-      mutateChat();
+      await mutateChat();
     } finally {
       setSendingChat(false);
     }
@@ -155,7 +171,50 @@ export default function RunDetailPage() {
       {/* Metrics */}
       {metrics && <MetricsGrid metrics={metrics} />}
 
-      {/* Equity Chart */}
+      {/* Time Series Chart — OHLC + indicators + trade markers */}
+      {chartData && (
+        <div className="rounded border border-gray-700 bg-gray-900 p-4 space-y-1">
+          <div className="mb-2 flex items-center gap-3">
+            <h3 className="text-sm font-medium text-gray-300">Price Chart</h3>
+            {(chartData.events ?? []).length > 0 && (
+              <span className="rounded px-1.5 py-0.5 text-xs bg-yellow-900 text-yellow-300">
+                {(chartData.events as MarketEvent[]).length} economic events
+              </span>
+            )}
+          </div>
+
+          {/* Candlestick + overlay indicators + trade markers + economic events */}
+          <OHLCChart
+            candles={chartData.candles ?? []}
+            indicators={chartData.indicators ?? {}}
+            markers={chartData.markers ?? []}
+            events={(chartData.events ?? []) as MarketEvent[]}
+          />
+
+          {/* Oscillator sub-panels (RSI, MACD, ATR, …) */}
+          {(() => {
+            const separate = Object.entries(
+              (chartData.indicators ?? {}) as Record<string, IndicatorSeries>
+            ).filter(([, s]) => s.pane === "separate" && s.data.length > 0);
+
+            // Group by s.group
+            const groups: Record<string, Record<string, IndicatorSeries>> = {};
+            for (const [name, s] of separate) {
+              if (!groups[s.group]) groups[s.group] = {};
+              groups[s.group][name] = s;
+            }
+
+            return Object.entries(groups).map(([group, seriesMap]) => (
+              <div key={group}>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mt-3 mb-1">{group}</p>
+                <OscillatorChart group={group} series={seriesMap} />
+              </div>
+            ));
+          })()}
+        </div>
+      )}
+
+      {/* Equity Curve */}
       {equityData && equityData.length > 0 && (
         <div className="rounded border border-gray-700 bg-gray-900 p-4">
           <h3 className="mb-3 text-sm font-medium text-gray-300">Equity Curve</h3>
@@ -190,28 +249,38 @@ export default function RunDetailPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-gray-400">
-                      <th className="pb-2 pr-4">Symbol</th>
-                      <th className="pb-2 pr-4">Direction</th>
-                      <th className="pb-2 pr-4">Entry</th>
-                      <th className="pb-2 pr-4">Exit</th>
-                      <th className="pb-2 pr-4">Profit</th>
-                      <th className="pb-2 pr-4">Opened</th>
-                      <th className="pb-2">Exit Reason</th>
+                    <tr className="text-left text-gray-400 border-b border-gray-700">
+                      <th className="pb-2 pr-3">#</th>
+                      <th className="pb-2 pr-3">Dir</th>
+                      <th className="pb-2 pr-3">Entry</th>
+                      <th className="pb-2 pr-3">Exit</th>
+                      <th className="pb-2 pr-3">SL</th>
+                      <th className="pb-2 pr-3">TP</th>
+                      <th className="pb-2 pr-3">Vol</th>
+                      <th className="pb-2 pr-3">PnL</th>
+                      <th className="pb-2 pr-3">Opened</th>
+                      <th className="pb-2 pr-3">Closed</th>
+                      <th className="pb-2">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(trades as Trade[]).map((t) => (
-                      <tr key={t.id} className="border-t border-gray-800">
-                        <td className="py-2 pr-4 text-white">{t.symbol}</td>
-                        <td className={`py-2 pr-4 ${t.direction === "buy" ? "text-green-400" : "text-red-400"}`}>{t.direction}</td>
-                        <td className="py-2 pr-4 text-gray-300">{t.entry_price?.toFixed(4)}</td>
-                        <td className="py-2 pr-4 text-gray-300">{t.exit_price?.toFixed(4) ?? "—"}</td>
-                        <td className={`py-2 pr-4 ${(t.profit ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {t.profit != null ? `${(t.profit * 100).toFixed(2)}%` : "—"}
+                      <tr key={t.id} className="border-t border-gray-800 hover:bg-gray-800/40">
+                        <td className="py-2 pr-3 text-gray-500 text-xs">{t.id}</td>
+                        <td className={`py-2 pr-3 font-medium ${t.direction === "buy" ? "text-green-400" : "text-red-400"}`}>
+                          {t.direction === "buy" ? "▲" : "▼"} {t.direction}
                         </td>
-                        <td className="py-2 pr-4 text-gray-400 text-xs">{t.opened_at ? new Date(t.opened_at).toLocaleString() : "—"}</td>
-                        <td className="py-2 text-gray-400 text-xs">{t.exit_reason ?? "—"}</td>
+                        <td className="py-2 pr-3 text-gray-300 font-mono text-xs">{t.entry_price?.toFixed(4)}</td>
+                        <td className="py-2 pr-3 text-gray-300 font-mono text-xs">{t.exit_price?.toFixed(4) ?? "—"}</td>
+                        <td className="py-2 pr-3 text-gray-500 font-mono text-xs">{t.sl_price?.toFixed(4) ?? "—"}</td>
+                        <td className="py-2 pr-3 text-gray-500 font-mono text-xs">{t.tp_price?.toFixed(4) ?? "—"}</td>
+                        <td className="py-2 pr-3 text-gray-400 text-xs">{t.volume}</td>
+                        <td className={`py-2 pr-3 font-mono text-xs font-medium ${(t.profit ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          {t.profit != null ? `${t.profit >= 0 ? "+" : ""}${t.profit.toFixed(4)}` : "—"}
+                        </td>
+                        <td className="py-2 pr-3 text-gray-400 text-xs whitespace-nowrap">{t.opened_at ? new Date(t.opened_at).toLocaleString() : "—"}</td>
+                        <td className="py-2 pr-3 text-gray-400 text-xs whitespace-nowrap">{t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}</td>
+                        <td className="py-2 text-gray-500 text-xs">{t.exit_reason ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -239,32 +308,71 @@ export default function RunDetailPage() {
 
         {/* Chat Tab */}
         {activeTab === "chat" && (
-          <div className="mt-4 space-y-4">
-            <div className="max-h-96 overflow-y-auto space-y-2">
+          <div className="mt-4 flex flex-col gap-3">
+            {/* Message history */}
+            <div className="flex flex-col gap-2 max-h-[480px] overflow-y-auto pr-1">
               {!chatHistory || chatHistory.length === 0 ? (
-                <p className="text-gray-500 text-sm">No messages yet. Ask about this run's performance.</p>
+                <div className="rounded border border-gray-700 bg-gray-900 p-6 text-center">
+                  <p className="text-gray-400 text-sm font-medium mb-1">Ask about this run</p>
+                  <p className="text-gray-500 text-xs">
+                    The AI has access to the strategy definition, metrics, and recent trades.
+                    Try: &ldquo;Why is the win rate low?&rdquo; or &ldquo;Suggest parameter improvements.&rdquo;
+                  </p>
+                </div>
               ) : (
-                (chatHistory as { id: number; role: string; message: string; created_at: string }[]).map((msg) => (
-                  <div key={msg.id} className={`rounded p-3 text-sm ${msg.role === "user" ? "bg-brand-900 text-white" : "bg-gray-800 text-gray-300"}`}>
-                    <div className="text-xs text-gray-400 mb-1 capitalize">{msg.role}</div>
-                    {msg.message}
-                  </div>
-                ))
+                (chatHistory as { id: number; role: string; message: string; created_at: string }[]).map((msg) => {
+                  const isUser = msg.role === "user";
+                  return (
+                    <div key={msg.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[80%] rounded-lg px-4 py-3 text-sm ${
+                        isUser
+                          ? "bg-brand-600 text-white rounded-br-sm"
+                          : "bg-gray-800 text-gray-200 rounded-bl-sm"
+                      }`}>
+                        {!isUser && (
+                          <div className="text-xs text-gray-400 mb-1 font-medium">AlgoForge AI</div>
+                        )}
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                        <div className={`text-xs mt-1 ${isUser ? "text-sky-200/60" : "text-gray-500"}`}>
+                          {new Date(msg.created_at).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
               )}
+
+              {/* Thinking indicator */}
+              {sendingChat && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-800 rounded-lg rounded-bl-sm px-4 py-3">
+                    <div className="flex gap-1 items-center h-4">
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={chatBottomRef} />
             </div>
+
+            {/* Input */}
             <form onSubmit={handleSendChat} className="flex gap-2">
               <input
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask about this run…"
-                className="flex-1 rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                placeholder="Ask about this run's performance…"
+                disabled={sendingChat}
+                className="flex-1 rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={sendingChat || !chatInput.trim()}
-                className="rounded bg-brand-500 px-4 py-2 text-sm text-white hover:bg-sky-400 disabled:opacity-50"
+                className="rounded bg-brand-500 px-4 py-2 text-sm text-white hover:bg-sky-400 disabled:opacity-50 whitespace-nowrap"
               >
-                Send
+                {sendingChat ? "Thinking…" : "Send"}
               </button>
             </form>
           </div>

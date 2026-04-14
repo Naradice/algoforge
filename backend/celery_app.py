@@ -54,7 +54,16 @@ celery_app.conf.update(
         "celery_worker.train_model":           {"queue": "training"},
         "celery_worker.validate_model":        {"queue": "training"},
         "celery_worker.execute_strategy_run":  {"queue": "backtest"},
+        "celery_worker.tick_scheduler":        {"queue": "collection"},
     },
+    # Beat schedule — tick_scheduler fires every 60 s and enqueues any due collection jobs.
+    beat_schedule={
+        "tick-scheduler": {
+            "task": "celery_worker.tick_scheduler",
+            "schedule": 60.0,
+        },
+    },
+    timezone="UTC",
 )
 
 # ---------------------------------------------------------------------------

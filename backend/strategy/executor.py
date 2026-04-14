@@ -113,6 +113,7 @@ async def _run(run_id: int) -> dict:
             asyncio.run_coroutine_threadsafe(_update_progress(pct), loop)
 
     import functools
+    wf_ratio = run.walk_forward_ratio or 0.0
     try:
         raw_trades, metrics, equity_curve = await loop.run_in_executor(
             None,
@@ -122,6 +123,7 @@ async def _run(run_id: int) -> dict:
                 ds_rec.artifact_path,
                 _on_progress,
                 model_cache,
+                wf_ratio,
             ),
         )
     except Exception as e:
@@ -150,6 +152,10 @@ async def _run(run_id: int) -> dict:
                 profit=t["profit"],
                 opened_at=t["opened_at"],
                 closed_at=t["closed_at"],
+                exit_reason=t.get("exit_reason"),
+                phase=t.get("phase"),
+                mae=t.get("mae"),
+                mfe=t.get("mfe"),
             ))
 
         for key, value in metrics.items():
@@ -180,11 +186,20 @@ async def _load_model_cache(definition: dict) -> dict:
     suitable for strategy.engine.ml_condition.evaluate_ml_condition().
     """
     model_ids: set[int] = set()
+    # Old format: entry/exit at top level
     for block_key in ("entry", "exit"):
         block = definition.get(block_key, {})
         for cond in block.get("conditions", []):
             if cond.get("type") == "ml_signal" and "model_id" in cond:
                 model_ids.add(int(cond["model_id"]))
+    # New format: long/short → entry/exit
+    for side in ("long", "short"):
+        side_def = definition.get(side, {})
+        for block_key in ("entry", "exit"):
+            block = side_def.get(block_key, {})
+            for cond in block.get("conditions", []):
+                if cond.get("type") == "ml_signal" and "model_id" in cond:
+                    model_ids.add(int(cond["model_id"]))
 
     if not model_ids:
         return {}

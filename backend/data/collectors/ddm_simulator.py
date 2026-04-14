@@ -211,7 +211,12 @@ class _DDMv1:
             self.advance_order_price()
             return None, self.tick_time
 
-    def simulate_stream(self, n_trades: int | None = None, total_seconds: float | None = None):
+    def simulate_stream(
+        self,
+        n_trades: int | None = None,
+        total_seconds: float | None = None,
+        yield_interval: int = 500,
+    ):
         """Yield (price, tick_time) for each trade.
 
         Mirrors the original simulate(total_seconds) loop:
@@ -223,18 +228,29 @@ class _DDMv1:
           - n_trades: stop after exactly n_trades yields
           - Neither: run forever (endless mode)
 
+        yield_interval: call time.sleep(0) every this many steps to release the
+          GIL and let other threads (web server, scheduler) get CPU time.
+
         Raises RuntimeError if no trade occurs for 10M consecutive steps
         (indicates model divergence — only a risk with num_agent < 50).
         """
         import itertools
+        import time
 
         keep = getattr(self, "wma", 0) + 2
         yielded = 0
         no_trade_streak = 0
+        step = 0
         _MAX_NO_TRADE = 10_000_000
 
         for _ in itertools.count():
             self._add_time_for_ticks()
+
+            # Yield the GIL periodically so web-server and other threads stay
+            # responsive even while the simulation is burning a full core.
+            step += 1
+            if step % yield_interval == 0:
+                time.sleep(0)
 
             if total_seconds is not None and self.tick_time >= total_seconds:
                 return
@@ -401,6 +417,8 @@ def _write_batch(
     df.to_parquet(part_dir / f"part-{batch_num:06d}.parquet")
 
     # Update live metadata so the UI can show progress during a running job.
+    # Written atomically (temp file + rename) so a mid-write crash never leaves
+    # a corrupt _meta.json that would trigger _clear_artifact_dir() on restart.
     from_ts = timestamps[0]
     to_ts = timestamps[-1]
     meta = {
@@ -409,7 +427,15 @@ def _write_batch(
         "to_ts": to_ts.isoformat(),
         "batch_num": batch_num,
     }
-    (out_dir / "_meta.json").write_text(json.dumps(meta))
+    meta_path = out_dir / "_meta.json"
+    tmp_path = meta_path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(meta))
+    tmp_path.replace(meta_path)  # atomic on POSIX; best-effort on Windows
+
+    # Push both files to remote object storage (no-op if ARTIFACT_REMOTE_URL unset).
+    from data.artifact_store import upload as _upload
+    _upload(part_dir / f"part-{batch_num:06d}.parquet")
+    _upload(meta_path)
 
 
 def _ticks_to_ohlc(tick_series: pd.Series, timeframe: str) -> pd.DataFrame:
@@ -438,6 +464,15 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     timeframe = config.get("timeframe", "M1")
     candle_secs = _CANDLE_SECONDS.get(timeframe, 60)
     total_seconds = None if endless else float(ohlc_length * candle_secs)
+
+    # How long to sleep after each batch flush.
+    # Endless simulations run forever; without throttling they burn 100% of one
+    # CPU core indefinitely. A 0.5 s pause after every 10 k trades keeps average
+    # CPU usage well below 50 % while still producing data faster than any
+    # realistic consumer. For finite runs the default is 0 (finish as fast as
+    # possible). Override via config["batch_sleep_seconds"].
+    _default_sleep = 0.5 if endless else 0.0
+    batch_sleep: float = float(config.get("batch_sleep_seconds", _default_sleep))
 
     model_version = config.get("model", "v3").lower()
     log.info(
@@ -470,15 +505,65 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact_rel = f"datasets/src_{datasource_id}/ddm_ticks"
 
-    # Clear stale files so pd.read_parquet(directory) never mixes old + new batches.
-    _clear_artifact_dir(out_dir)
+    # Decide whether to clear existing data or resume.
+    #
+    # Finite run: always clear — the caller expects a fresh, reproducible
+    #   dataset for the configured length/seed.
+    #
+    # Endless run: if _meta.json exists (a previous run wrote data), resume
+    #   by appending new batches after the last known timestamp. This prevents
+    #   accumulated data from being wiped when the worker restarts (Celery
+    #   re-queues acks_late tasks on worker death).
+    #   If no meta exists (genuine first run), clear any stale files and start
+    #   fresh as before.
+    _DEFAULT_START = pd.Timestamp("2000-01-03 00:00:00", tz="UTC")
+    start_ts = _DEFAULT_START
+    batch_num = 0
+    trade_count_offset = 0
 
-    start_ts = pd.Timestamp("2000-01-03 00:00:00", tz="UTC")
+    if endless:
+        meta = read_meta(datasource_id)
+        if meta.get("to_ts") and meta.get("batch_num") is not None:
+            # Resume: continue timestamps from where the last batch ended so
+            # new parquet files land in different partition dirs from old ones.
+            start_ts = pd.Timestamp(meta["to_ts"], tz="UTC")
+            batch_num = int(meta["batch_num"]) + 1
+            trade_count_offset = int(meta.get("total_trades", 0))
+            log.info(
+                f"DDM resuming datasource={datasource_id}: "
+                f"batch_num={batch_num} start_ts={start_ts} "
+                f"prior_trades={trade_count_offset}"
+            )
+        elif any(out_dir.rglob("*.parquet")):
+            # _meta.json is missing or corrupt but parquet files exist — this
+            # can happen if the process crashed between writing the last parquet
+            # file and writing meta. Scan existing files to recover position
+            # rather than clearing valid data.
+            existing = sorted(out_dir.rglob("part-*.parquet"))
+            last_file = existing[-1]
+            try:
+                _df = pd.read_parquet(last_file)
+                start_ts = _df.index[-1]
+                # Recover batch_num from filename: part-NNNNNN.parquet
+                batch_num = int(last_file.stem.split("-")[1]) + 1
+                log.warning(
+                    f"DDM _meta.json missing/corrupt for datasource={datasource_id}; "
+                    f"recovered from {last_file.name}: batch_num={batch_num} start_ts={start_ts}"
+                )
+            except Exception as e:
+                log.warning(f"DDM recovery read failed ({e}); clearing and restarting")
+                _clear_artifact_dir(out_dir)
+        else:
+            # Genuine first run — no data exists yet.
+            _clear_artifact_dir(out_dir)
+            log.info(f"DDM fresh start datasource={datasource_id}")
+    else:
+        # Finite run always starts clean.
+        _clear_artifact_dir(out_dir)
 
     prices_buf: list[float] = []
     ticks_buf: list[float] = []
     trade_count = 0
-    batch_num = 0
 
     for price, tick in model.simulate_stream(total_seconds=total_seconds):
         trade_count += 1
@@ -486,11 +571,14 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
         ticks_buf.append(tick)
 
         if len(prices_buf) >= BATCH_TICKS:
-            _write_batch(out_dir, batch_num, prices_buf, ticks_buf, start_ts, total_trades=trade_count)
-            log.info(f"DDM batch {batch_num} written: {BATCH_TICKS} trades, total={trade_count}")
+            _write_batch(out_dir, batch_num, prices_buf, ticks_buf, start_ts, total_trades=trade_count_offset + trade_count)
+            log.info(f"DDM batch {batch_num} written: {BATCH_TICKS} trades, total={trade_count_offset + trade_count}")
             prices_buf.clear()
             ticks_buf.clear()
             batch_num += 1
+            if batch_sleep > 0:
+                import time
+                time.sleep(batch_sleep)
 
     # Flush remaining ticks (fixed mode always lands here; endless never does).
     if prices_buf:
@@ -500,7 +588,7 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     log.info(f"DDM collect done: {trade_count} total trades, {batch_num} batches")
 
     from data.parquet_reader import load_ddm_ticks
-    tick_df = load_ddm_ticks(out_dir, max_files=batch_num + 1)
+    tick_df = load_ddm_ticks(out_dir)  # capped at _MAX_FILES (100) to avoid OOM on large runs
     tick_series = tick_df["price"]
     ohlc = _ticks_to_ohlc(tick_series, timeframe)
 

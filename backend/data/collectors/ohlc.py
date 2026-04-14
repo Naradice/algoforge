@@ -56,16 +56,31 @@ class CollectResult:
     to_ts: "datetime"
 
 
-def collect(datasource_id: int, config: dict) -> CollectResult:
-    """Download OHLC data and save to parquet. Called inside a Celery worker."""
+def collect(datasource_id: int, config: dict, incremental: dict | None = None) -> CollectResult:
+    """Download OHLC data and save to parquet. Called inside a Celery worker.
+
+    Args:
+        datasource_id: ID of the datasource being collected.
+        config: Datasource config dict (symbol, timeframe, client, etc.).
+        incremental: When provided, appends new bars to an existing dataset instead of
+            rewriting from scratch. Expected keys:
+                - "dataset_id"    (int)      existing Dataset row id
+                - "artifact_path" (str)      relative path to existing parquet
+                - "to_ts"         (datetime) last timestamp in existing dataset
+    """
+    from datetime import datetime
+
     client = config.get("client", "yfinance")
     symbol: str = config["symbol"]
     timeframe: str = config.get("timeframe", "H1")
-    from_str: str | None = config.get("from_ts")
     to_str: str | None = config.get("to_ts")
-
-    from_dt = pd.Timestamp(from_str, tz="UTC") if from_str else pd.Timestamp("2000-01-01", tz="UTC")
     to_dt = pd.Timestamp(to_str, tz="UTC") if to_str else pd.Timestamp.now(tz="UTC")
+
+    if incremental is not None:
+        from_dt = pd.Timestamp(incremental["to_ts"], tz="UTC")
+    else:
+        from_str: str | None = config.get("from_ts")
+        from_dt = pd.Timestamp(from_str, tz="UTC") if from_str else pd.Timestamp("2000-01-01", tz="UTC")
 
     if client == "yfinance":
         df = _collect_yfinance(symbol, timeframe, from_dt, to_dt, config)
@@ -74,20 +89,44 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     else:
         raise ValueError(f"Unknown OHLC client: {client!r}")
 
-    if df.empty:
-        raise RuntimeError(f"No data returned for {symbol} {timeframe} ({from_dt} – {to_dt})")
-
-    # Normalise column names to lowercase and ensure UTC index
+    # Normalise column names to lowercase
     df.columns = [c.lower() for c in df.columns]
     df.index.name = "datetime"
 
-    # Save to parquet
+    if incremental is not None:
+        artifact_rel = incremental["artifact_path"]
+        if df.empty:
+            # No new bars — report existing dataset stats unchanged
+            existing = pd.read_parquet(ARTIFACT_STORE / artifact_rel)
+            return CollectResult(
+                artifact_path=artifact_rel,
+                row_count=len(existing),
+                from_ts=existing.index[0].to_pydatetime().replace(tzinfo=timezone.utc),
+                to_ts=existing.index[-1].to_pydatetime().replace(tzinfo=timezone.utc),
+            )
+        from data.collectors._utils import merge_into_parquet
+        total_rows = merge_into_parquet(ARTIFACT_STORE / artifact_rel, df)
+        merged = pd.read_parquet(ARTIFACT_STORE / artifact_rel)
+        from data.artifact_store import upload as _upload
+        _upload(ARTIFACT_STORE / artifact_rel)
+        return CollectResult(
+            artifact_path=artifact_rel,
+            row_count=total_rows,
+            from_ts=merged.index[0].to_pydatetime().replace(tzinfo=timezone.utc),
+            to_ts=merged.index[-1].to_pydatetime().replace(tzinfo=timezone.utc),
+        )
+
+    if df.empty:
+        raise RuntimeError(f"No data returned for {symbol} {timeframe} ({from_dt} – {to_dt})")
+
+    # Full collection — write fresh parquet
     out_dir = ARTIFACT_STORE / "datasets" / f"src_{datasource_id}"
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact_rel = f"datasets/src_{datasource_id}/{symbol.replace('/', '_')}_{timeframe}.parquet"
     df.to_parquet(ARTIFACT_STORE / artifact_rel)
+    from data.artifact_store import upload as _upload
+    _upload(ARTIFACT_STORE / artifact_rel)
 
-    from datetime import datetime
     return CollectResult(
         artifact_path=artifact_rel,
         row_count=len(df),

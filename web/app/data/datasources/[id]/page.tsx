@@ -6,7 +6,7 @@ import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useParams } from "next/navigation";
 import { useToast } from "@/lib/toast";
-import { CsvUploadForm, type ColMap } from "@/components/csv-upload-form";
+import { CsvUploadForm, type ColMap, type UploadOptions } from "@/components/csv-upload-form";
 
 type TestResult = {
   success: boolean;
@@ -273,27 +273,28 @@ export default function DatasourceDetailPage() {
     }
   }
 
-  async function handleUpload(file: File, symbol: string, timeframe: string, colMap: ColMap) {
+  async function handleUpload(uploadFiles: File[], symbol: string, timeframe: string, colMap: ColMap, options: UploadOptions) {
     setUploading(true);
     try {
       const form = new FormData();
-      form.append("file", file);
+      uploadFiles.forEach((f) => form.append("files", f));
       form.append("datasource_id", id);
-      if (symbol)        form.append("symbol",       symbol);
-      if (timeframe)     form.append("timeframe",    timeframe);
+      if (symbol)          form.append("symbol",       symbol);
+      if (timeframe)       form.append("timeframe",    timeframe);
       if (colMap.close)    form.append("close_col",    colMap.close);
       if (colMap.open)     form.append("open_col",     colMap.open);
       if (colMap.high)     form.append("high_col",     colMap.high);
       if (colMap.low)      form.append("low_col",      colMap.low);
       if (colMap.volume)   form.append("volume_col",   colMap.volume);
       if (colMap.datetime) form.append("datetime_col", colMap.datetime);
+      form.append("merge", String(options.merge));
       const res = await fetch("/api/v1/datasets/upload", { method: "POST", body: form });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         toast(body.error?.message ?? body.detail ?? "Upload failed", "error");
         return;
       }
-      toast("CSV uploaded successfully", "success");
+      toast("File(s) uploaded successfully", "success");
       mutateDatasets();
     } finally {
       setUploading(false);
@@ -308,12 +309,20 @@ export default function DatasourceDetailPage() {
     return body?.detail?.message ?? body?.error?.message ?? body?.detail ?? fallback;
   }
 
+  // Refresh the files list immediately, then again after 5 s and 15 s so fast
+  // web_report jobs (which complete before the next status poll) are visible.
+  function scheduleFilesRefresh() {
+    setTimeout(() => mutateFiles?.(), 5_000);
+    setTimeout(() => mutateFiles?.(), 15_000);
+  }
+
   async function startCollection() {
     const res = await fetch(`/api/v1/datasources/${id}/collect`, { method: "POST" });
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
       toast("Collection queued", "success");
       triggerPoll();
+      scheduleFilesRefresh();
     } else {
       toast(extractApiError(body, "Failed to start collection"), "error");
     }
@@ -327,6 +336,7 @@ export default function DatasourceDetailPage() {
     if (res.ok) {
       toast("Collection queued", "success");
       triggerPoll();
+      scheduleFilesRefresh();
     } else {
       toast(extractApiError(body, "Failed to queue job"), "error");
     }

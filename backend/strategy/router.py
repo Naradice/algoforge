@@ -100,6 +100,11 @@ async def stop_run(strategy_id: int, run_id: int, db: AsyncSession = Depends(get
     return DataResponse(data=item)
 
 
+@router.delete("/{strategy_id}/runs/{run_id}", status_code=204)
+async def delete_run(strategy_id: int, run_id: int, db: AsyncSession = Depends(get_db)):
+    await strategy_service.delete_run(db, strategy_id, run_id)
+
+
 @router.get("/{strategy_id}/runs/{run_id}/metrics", response_model=DataResponse[dict])
 async def get_run_metrics(strategy_id: int, run_id: int, db: AsyncSession = Depends(get_db)):
     metrics = await strategy_service.get_metrics(db, strategy_id, run_id)
@@ -145,6 +150,13 @@ async def get_run_status(strategy_id: int, run_id: int, db: AsyncSession = Depen
 async def get_equity_curve(strategy_id: int, run_id: int, db: AsyncSession = Depends(get_db)):
     curve = await strategy_service.get_equity_curve(db, strategy_id, run_id)
     return DataResponse(data=curve)
+
+
+@router.get("/{strategy_id}/runs/{run_id}/chart-data")
+async def get_chart_data(strategy_id: int, run_id: int, db: AsyncSession = Depends(get_db)):
+    """Return OHLC candles + indicator series + trade markers for the run chart."""
+    data = await strategy_service.get_chart_data(db, strategy_id, run_id)
+    return DataResponse(data=data)
 
 
 @router.get("/{strategy_id}/runs/{run_id}/trades/{trade_id}")

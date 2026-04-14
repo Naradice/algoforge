@@ -36,6 +36,15 @@ export default function ModelDetailPage() {
   const [deploying, setDeploying] = useState<number | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
 
+  const [showSearchForm, setShowSearchForm] = useState(false);
+  const [searchDatasetId, setSearchDatasetId] = useState("");
+  const DEFAULT_SEARCH_GRID = JSON.stringify({ lr: [0.001, 0.0001], batch_size: [32, 64] }, null, 2);
+  const [searchGridText, setSearchGridText] = useState(DEFAULT_SEARCH_GRID);
+  const [searchBaseHpText, setSearchBaseHpText] = useState(JSON.stringify(DEFAULT_HYPERPARAMS, null, 2));
+  const [startingSearch, setStartingSearch] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchResult, setSearchResult] = useState<{ run_ids: number[] } | null>(null);
+
   const [showValidateForm, setShowValidateForm] = useState(false);
   const [validateRunId, setValidateRunId] = useState("");
   const [validateDatasetId, setValidateDatasetId] = useState("");
@@ -92,6 +101,49 @@ export default function ModelDetailPage() {
       mutate(`/api/v1/models/${id}`);
     } finally {
       setDeploying(null);
+    }
+  }
+
+  async function startSearch() {
+    setSearchError(null);
+    setSearchResult(null);
+    let grid: Record<string, unknown[]>;
+    let baseHp: Record<string, unknown>;
+    try {
+      grid = JSON.parse(searchGridText);
+      baseHp = JSON.parse(searchBaseHpText);
+    } catch {
+      setSearchError("Search grid or base hyperparams is not valid JSON");
+      return;
+    }
+    if (!searchDatasetId) {
+      setSearchError("Select a dataset");
+      return;
+    }
+    const combos = Object.values(grid).reduce((acc, vals) => acc * (vals as unknown[]).length, 1);
+    setStartingSearch(true);
+    try {
+      const res = await fetch("/api/v1/training-runs/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model_id: parseInt(id),
+          dataset_id: parseInt(searchDatasetId),
+          search_grid: { ...baseHp, ...grid },
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setSearchError(body.error?.message ?? body.detail ?? `Error ${res.status}`);
+        return;
+      }
+      const body = await res.json();
+      const result = body.data ?? body;
+      setSearchResult(result);
+      toast(`${result.run_ids?.length ?? combos} training runs queued`, "success");
+      mutate(`/api/v1/models/${id}/training-runs`);
+    } finally {
+      setStartingSearch(false);
     }
   }
 
@@ -211,7 +263,10 @@ export default function ModelDetailPage() {
         {deployError && <p className="mb-2 text-xs text-red-400">{deployError}</p>}
 
         {runs && runs.length === 0 && (
-          <p className="text-sm text-gray-500">No training runs yet.</p>
+          <div className="rounded-lg border border-dashed border-gray-700 px-6 py-10 text-center">
+            <p className="text-gray-300 font-medium text-sm mb-1">No training runs yet</p>
+            <p className="text-gray-500 text-xs">Use the Train button above to start the first run.</p>
+          </div>
         )}
 
         {runs && runs.length > 0 && (
@@ -270,6 +325,87 @@ export default function ModelDetailPage() {
               ))}
             </tbody>
           </table>
+        )}
+      </section>
+
+      {/* Hyperparameter Search */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-gray-400">Hyperparameter Search</h2>
+          <button
+            onClick={() => { setShowSearchForm(!showSearchForm); setSearchResult(null); setSearchError(null); }}
+            className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:border-gray-400 hover:text-white"
+          >
+            {showSearchForm ? "Cancel" : "+ New Search"}
+          </button>
+        </div>
+
+        {showSearchForm && (
+          <div className="rounded border border-gray-700 bg-gray-900 p-4 space-y-3">
+            <p className="text-xs text-gray-400">
+              Define a search grid — each combination becomes a training run. Fixed hyperparams go in
+              <em> Base Hyperparams</em>; the values to sweep go in <em>Search Grid</em>.
+            </p>
+            <div>
+              <label className="mb-1 block text-xs text-gray-400">Dataset</label>
+              <select
+                value={searchDatasetId}
+                onChange={(e) => setSearchDatasetId(e.target.value)}
+                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="">Select dataset…</option>
+                {datasets?.map((d: any) => (
+                  <option key={d.id} value={d.id}>{d.name} ({d.row_count} rows)</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs text-gray-400">
+                  Search Grid <span className="text-gray-500">(values to sweep)</span>
+                </label>
+                <textarea
+                  value={searchGridText}
+                  onChange={(e) => setSearchGridText(e.target.value)}
+                  rows={6}
+                  className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 font-mono text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-gray-400">
+                  Base Hyperparams <span className="text-gray-500">(fixed across runs)</span>
+                </label>
+                <textarea
+                  value={searchBaseHpText}
+                  onChange={(e) => setSearchBaseHpText(e.target.value)}
+                  rows={6}
+                  className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 font-mono text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+              </div>
+            </div>
+            {(() => {
+              try {
+                const grid = JSON.parse(searchGridText);
+                const combos = Object.values(grid).reduce<number>((acc, vals) => acc * (vals as unknown[]).length, 1);
+                return <p className="text-xs text-gray-500">{combos} run{combos !== 1 ? "s" : ""} will be queued.</p>;
+              } catch { return null; }
+            })()}
+            {searchError && <p className="text-xs text-red-400">{searchError}</p>}
+            {searchResult && (
+              <p className="text-xs text-green-400">
+                Queued {searchResult.run_ids.length} runs: #{searchResult.run_ids.join(", #")}
+                {" — "}
+                <a href="/model/compare" className="underline hover:text-green-300">Compare on results page →</a>
+              </p>
+            )}
+            <button
+              onClick={startSearch}
+              disabled={startingSearch}
+              className="rounded bg-brand-500 px-3 py-1.5 text-xs text-white hover:bg-sky-400 disabled:opacity-50"
+            >
+              {startingSearch ? "Queuing…" : "Start Search"}
+            </button>
+          </div>
         )}
       </section>
 

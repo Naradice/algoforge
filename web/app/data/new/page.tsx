@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CsvUploadForm, type ColMap } from "@/components/csv-upload-form";
+import { CsvUploadForm, type ColMap, type UploadOptions } from "@/components/csv-upload-form";
 
 // ── Field definitions per datasource type ────────────────────────────────────
 
@@ -361,22 +361,23 @@ export default function NewDatasourcePage() {
     }
   }
 
-  async function handleUpload(file: File, symbol: string, timeframe: string, colMap: ColMap) {
+  async function handleUpload(uploadFiles: File[], symbol: string, timeframe: string, colMap: ColMap, options: UploadOptions) {
     setSaving(true);
     setError(null);
     try {
       const dsId = await createDatasource();
       const form = new FormData();
-      form.append("file", file);
+      uploadFiles.forEach((f) => form.append("files", f));
       form.append("datasource_id", String(dsId));
-      if (symbol) form.append("symbol", symbol);
-      if (timeframe) form.append("timeframe", timeframe);
+      if (symbol)          form.append("symbol",       symbol);
+      if (timeframe)       form.append("timeframe",    timeframe);
       if (colMap.close)    form.append("close_col",    colMap.close);
       if (colMap.open)     form.append("open_col",     colMap.open);
       if (colMap.high)     form.append("high_col",     colMap.high);
       if (colMap.low)      form.append("low_col",      colMap.low);
       if (colMap.volume)   form.append("volume_col",   colMap.volume);
       if (colMap.datetime) form.append("datetime_col", colMap.datetime);
+      form.append("merge", String(options.merge));
       const upRes = await fetch("/api/v1/datasets/upload", { method: "POST", body: form });
       if (!upRes.ok) {
         const upBody = await upRes.json().catch(() => ({}));

@@ -9,4 +9,5 @@ __pycache__/
 *.db
 .claude
 _meta.json
-docs/
+docs/*
+tsconfig.tsbuildinfo
