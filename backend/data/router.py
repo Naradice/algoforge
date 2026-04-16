@@ -405,7 +405,7 @@ async def reset_collection_job(job_id: int, db: AsyncSession = Depends(get_db)):
     from data.service import _revoke_collection_task
     _revoke_collection_task(job_id)
     await db.execute(
-        update(CollectionJob).where(CollectionJob.id == job_id).values(status="idle", last_error="Reset after worker restart")
+        update(CollectionJob).where(CollectionJob.id == job_id).values(status="idle", last_error=None)
     )
     await db.commit()
     item = await data_service.get_collection_job(db, job_id)

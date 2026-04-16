@@ -50,7 +50,7 @@ import pandas as pd
 
 log = logging.getLogger("ddm_simulator")
 
-ARTIFACT_STORE = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
+ARTIFACT_STORE = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts")).resolve()
 
 _CANDLE_SECONDS: dict[str, int] = {
     "M1": 60,

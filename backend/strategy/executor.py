@@ -14,23 +14,29 @@ from loger import StructuredLogger, current_strategy_run_id
 logger = StructuredLogger("strategy.executor")
 
 
-async def execute_strategy_run(run_id: int) -> dict:
-    """arq job entry point. Dispatches to backtest or live runner."""
+async def execute_strategy_run(run_id: int, *, session_factory=None) -> dict:
+    """Dispatches to backtest or live runner.
+
+    session_factory: optional async_sessionmaker. When called from a Celery
+    worker, pass a NullPool-based factory to avoid asyncio event-loop conflicts.
+    Falls back to the module-level factory (suitable for FastAPI context).
+    """
     token = current_strategy_run_id.set(run_id)
     try:
-        return await _run(run_id)
+        return await _run(run_id, session_factory=session_factory)
     finally:
         current_strategy_run_id.reset(token)
 
 
-async def _run(run_id: int) -> dict:
+async def _run(run_id: int, *, session_factory=None) -> dict:
     import asyncio
-    from database import async_session_factory
+    if session_factory is None:
+        from database import async_session_factory as session_factory
     from strategy.models import StrategyRun, Strategy, Trade, RunMetric
     from strategy.engine.backtest import run_backtest
     from sqlalchemy import select, update
 
-    async with async_session_factory() as db:
+    async with session_factory() as db:
         result = await db.execute(select(StrategyRun).where(StrategyRun.id == run_id))
         run = result.scalar_one_or_none()
         if run is None:
@@ -65,7 +71,7 @@ async def _run(run_id: int) -> dict:
         await db.commit()
 
     # ── Pre-load ML model metadata for any ml_signal conditions ─────────────────
-    model_cache = await _load_model_cache(strategy.definition)
+    model_cache = await _load_model_cache(strategy.definition, session_factory)
 
     await logger.info("Strategy run started", context={"run_id": run_id, "mode": run.mode})
 
@@ -74,7 +80,7 @@ async def _run(run_id: int) -> dict:
         return await run_paper(run_id, strategy.definition, model_cache)
 
     if run.mode == "live":
-        async with async_session_factory() as db:
+        async with session_factory() as db:
             await db.execute(
                 update(StrategyRun).where(StrategyRun.id == run_id).values(
                     status="error", message="Live broker execution not yet implemented"
@@ -84,7 +90,7 @@ async def _run(run_id: int) -> dict:
         return {"error": "live_not_implemented"}
 
     if run.mode != "backtest":
-        async with async_session_factory() as db:
+        async with session_factory() as db:
             await db.execute(
                 update(StrategyRun).where(StrategyRun.id == run_id).values(
                     status="error", message=f"Unknown mode: {run.mode!r}"
@@ -98,7 +104,7 @@ async def _run(run_id: int) -> dict:
 
     # Progress updater (called from sync backtest thread → schedule coroutine)
     async def _update_progress(pct: float) -> None:
-        async with async_session_factory() as db:
+        async with session_factory() as db:
             await db.execute(
                 update(StrategyRun).where(StrategyRun.id == run_id).values(progress_pct=pct)
             )
@@ -128,7 +134,7 @@ async def _run(run_id: int) -> dict:
         )
     except Exception as e:
         await logger.exception("Backtest failed", context={"run_id": run_id})
-        async with async_session_factory() as db:
+        async with session_factory() as db:
             await db.execute(
                 update(StrategyRun).where(StrategyRun.id == run_id).values(
                     status="error", message=str(e), ended_at=datetime.now(timezone.utc)
@@ -138,7 +144,7 @@ async def _run(run_id: int) -> dict:
         return {"error": str(e)}
 
     # ── Persist trades + metrics ──────────────────────────────────────────────
-    async with async_session_factory() as db:
+    async with session_factory() as db:
         for t in raw_trades:
             db.add(Trade(
                 run_id=run_id,
@@ -179,7 +185,7 @@ async def _run(run_id: int) -> dict:
     return {"trades": len(raw_trades), "metrics": metrics}
 
 
-async def _load_model_cache(definition: dict) -> dict:
+async def _load_model_cache(definition: dict, session_factory) -> dict:
     """
     Scan all condition blocks in a strategy definition for ml_signal conditions,
     load the corresponding MLModel records from DB, and return a model_cache dict
@@ -204,12 +210,11 @@ async def _load_model_cache(definition: dict) -> dict:
     if not model_ids:
         return {}
 
-    from database import async_session_factory
     from model.models import MLModel, TrainingRun
     from sqlalchemy import select
 
     cache: dict[int, dict] = {}
-    async with async_session_factory() as db:
+    async with session_factory() as db:
         for mid in model_ids:
             result = await db.execute(select(MLModel).where(MLModel.id == mid))
             model_rec = result.scalar_one_or_none()

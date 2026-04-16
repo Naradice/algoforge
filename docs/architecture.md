@@ -39,8 +39,8 @@ All cross-layer calls go through the HTTP API or artifact file paths. No Python 
 backend/
 ├── main.py                  # FastAPI app, router registration, exception handler
 ├── database.py              # SQLAlchemy async engine, Base, get_db dependency
-├── arq_worker.py            # Background job functions (collection, training, execution)
-├── arq_pool.py              # Redis/arq connection pool, enqueue helper
+├── celery_worker.py         # Celery task definitions (collection, training, backtest, validation)
+├── celery_app.py            # Celery application instance, queue definitions, task routing
 ├── events.py                # In-process EventBus for SSE streaming
 ├── log_writer.py            # Async log writer (buffer → DB)
 ├── schemas.py               # DataResponse[T] envelope, Meta pagination
@@ -73,9 +73,10 @@ backend/
 │   ├── models.py            # ORM + Pydantic schemas
 │   ├── characteristics.py   # Hurst, ACF, kurtosis, volatility analysis registry
 │   └── collectors/
-│       ├── ohlc_downloader.py   # yfinance / Alpha Vantage download
+│       ├── ohlc.py              # OHLC download via finance_client (yfinance / Alpha Vantage)
 │       ├── ddm_simulator.py     # Deterministic Dealer Model synthetic data
-│       └── web_report.py        # Playwright web scraping (NOT IMPLEMENTED)
+│       ├── economic_calendar.py # Economic indicators (FRED, Alpha Vantage)
+│       └── web_report.py        # Financial report scraping (PDF, HTML)
 │
 ├── webhooks/
 │   ├── router.py            # /webhooks/* endpoints
@@ -144,8 +145,21 @@ All API responses use `DataResponse[T]`:
 ```
 The frontend `fetcher` automatically unwraps `.data`. Use `fetcherWithMeta` when pagination counts are needed.
 
-### Async jobs via arq
-Long-running operations (collection, training, backtest) are enqueued to Redis and processed by the arq worker. The HTTP endpoint returns 202 Accepted immediately. The UI polls via SWR `refreshInterval` or subscribes to SSE for live updates.
+### Async jobs via Celery
+Long-running operations (collection, training, backtest) are enqueued to Redis and processed by Celery workers. The HTTP endpoint returns 202 Accepted immediately. The UI polls via SWR `refreshInterval` or subscribes to SSE for live updates.
+
+Jobs are routed to named queues with independent worker concurrency:
+
+| Queue | Default concurrency | Job types |
+|-------|-------------------|-----------|
+| `collection` | 3 | DDM simulation, OHLC download, CSV ingest |
+| `characteristics` | 12 | Statistical analysis (Hurst, ACF, kurtosis, …) |
+| `training` | 2 | PyTorch model training, validation |
+| `backtest` | 5 | Strategy backtest runs |
+
+Each Celery worker is a **separate OS process** (prefork pool). A blocking or OOM-failing job in one process cannot affect jobs running in other processes. Concurrency limits are tuned to disk I/O capacity for collection (100 GB+ writes) and RAM/GPU availability for training.
+
+Celery Beat handles scheduled collection jobs (replaces arq cron scheduling).
 
 ### SSE streaming
 Running jobs publish events to an in-process `EventBus`. Clients subscribe via:
@@ -153,7 +167,40 @@ Running jobs publish events to an in-process `EventBus`. Clients subscribe via:
 - `GET /training-runs/{run_id}/events` — training epoch events
 
 ### Artifact store
-Parquet files (datasets) and PyTorch checkpoints (models) are stored under `artifacts/`. Path stored in DB as relative string. Default location: `backend/artifacts/`.
+Dataset artifacts use **date-partitioned Parquet** directories. PyTorch checkpoints are stored as single `.pt` files. All paths are stored in DB as relative strings. Default location: `backend/artifacts/`.
+
+Dataset layout:
+```
+artifacts/datasets/src_{id}/
+  year=2024/month=01/day=15/part-000.parquet
+  year=2024/month=01/day=15/part-001.parquet
+  year=2024/month=01/day=16/part-000.parquet
+  ...
+```
+
+Partition files are sized to ~200–500 MB each. The PyArrow dataset API is used for all reads — it prunes partitions by date range before scanning, so backtest and training jobs only read the files they actually need. The DDM simulator streams writes partition-by-partition via `pyarrow.parquet.ParquetWriter`, never buffering the full dataset in memory.
+
+### finance_client integration
+
+The data layer depends on [`finance_client`](../../finance_client/) — the shared provider library located at `../finance_client/` relative to this repo. It supplies the download logic for OHLC data sources so AlgoForge does not re-implement provider-specific API handling.
+
+**Import pattern in collectors:**
+```python
+from finance_client.yfinance import download_ohlc as yf_download_ohlc
+from finance_client.vantage import download_ohlc as vantage_download_ohlc
+```
+
+Each `download_ohlc()` function instantiates the provider client with `data_only=True`, which skips account/risk-manager initialisation (those subsystems are only needed for live trading). The collector then filters the result to the requested date range and writes a parquet artifact.
+
+**Timeframe mapping** — AlgoForge uses string timeframes (`"M1"`, `"H1"`, `"D1"`, …); `finance_client` uses integer frame constants (`Frame.MIN1`, `Frame.H1`, `Frame.D1`, …). `collectors/ohlc.py` owns the `_FRAME_MAP` translation.
+
+**H4 note** — yfinance has no native 4-hour interval. The collector downloads H1 bars and resamples with `df.resample("4h")`.
+
+**Adding a new provider:**
+1. Add `data_only` to the provider's `__init__` chain in `finance_client` and pass it to `super()`
+2. Create `finance_client/<provider>/downloader.py` with a `download_ohlc()` function
+3. Export it from `finance_client/<provider>/__init__.py`
+4. Add a branch to `collect()` in `backend/data/collectors/ohlc.py`
 
 ### Strategy definition format
 Stored as JSONB in `strategies.definition`. Schema is intentionally flexible — the executor reads it at runtime. See [strategy-layer.md](strategy-layer.md) for the schema.

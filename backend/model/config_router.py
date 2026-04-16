@@ -48,6 +48,53 @@ ARCHITECTURE_SCHEMAS = {
             "learning_rate": {"type": "number", "default": 0.0003},
         },
     },
+    "cnn_lstm": {
+        "type": "object",
+        "properties": {
+            "cnn_filters":  {"type": "integer", "default": 64},
+            "kernel_size":  {"type": "integer", "default": 3},
+            "cnn_layers":   {"type": "integer", "default": 2},
+            "lstm_hidden":  {"type": "integer", "default": 128},
+            "lstm_layers":  {"type": "integer", "default": 1},
+            "dropout":      {"type": "number",  "default": 0.2},
+            "input_size":   {"type": "integer"},
+            "output_size":  {"type": "integer"},
+        },
+    },
+    "tcn": {
+        "type": "object",
+        "properties": {
+            "num_channels": {"type": "integer", "default": 64},
+            "num_levels":   {"type": "integer", "default": 4},
+            "kernel_size":  {"type": "integer", "default": 3},
+            "dropout":      {"type": "number",  "default": 0.2},
+            "input_size":   {"type": "integer"},
+            "output_size":  {"type": "integer"},
+        },
+    },
+    "vae": {
+        "type": "object",
+        "properties": {
+            "latent_dim":      {"type": "integer", "default": 32},
+            "encoder_hidden":  {"type": "integer", "default": 128},
+            "decoder_hidden":  {"type": "integer", "default": 128},
+            "encoder_layers":  {"type": "integer", "default": 2},
+            "dropout":         {"type": "number",  "default": 0.1},
+            "input_size":      {"type": "integer"},
+            "output_size":     {"type": "integer"},
+        },
+    },
+    "nbeats": {
+        "type": "object",
+        "properties": {
+            "hidden_units": {"type": "integer", "default": 256},
+            "nb_blocks":    {"type": "integer", "default": 3},
+            "theta_dim":    {"type": "integer", "default": 64},
+            "obs_len":      {"type": "integer", "default": 60},
+            "input_size":   {"type": "integer"},
+            "output_size":  {"type": "integer"},
+        },
+    },
 }
 
 

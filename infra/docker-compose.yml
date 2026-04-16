@@ -105,7 +105,11 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
-    command: celery -A celery_worker worker -Q collection --concurrency=3 --pool=prefork --loglevel=info
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+    command: celery -A celery_worker worker -Q collection --concurrency=1 --pool=prefork --loglevel=info
 
   celery-characteristics:
     <<: *backend-prod

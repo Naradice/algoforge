@@ -7,17 +7,17 @@ This roadmap is organized by the three platform layers plus cross-cutting concer
 ## Data Layer
 
 ### Now
-- [ ] Fix `web_report` collector (currently raises `NotImplementedError`) — Playwright scraper for earnings tables, economic calendars
-- [ ] Improve collection error display in the UI: show `last_error` text inline on the datasource card instead of just "error" status
-- [ ] Add dataset delete — remove parquet file and DB record together
-- [ ] Empty state on the datasets list (currently blank when no datasets exist)
+- [x] Fix `web_report` collector — Playwright scraper for earnings tables, economic calendars
+- [x] Improve collection error display in the UI: show `last_error` text inline on the datasource card instead of just "error" status
+- [x] Add dataset delete — remove parquet file and DB record together
+- [x] Empty state on the datasets list (currently blank when no datasets exist)
 
 ### Next
-- [ ] `economic_calendar` datasource type — fetch scheduled events (NFP, CPI, rate decisions) from a provider
-- [ ] Dataset tagging / search — filter datasets by symbol, timeframe, source type
-- [ ] Incremental collection — append new bars to an existing dataset instead of re-downloading everything
-- [ ] Dataset merge — combine two datasets (e.g. OHLC + fundamentals) by timestamp alignment
-- [ ] Characteristic auto-compute on collection completion (currently manual trigger)
+- [x] `economic_calendar` datasource type — fetch scheduled events (NFP, CPI, rate decisions) from a provider
+- [x] Dataset tagging / search — filter datasets by symbol, timeframe, source type
+- [x] Incremental collection — append new bars to an existing dataset instead of re-downloading everything
+- [x] Dataset merge — economic calendar events auto-discovered and overlaid on the run price chart by timestamp alignment; full UI-driven merge deferred to later
+- [x] Characteristic auto-compute on collection completion — auto-enqueued on the characteristics queue after every successful collection (except economic_calendar datasources)
 
 ### Later
 - [ ] Streaming ingest — write live ticks to a dataset in real time for perpetual paper-data feeds
@@ -28,9 +28,9 @@ This roadmap is organized by the three platform layers plus cross-cutting concer
 ## ML Model Layer
 
 ### Now
-- [ ] Show training loss chart on the model detail page (SSE epoch events are published; chart not wired)
-- [ ] Hyperparameter search results page — currently `compare_runs` MCP tool works but no UI
-- [ ] Empty state on the models list
+- [x] Show training loss chart on the model detail page — exists on training run detail page (polling-based; SSE cross-process gap noted)
+- [x] Hyperparameter search results page — search form on model detail page; compare page shows overlaid val_loss curves per run
+- [x] Empty state on the models list
 
 ### Next
 - [ ] Model comparison page wired to live data — `web/app/model/compare/page.tsx` exists but needs API integration
@@ -49,11 +49,10 @@ This roadmap is organized by the three platform layers plus cross-cutting concer
 ## Strategy Layer
 
 ### Now
-- [ ] Equity curve chart on the run detail page — `equity_curve` is stored but not rendered
-- [ ] Trade table on the run detail page — individual trades with entry/exit/PnL
-- [ ] Chat panel on the run detail page — `POST /strategies/{id}/runs/{run_id}/chat` is implemented but no UI yet
-- [ ] Empty state on the strategies list
-- [ ] Strategy definition editor validation — highlight invalid JSON before submit
+- [x] Equity curve chart on the run detail page — OHLC candlestick + indicator overlays + trade markers + oscillator sub-panels + equity curve
+- [x] Trade table on the run detail page — individual trades with entry/exit/SL/TP/PnL/reason; exit_reason persisted via migration 0004
+- [x] Chat panel on the run detail page — Gemini AI wired end-to-end; bubble layout with thinking indicator and auto-scroll
+- [x] Empty state on the strategies list — also improved runs sub-list in strategy detail and training runs in model detail
 
 ### Next
 - [ ] Version history UI — show `GET /strategies/{id}/versions` diff view alongside run metrics to correlate definition changes with performance
@@ -73,7 +72,10 @@ This roadmap is organized by the three platform layers plus cross-cutting concer
 ## Cross-Cutting / Infrastructure
 
 ### Now
-- [ ] Process manager for arq worker — `Procfile` or `docker-compose` so worker starts alongside the API server
+- [ ] **Celery migration** — replace arq with Celery + prefork workers; separate queues for `collection`, `characteristics`, `training`, `backtest` with independent concurrency limits
+- [ ] **Partitioned Parquet** — replace flat per-dataset parquet files with date-partitioned directories (`year=/month=/day=/`); update all collectors to stream-write via `ParquetWriter`; update all readers to use PyArrow dataset API with partition pruning
+- [ ] **Celery Beat** — replace arq cron scheduling with Celery Beat for scheduled collection jobs
+- [ ] Process manager — `docker-compose` service definitions for each Celery worker queue
 - [ ] Unified error toast in the frontend — currently some API errors are silently swallowed
 - [ ] Loading skeletons on detail pages (strategy, model, dataset) — currently blank while SWR loads
 
@@ -81,6 +83,7 @@ This roadmap is organized by the three platform layers plus cross-cutting concer
 - [ ] Authentication — JWT-based login so the platform is not open by default
 - [ ] Settings → API Keys page (currently a stub) — store Alpha Vantage key, broker credentials
 - [ ] Webhook registration UI polish — show last fired timestamp, last status, delivery history
+- [ ] Flower monitoring UI — optional Celery task dashboard (task history, worker status, queue depths)
 - [ ] Dark mode — design system uses Tailwind; straightforward to add `dark:` variants
 - [ ] Mobile-responsive layout — sidebar nav collapses to hamburger menu
 
@@ -112,7 +115,7 @@ This roadmap is organized by the three platform layers plus cross-cutting concer
 
 | Phase | Focus | Key Deliverables |
 |-------|-------|-----------------|
-| **Phase 1** (now) | Fix known gaps | Equity curve chart, trade table, chat UI, arq process manager, collection error display |
+| **Phase 1** (now) | Fix known gaps | Equity curve chart, trade table, chat UI, Celery migration, partitioned parquet, collection error display |
 | **Phase 2** (next) | Complete core UX | Model comparison, paper trading dashboard, version history diff, rule_engine handler |
 | **Phase 3** (next) | Data richness | Incremental collection, economic_calendar, web_report collector, dataset merge |
 | **Phase 4** (later) | Live trading | MT5/Coincheck live mode, user_input condition, agentic handler |

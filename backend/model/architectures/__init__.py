@@ -5,6 +5,10 @@ Supported architectures:
     "lstm"                 → LSTMModel
     "seq2seq_transformer"  → Seq2SeqTransformer
     "timegan"              → TimeGAN
+    "cnn_lstm"             → CNNLSTMModel
+    "tcn"                  → TCNModel
+    "vae"                  → VAEModel
+    "nbeats"               → NBEATSModel
     "rl_agent"             → raises ValueError (handled by ml_worker, Python 3.8)
 """
 
@@ -15,6 +19,10 @@ import torch
 from .lstm import LSTMModel
 from .transformer import Seq2SeqTransformer
 from .gan import TimeGAN
+from .cnn_lstm import CNNLSTMModel
+from .tcn import TCNModel
+from .vae import VAEModel
+from .nbeats import NBEATSModel
 
 _DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -45,23 +53,78 @@ ARCHITECTURE_DEFAULTS: dict[str, dict] = {
         "output_dim": 1,
         "num_layers": 2,
     },
+    "cnn_lstm": {
+        "input_dim": 1,
+        "output_dim": 1,
+        "pred_len": 10,
+        "cnn_filters": 64,
+        "kernel_size": 3,
+        "cnn_layers": 2,
+        "lstm_hidden": 128,
+        "lstm_layers": 1,
+        "dropout": 0.2,
+    },
+    "tcn": {
+        "input_dim": 1,
+        "output_dim": 1,
+        "pred_len": 10,
+        "num_channels": 64,
+        "num_levels": 4,
+        "kernel_size": 3,
+        "dropout": 0.2,
+    },
+    "vae": {
+        "input_dim": 1,
+        "output_dim": 1,
+        "pred_len": 10,
+        "latent_dim": 32,
+        "encoder_hidden": 128,
+        "decoder_hidden": 128,
+        "encoder_layers": 2,
+        "dropout": 0.1,
+    },
+    "nbeats": {
+        "input_dim": 1,
+        "output_dim": 1,
+        "obs_len": 60,
+        "pred_len": 10,
+        "hidden_units": 256,
+        "nb_blocks": 3,
+        "theta_dim": 64,
+    },
 }
 
 TRAINING_DEFAULTS: dict[str, dict] = {
     "lstm": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "seq2seq_transformer": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "timegan": {"obs_len": 60, "pred_len": 60, "epochs": 100, "batch_size": 32, "lr": 0.0002, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    "cnn_lstm": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    "tcn": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    "vae": {"obs_len": 60, "pred_len": 10, "epochs": 80, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    "nbeats": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
 }
 
 
 def build_model(architecture: str, config: dict, device: str = _DEVICE) -> torch.nn.Module:
-    if architecture == "lstm":
-        return LSTMModel(**{**ARCHITECTURE_DEFAULTS["lstm"], **config}, device=device)
-    elif architecture == "seq2seq_transformer":
-        return Seq2SeqTransformer(**{**ARCHITECTURE_DEFAULTS["seq2seq_transformer"], **config}, device=device)
-    elif architecture == "timegan":
-        return TimeGAN(**{**ARCHITECTURE_DEFAULTS["timegan"], **config}, device=device)
-    elif architecture == "rl_agent":
+    arch = architecture.lower()
+    defaults = ARCHITECTURE_DEFAULTS.get(arch, {})
+    merged = {**defaults, **config}
+
+    if arch == "lstm":
+        return LSTMModel(**merged, device=device)
+    elif arch == "seq2seq_transformer":
+        return Seq2SeqTransformer(**merged, device=device)
+    elif arch == "timegan":
+        return TimeGAN(**merged, device=device)
+    elif arch == "cnn_lstm":
+        return CNNLSTMModel(**merged, device=device)
+    elif arch == "tcn":
+        return TCNModel(**merged, device=device)
+    elif arch == "vae":
+        return VAEModel(**merged, device=device)
+    elif arch == "nbeats":
+        return NBEATSModel(**merged, device=device)
+    elif arch == "rl_agent":
         raise ValueError("rl_agent training must be submitted to ml_worker (Python 3.8 container)")
     else:
         raise ValueError(f"Unknown architecture: {architecture!r}")

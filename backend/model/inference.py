@@ -74,13 +74,16 @@ def predict(
     src = torch.tensor(data[:obs_len], dtype=torch.float32, device=device).unsqueeze(0)  # [1, obs_len, features]
 
     with torch.no_grad():
-        if architecture in ("lstm",):
-            # LSTM accepts just src; tgt is ignored
+        if architecture in ("lstm", "cnn_lstm", "tcn", "nbeats"):
+            # Single-pass models: tgt is unused
             output = model(src, src[:, -pred_len:, :])  # [1, pred_len, features]
         elif architecture == "timegan":
             # GAN generates synthetic sequences
             noise = torch.randn(1, model.latent_dim, device=device)
             output = model(src, noise)                  # [1, pred_len, features]
+        elif architecture == "vae":
+            # VAE returns (pred, mu, log_var); use pred only
+            output, _mu, _lv = model(src)               # [1, pred_len, features]
         else:
             # Seq2Seq: start decoding from last obs step
             tgt_seed = src[:, -1:, :]                   # [1, 1, features]

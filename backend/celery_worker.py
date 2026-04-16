@@ -523,7 +523,7 @@ async def _train_model(training_run_id: int) -> dict:
 
         train_fn, eval_fn = get_trainer_fns(architecture)
         optimizer = torch.optim.Adam(model.parameters(), lr=hp.get("lr", 0.001))
-        criterion = torch.nn.MSELoss() if architecture != "timegan" else None
+        criterion = None if architecture in ("timegan", "vae") else torch.nn.MSELoss()
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5) if criterion else None
 
         epochs = int(hp.get("epochs", 50))
@@ -661,9 +661,10 @@ def execute_strategy_run(run_id: int) -> dict:
 
 
 async def _execute_strategy_run(run_id: int) -> dict:
-    # strategy.executor manages its own DB sessions internally
     from strategy.executor import execute_strategy_run as _execute
+    session_factory, engine = _make_db()
     try:
-        return await _execute(run_id)
+        return await _execute(run_id, session_factory=session_factory)
     finally:
+        await engine.dispose()
         _release_lock("execute_strategy_run", run_id)

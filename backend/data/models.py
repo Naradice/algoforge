@@ -44,7 +44,7 @@ class Dataset(Base):
     timeframe: Mapped[str | None] = mapped_column(sa.Text, nullable=True)  # M1 | M5 | H1 | D1 | etc.
     from_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     to_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
-    row_count: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    row_count: Mapped[int | None] = mapped_column(sa.BigInteger, nullable=True)
     artifact_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="pending")  # pending | ready | error
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
@@ -138,6 +138,11 @@ class DatasetUpdate(BaseModel):
     name: str | None = None
     symbol: str | None = None
     timeframe: str | None = None
+    from_ts: datetime | None = None
+    to_ts: datetime | None = None
+    row_count: int | None = None
+    artifact_path: str | None = None
+    status: str | None = None
 
 
 class CollectionJobCreate(BaseModel):
@@ -170,6 +175,7 @@ class DataCharacteristicsRead(BaseModel):
 class CollectionJobUpdate(BaseModel):
     schedule_cron: str | None = None
     enabled: bool | None = None
+    status: str | None = None
 
 
 class CollectionJobRunRead(BaseModel):

@@ -59,7 +59,7 @@ services:
   backend:
     <<: *backend-dev
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,7 +79,7 @@ services:
     image: node:20-alpine
     working_dir: /app
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       API_URL: http://backend:8000
       NEXT_PUBLIC_API_URL: http://localhost:8000
@@ -87,16 +87,16 @@ services:
       # Enable polling so Next.js detects file changes from Windows host via volume mount.
       # node_modules and .next are excluded from scanning in next.config.js to reduce memory use.
       WATCHPACK_POLLING: "true"
-      WATCHPACK_POLLING_INTERVAL: "2000"
-      # Cap Node.js heap to prevent OOM kills; 768 MB is sufficient for Next.js dev.
-      NODE_OPTIONS: "--max-old-space-size=768"
+      WATCHPACK_POLLING_INTERVAL: "5000"
+      # Cap Node.js heap; 1.5 GB avoids ENOMEM during Watchpack initial directory scan.
+      NODE_OPTIONS: "--max-old-space-size=1536"
     depends_on:
       - backend
     volumes:
       - ../web:/app
       - web_node_modules:/app/node_modules
     command: sh -c "npm install && npm run dev"
-    mem_limit: 1g
+    mem_limit: 2g
 
   celery-collection:
     <<: *backend-dev
