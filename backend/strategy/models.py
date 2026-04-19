@@ -46,6 +46,7 @@ class StrategyRun(Base):
     dataset_id: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)  # soft FK → datasets.id
     broker_client: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     walk_forward_ratio: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    risk_override: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     from_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     to_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -162,6 +163,7 @@ class StrategyRunCreate(BaseModel):
     dataset_id: int | None = None
     broker_client: str | None = None
     walk_forward_ratio: float | None = None  # 0.7 → 70% in-sample, 30% OOS
+    risk_override: dict | None = None
     from_ts: datetime | None = None
     to_ts: datetime | None = None
 
@@ -178,6 +180,7 @@ class StrategyRunRead(BaseModel):
     dataset_id: int | None
     broker_client: str | None
     walk_forward_ratio: float | None
+    risk_override: dict | None
     from_ts: datetime | None
     to_ts: datetime | None
     started_at: datetime | None
@@ -193,6 +196,27 @@ class StrategyVersionRead(BaseModel):
     version: int
     definition: dict[str, Any]
     created_at: datetime
+
+
+class TradeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    run_id: int
+    symbol: str
+    direction: str
+    entry_price: float
+    exit_price: float | None = None
+    volume: float
+    sl_price: float | None = None
+    tp_price: float | None = None
+    profit: float | None = None
+    opened_at: datetime
+    closed_at: datetime | None = None
+    exit_reason: str | None = None
+    phase: str | None = None
+    mae: float | None = None
+    mfe: float | None = None
 
 
 class ChatMessageCreate(BaseModel):

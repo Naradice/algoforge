@@ -88,6 +88,11 @@ const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
       placeholder: "1",
       hint: "Minimum days between downloads. Leave blank to always run.",
     },
+    {
+      key: "download_time", label: "Download time (UTC)", type: "text",
+      placeholder: "18:00",
+      hint: "Optional. Run at this time each day (HH:MM, UTC). If blank, runs immediately after interval_days.",
+    },
   ],
   economic_calendar: [
     {
@@ -307,6 +312,7 @@ export default function NewDatasourcePage() {
       };
       if (values["subfolder"]) cfg["subfolder"] = values["subfolder"];
       if (values["filename"]) cfg["filename"] = values["filename"];
+      if (values["download_time"]) cfg["download_time"] = values["download_time"];
       if (webReportCustom) cfg["custom"] = JSON.parse(webReportCustom);
       return cfg;
     }
@@ -592,6 +598,15 @@ export default function NewDatasourcePage() {
                     className="md-input w-full"
                     value={values["interval_days"] ?? "1"}
                     onChange={(e) => handleFieldChange("interval_days", String(Math.max(1, Number(e.target.value) || 1)))}
+                  />
+                </Field>
+
+                <Field label="Download at (UTC)" hint="Optional. Run at this exact time each day, e.g. 18:00. Leave blank to run immediately after the interval elapses.">
+                  <input
+                    type="time"
+                    className="md-input w-full"
+                    value={values["download_time"] ?? ""}
+                    onChange={(e) => handleFieldChange("download_time", e.target.value)}
                   />
                 </Field>
 

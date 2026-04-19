@@ -157,6 +157,8 @@ def run_backtest(
     definition: dict,
     artifact_path: str,
     on_progress: Callable[[float], None] | None = None,
+    on_trade: Callable[[dict, str], None] | None = None,
+    stop_event=None,  # threading.Event — set to abort early
     model_cache: dict | None = None,
     walk_forward_ratio: float = 0.0,
 ) -> tuple[list[dict], dict, list[dict]]:
@@ -207,6 +209,8 @@ def run_backtest(
     rows = list(df.iterrows())
 
     for i, (ts, row) in enumerate(rows):
+        if stop_event is not None and stop_event.is_set():
+            break
         phase = "is" if i < split_idx else "oos"
         close = float(row["close"])
         high  = float(row["high"])  if "high"  in row.index else close
@@ -218,6 +222,8 @@ def run_backtest(
         bar_date = bar_dt.date()
 
         # ── Fill pending entries at this bar's open ───────────────────────
+        # num_open is updated after each fill so max_positions is respected
+        # even when both long and short are pending simultaneously.
         num_open = (1 if pos_long else 0) + (1 if pos_short else 0)
 
         if pending_long_entry and pos_long is None and num_open < rp.max_positions:
@@ -226,6 +232,10 @@ def run_backtest(
             tp = fill * (1 + rp.tp_pct) if rp.tp_pct > 0 else None
             vol = _calc_volume(rp, equity, fill, atr)
             pos_long = _OpenPosition("buy", fill, sl, tp, vol, bar_dt, i)
+            num_open += 1
+            if on_trade:
+                on_trade({"direction": "buy", "entry_price": fill, "sl_price": sl, "tp_price": tp,
+                          "opened_at": bar_dt, "symbol": symbol}, "open")
 
         if pending_short_entry and pos_short is None and num_open < rp.max_positions:
             fill = _fill_price(open_, "sell", rp.slippage_pct)
@@ -233,6 +243,10 @@ def run_backtest(
             tp = fill * (1 - rp.tp_pct) if rp.tp_pct > 0 else None
             vol = _calc_volume(rp, equity, fill, atr)
             pos_short = _OpenPosition("sell", fill, sl, tp, vol, bar_dt, i)
+            num_open += 1
+            if on_trade:
+                on_trade({"direction": "sell", "entry_price": fill, "sl_price": sl, "tp_price": tp,
+                          "opened_at": bar_dt, "symbol": symbol}, "open")
 
         pending_long_entry = False
         pending_short_entry = False
@@ -258,6 +272,8 @@ def run_backtest(
                 _record_day_loss(day_loss, bar_date, pnl)
                 if pnl < 0:
                     last_loss_bar = i
+                if on_trade:
+                    on_trade(trades[-1], "close")
 
         if pos_short:
             closed, pos_short = _check_sl_tp(pos_short, high, low, close, bar_dt, trades, symbol, rp, equity, phase)
@@ -267,6 +283,8 @@ def run_backtest(
                 _record_day_loss(day_loss, bar_date, pnl)
                 if pnl < 0:
                     last_loss_bar = i
+                if on_trade:
+                    on_trade(trades[-1], "close")
 
         # ── Daily loss circuit breaker ────────────────────────────────────
         halted = (
@@ -280,8 +298,9 @@ def run_backtest(
 
         can_enter = not halted and not in_cooldown
 
-        # ── Context for ML / LLM conditions ──────────────────────────────
-        ctx = {"df_upto": df.iloc[: i + 1], "bar_index": i, "model_cache": _model_cache}
+        # ── Context for ML / LLM / group_ref conditions ──────────────────
+        ctx = {"df_upto": df.iloc[: i + 1], "bar_index": i, "model_cache": _model_cache,
+               "groups": definition.get("groups", {})}
 
         # ── Long exit conditions ──────────────────────────────────────────
         if pos_long and long_def.get("exit"):
@@ -293,6 +312,8 @@ def run_backtest(
                     _record_day_loss(day_loss, bar_date, pnl)
                     if pnl < 0:
                         last_loss_bar = i
+                    if on_trade:
+                        on_trade(trades[-1], "close")
                     pos_long = None
             except (KeyError, ValueError):
                 pass
@@ -307,11 +328,16 @@ def run_backtest(
                     _record_day_loss(day_loss, bar_date, pnl)
                     if pnl < 0:
                         last_loss_bar = i
+                    if on_trade:
+                        on_trade(trades[-1], "close")
                     pos_short = None
             except (KeyError, ValueError):
                 pass
 
         # ── Entry signals (fill next bar) ─────────────────────────────────
+        # Re-count after exits so a same-bar exit+entry pair is allowed.
+        # num_open is incremented after each queued entry so both directions
+        # cannot be queued simultaneously when max_positions=1.
         if can_enter:
             num_open = (1 if pos_long else 0) + (1 if pos_short else 0)
 
@@ -319,6 +345,7 @@ def run_backtest(
                 try:
                     if evaluate_conditions(row, long_def["entry"], context=ctx):
                         pending_long_entry = True
+                        num_open += 1
                 except (KeyError, ValueError):
                     pass
 
@@ -326,6 +353,7 @@ def run_backtest(
                 try:
                     if evaluate_conditions(row, short_def["entry"], context=ctx):
                         pending_short_entry = True
+                        num_open += 1
                 except (KeyError, ValueError):
                     pass
 
@@ -343,7 +371,7 @@ def run_backtest(
             "phase": phase,
         })
 
-        if on_progress and (i % max(1, n // 100) == 0):
+        if on_progress and (i % max(1, n // 200) == 0):
             on_progress(100.0 * i / n)
 
     # ── Close any still-open positions at end of data ────────────────────

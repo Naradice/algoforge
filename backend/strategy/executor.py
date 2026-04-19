@@ -70,14 +70,19 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
         )
         await db.commit()
 
+    # ── Merge risk_override into definition ──────────────────────────────────────
+    definition = dict(strategy.definition)
+    if run.risk_override:
+        definition = {**definition, "risk": {**definition.get("risk", {}), **run.risk_override}}
+
     # ── Pre-load ML model metadata for any ml_signal conditions ─────────────────
-    model_cache = await _load_model_cache(strategy.definition, session_factory)
+    model_cache = await _load_model_cache(definition, session_factory)
 
     await logger.info("Strategy run started", context={"run_id": run_id, "mode": run.mode})
 
     if run.mode == "paper":
         from strategy.live_runner import run_paper
-        return await run_paper(run_id, strategy.definition, model_cache)
+        return await run_paper(run_id, definition, model_cache)
 
     if run.mode == "live":
         async with session_factory() as db:
@@ -125,7 +130,7 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
             None,
             functools.partial(
                 run_backtest,
-                strategy.definition,
+                definition,
                 ds_rec.artifact_path,
                 _on_progress,
                 model_cache,

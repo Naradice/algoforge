@@ -6,7 +6,8 @@ import useSWR, { mutate } from "swr";
 import { fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
-import { StrategyEditor } from "@/components/strategy-editor";
+import { StrategyEditor, StrategyDefinitionView } from "@/components/strategy-editor";
+import { StrategyChart } from "@/components/strategy-chart";
 
 // ---------------------------------------------------------------------------
 // Metrics panel — handles combined / IS / OOS split view
@@ -239,6 +240,27 @@ export default function StrategyDetailPage() {
   const [starting, setStarting] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
+  type RiskOverride = {
+    risk_type: "fixed" | "percent_equity" | "atr";
+    position_size: number;
+    risk_pct: number;
+    atr_multiplier: number;
+    sl_pct: number;
+    tp_pct: number;
+    slippage_pct: number;
+    commission_pct: number;
+    max_positions: number;
+    daily_loss_limit_pct: number;
+    cooldown_bars: number;
+  };
+  const DEFAULT_RISK: RiskOverride = {
+    risk_type: "fixed", position_size: 1.0, risk_pct: 0.01, atr_multiplier: 2.0,
+    sl_pct: 0.02, tp_pct: 0.04, slippage_pct: 0.0005, commission_pct: 0.001,
+    max_positions: 1, daily_loss_limit_pct: 0.0, cooldown_bars: 0,
+  };
+  const [risk, setRisk] = useState<RiskOverride>(DEFAULT_RISK);
+  const patchRisk = (p: Partial<RiskOverride>) => setRisk((r) => ({ ...r, ...p }));
+
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
   const { data: runMetrics } = useSWR(
     selectedRun ? `/api/v1/strategies/${id}/runs/${selectedRun}/metrics` : null,
@@ -251,14 +273,68 @@ export default function StrategyDetailPage() {
     { refreshInterval: 5000 }
   );
 
+  const selectedRunObj = runs?.find((r: any) => r.id === selectedRun);
+
+  // Chart time range — ISO date strings (datetime-local value), empty = full range
+  const [chartFrom, setChartFrom] = useState("");
+  const [chartTo, setChartTo] = useState("");
+  const [appliedRange, setAppliedRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
+
+  function buildChartUrl() {
+    if (!selectedRun || selectedRunObj?.status !== "completed") return null;
+    const base = `/api/v1/strategies/${id}/runs/${selectedRun}/chart-data`;
+    const params = new URLSearchParams();
+    if (appliedRange.from) params.set("from_ts", String(Math.floor(new Date(appliedRange.from).getTime() / 1000)));
+    if (appliedRange.to)   params.set("to_ts",   String(Math.floor(new Date(appliedRange.to).getTime()   / 1000)));
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
+  }
+
+  const { data: chartData, isLoading: chartLoading } = useSWR(
+    buildChartUrl(),
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
   const [stopping, setStopping] = useState<number | null>(null);
   const [deletingRun, setDeletingRun] = useState<number | null>(null);
   const [deletingStrategy, setDeletingStrategy] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   const [editingDef, setEditingDef] = useState(false);
   const [savingDef, setSavingDef] = useState(false);
   const [defError, setDefError] = useState<string | null>(null);
   const editedDefRef = useRef<object>({});
+
+  const [showValidate, setShowValidate] = useState(false);
+  const [validateDatasetId, setValidateDatasetId] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [validateResult, setValidateResult] = useState<null | { candles: any[]; indicators: any; markers: any[]; trade_count: number }>(null);
+  const [validateError, setValidateError] = useState<string | null>(null);
+
+  async function runValidate() {
+    if (!validateDatasetId) return;
+    setValidating(true);
+    setValidateError(null);
+    setValidateResult(null);
+    try {
+      const res = await fetch(`/api/v1/strategies/${id}/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataset_id: parseInt(validateDatasetId) }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setValidateError(body.error?.message ?? body.detail ?? `Error ${res.status}`);
+        return;
+      }
+      setValidateResult(body.data);
+    } catch (e: any) {
+      setValidateError(e.message ?? "Unknown error");
+    } finally {
+      setValidating(false);
+    }
+  }
 
   function startEditDef() {
     setDefError(null);
@@ -303,6 +379,7 @@ export default function StrategyDetailPage() {
           mode,
           dataset_id: datasetId ? parseInt(datasetId) : null,
           walk_forward_ratio: walkForwardRatio > 0 ? walkForwardRatio / 100 : null,
+          risk_override: risk,
         }),
       });
       if (!res.ok) {
@@ -315,6 +392,19 @@ export default function StrategyDetailPage() {
       mutate(`/api/v1/strategies/${id}/runs`);
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function copyStrategy() {
+    setCopying(true);
+    try {
+      const res = await fetch(`/api/v1/strategies/${id}/copy`, { method: "POST" });
+      if (!res.ok) { toast("Failed to copy strategy", "error"); return; }
+      const body = await res.json();
+      toast("Strategy copied", "success");
+      window.location.href = `/strategy/${body.data.id}`;
+    } finally {
+      setCopying(false);
     }
   }
 
@@ -386,6 +476,13 @@ export default function StrategyDetailPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            onClick={copyStrategy}
+            disabled={copying}
+            className="rounded border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 disabled:opacity-50"
+          >
+            {copying ? "Copying…" : "Copy Strategy"}
+          </button>
+          <button
             onClick={deleteStrategy}
             disabled={deletingStrategy}
             className="rounded border border-red-800 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/30 disabled:opacity-50"
@@ -413,15 +510,55 @@ export default function StrategyDetailPage() {
         </div>
         {!editingDef && (
           <>
-            <pre className="rounded bg-gray-900 p-3 text-xs text-gray-300 overflow-auto max-h-48">
-              {JSON.stringify(strategy.definition, null, 2)}
-            </pre>
-            <button
-              onClick={startEditDef}
-              className="mt-2 text-xs text-gray-400 hover:text-white"
-            >
-              Edit definition
-            </button>
+            <StrategyDefinitionView definition={strategy.definition} />
+            <div className="mt-2 flex gap-3">
+              <button onClick={startEditDef} className="text-xs text-gray-400 hover:text-white">
+                Edit definition
+              </button>
+              <button
+                onClick={() => { setShowValidate(!showValidate); setValidateResult(null); setValidateError(null); }}
+                className="text-xs text-sky-400 hover:text-sky-300"
+              >
+                {showValidate ? "Hide validate" : "Validate →"}
+              </button>
+            </div>
+
+            {showValidate && (
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center gap-3">
+                  <select
+                    value={validateDatasetId}
+                    onChange={(e) => setValidateDatasetId(e.target.value)}
+                    className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  >
+                    <option value="">Select dataset…</option>
+                    {datasets?.map((d: any) => (
+                      <option key={d.id} value={d.id}>{d.name} ({d.row_count} rows)</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={runValidate}
+                    disabled={!validateDatasetId || validating}
+                    className="rounded bg-sky-700 px-3 py-1.5 text-xs text-white hover:bg-sky-600 disabled:opacity-50"
+                  >
+                    {validating ? "Running…" : "Run"}
+                  </button>
+                </div>
+                {validateError && <p className="text-xs text-red-400">{validateError}</p>}
+                {validateResult && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500">
+                      {validateResult.trade_count} trade{validateResult.trade_count !== 1 ? "s" : ""} — green ▲ entry, amber ▼ exit
+                    </p>
+                    <StrategyChart
+                      candles={validateResult.candles}
+                      indicators={validateResult.indicators}
+                      markers={validateResult.markers}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
         {editingDef && (
@@ -430,6 +567,8 @@ export default function StrategyDetailPage() {
               <StrategyEditor
                 initialDefinition={strategy.definition}
                 onChange={(def) => { editedDefRef.current = def; }}
+                strategyId={id}
+                datasets={datasets}
               />
             </div>
             {defError && <p className="text-xs text-red-400">{defError}</p>}
@@ -540,6 +679,73 @@ export default function StrategyDetailPage() {
                 </div>
               </>
             )}
+            {/* Risk */}
+            <div className="border-t border-gray-800 pt-3 space-y-2">
+              <p className="text-xs font-medium text-gray-400">Risk</p>
+              <div className="flex items-center gap-2">
+                <span className="w-32 shrink-0 text-xs text-gray-500">Sizing method</span>
+                <select value={risk.risk_type} onChange={(e) => patchRisk({ risk_type: e.target.value as RiskOverride["risk_type"] })}
+                  className="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none">
+                  <option value="fixed">Fixed lot</option>
+                  <option value="percent_equity">% of equity per trade</option>
+                  <option value="atr">ATR-based</option>
+                </select>
+              </div>
+              {risk.risk_type === "fixed" && (
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-xs text-gray-500">Position size</span>
+                  <input type="number" value={risk.position_size} step={0.1} min={0} onChange={(e) => patchRisk({ position_size: parseFloat(e.target.value) || 0 })}
+                    className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
+                  <span className="text-xs text-gray-600">fraction of equity</span>
+                </div>
+              )}
+              {(risk.risk_type === "percent_equity" || risk.risk_type === "atr") && (
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-xs text-gray-500">Risk per trade</span>
+                  <input type="number" value={risk.risk_pct} step={0.005} min={0} onChange={(e) => patchRisk({ risk_pct: parseFloat(e.target.value) || 0 })}
+                    className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
+                  <span className="text-xs text-gray-600">{(risk.risk_pct * 100).toFixed(1)}% of equity</span>
+                </div>
+              )}
+              {risk.risk_type === "atr" && (
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-xs text-gray-500">ATR multiplier</span>
+                  <input type="number" value={risk.atr_multiplier} step={0.5} min={0.5} onChange={(e) => patchRisk({ atr_multiplier: parseFloat(e.target.value) || 0 })}
+                    className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
+                </div>
+              )}
+              {[
+                { label: "Stop-loss",   key: "sl_pct" as const,   step: 0.005 },
+                { label: "Take-profit", key: "tp_pct" as const,   step: 0.005 },
+                { label: "Slippage",    key: "slippage_pct" as const,  step: 0.0001 },
+                { label: "Commission",  key: "commission_pct" as const, step: 0.0001 },
+              ].map(({ label, key, step }) => (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-xs text-gray-500">{label}</span>
+                  <input type="number" value={risk[key]} step={step} min={0} onChange={(e) => patchRisk({ [key]: parseFloat(e.target.value) || 0 })}
+                    className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
+                  <span className="text-xs text-gray-600">{(risk[key] * 100).toFixed(3)}%</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-2">
+                <span className="w-32 shrink-0 text-xs text-gray-500">Max positions</span>
+                <input type="number" value={risk.max_positions} step={1} min={1} onChange={(e) => patchRisk({ max_positions: parseInt(e.target.value) || 1 })}
+                  className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-32 shrink-0 text-xs text-gray-500">Daily loss limit</span>
+                <input type="number" value={risk.daily_loss_limit_pct} step={0.005} min={0} onChange={(e) => patchRisk({ daily_loss_limit_pct: parseFloat(e.target.value) || 0 })}
+                  className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
+                <span className="text-xs text-gray-600">{risk.daily_loss_limit_pct === 0 ? "disabled" : `${(risk.daily_loss_limit_pct * 100).toFixed(1)}%`}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-32 shrink-0 text-xs text-gray-500">Cooldown after loss</span>
+                <input type="number" value={risk.cooldown_bars} step={1} min={0} onChange={(e) => patchRisk({ cooldown_bars: parseInt(e.target.value) || 0 })}
+                  className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
+                <span className="text-xs text-gray-600">bars</span>
+              </div>
+            </div>
+
             {runError && <p className="text-xs text-red-400">{runError}</p>}
             <div className="flex gap-2">
               <button
@@ -642,6 +848,59 @@ export default function StrategyDetailPage() {
           <h2 className="text-sm font-medium uppercase tracking-wide text-gray-400">
             Run #{selectedRun} — Details
           </h2>
+
+          {/* Price chart */}
+          {selectedRunObj?.status === "completed" && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-xs font-medium text-gray-400">Price Chart</h3>
+                <span className="text-gray-600 text-xs">|</span>
+                <span className="text-xs text-gray-500">Range:</span>
+                <input
+                  type="datetime-local"
+                  value={chartFrom}
+                  onChange={(e) => setChartFrom(e.target.value)}
+                  className="rounded border border-gray-700 bg-gray-900 px-2 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <span className="text-gray-600 text-xs">→</span>
+                <input
+                  type="datetime-local"
+                  value={chartTo}
+                  onChange={(e) => setChartTo(e.target.value)}
+                  className="rounded border border-gray-700 bg-gray-900 px-2 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <button
+                  onClick={() => setAppliedRange({ from: chartFrom, to: chartTo })}
+                  className="rounded bg-brand-500 px-2 py-0.5 text-xs text-white hover:bg-sky-400"
+                >
+                  Apply
+                </button>
+                {(appliedRange.from || appliedRange.to) && (
+                  <button
+                    onClick={() => { setChartFrom(""); setChartTo(""); setAppliedRange({ from: "", to: "" }); }}
+                    className="text-xs text-gray-500 hover:text-gray-300"
+                  >
+                    Reset
+                  </button>
+                )}
+                {chartData && (
+                  <span className="text-xs text-gray-600 ml-auto">
+                    {chartData.candles?.length ?? 0} bars
+                  </span>
+                )}
+              </div>
+              {chartLoading && (
+                <div className="flex items-center justify-center h-16 text-gray-500 text-sm">Loading chart…</div>
+              )}
+              {chartData && (
+                <StrategyChart
+                  candles={chartData.candles ?? []}
+                  indicators={chartData.indicators ?? {}}
+                  markers={chartData.markers ?? []}
+                />
+              )}
+            </div>
+          )}
 
           {runMetrics && Object.keys(runMetrics).length > 0 && (
             <MetricsPanel metrics={runMetrics} />

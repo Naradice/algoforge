@@ -35,6 +35,13 @@ pandas
 torch
 scikit-learn
 matplotlib
+yfinance
+pandas_datareader
+
+# finance_client transitive deps (installed --no-deps so we list them explicitly)
+websocket-client
+PyYAML
+google-auth-oauthlib
 
 # Scheduling
 apscheduler>=3.10

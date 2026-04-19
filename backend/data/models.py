@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -161,6 +161,19 @@ class CollectionJobRead(BaseModel):
     next_run_at: datetime | None
     last_error: str | None
     created_at: datetime
+
+    @model_validator(mode="after")
+    def _derive_status(self) -> "CollectionJobRead":
+        """Return 'scheduled' when idle with a future next_run_at so the UI
+        can distinguish a planned daily download from a never-run job."""
+        from datetime import timezone
+        if (
+            self.status == "idle"
+            and self.next_run_at is not None
+            and self.next_run_at > datetime.now(tz=timezone.utc)
+        ):
+            self.status = "scheduled"
+        return self
 
 
 class DataCharacteristicsRead(BaseModel):

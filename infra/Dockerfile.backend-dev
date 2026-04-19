@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y gcc libpq-dev curl && rm -rf /var/lib/a
 # Rebuild this image only when requirements.txt or finance_client changes.
 COPY finance_client /deps/finance_client
 COPY algoforge/backend/requirements.txt /tmp/requirements.txt
+# --no-deps skips finance_client's declared deps (avoids Windows-only MetaTrader5 failing on Linux).
+# requirements.txt must list every finance_client dep needed at runtime (numpy, pandas, matplotlib, etc.)
 RUN pip install --no-cache-dir --no-deps /deps/finance_client
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 

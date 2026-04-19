@@ -2,7 +2,7 @@
 import pytest
 from pydantic import ValidationError
 
-from strategy.models import StrategyCreate, StrategyUpdate, StrategyRunCreate
+from strategy.models import StrategyCreate, StrategyUpdate, StrategyRunCreate, TradeRead
 from model.models import MLModelCreate, MLModelUpdate, TrainingRunCreate, HyperparamSearchCreate
 from data.models import DatasourceCreate, DatasourceUpdate, CollectionJobCreate, CollectionJobUpdate
 from schemas import DataResponse, Meta
@@ -166,6 +166,81 @@ class TestCollectionJobUpdate:
     def test_disable_job(self):
         u = CollectionJobUpdate(enabled=False)
         assert u.enabled is False
+
+
+# ── TradeRead schema ───────────────────────────────────────────────────────────
+
+class TestTradeRead:
+    def _base(self):
+        from datetime import datetime, timezone
+        return dict(
+            id=1, run_id=2, symbol="USDJPY", direction="buy",
+            entry_price=150.0, volume=0.1,
+            opened_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        )
+
+    def test_required_fields_valid(self):
+        t = TradeRead(**self._base())
+        assert t.symbol == "USDJPY"
+        assert t.direction == "buy"
+        assert t.entry_price == 150.0
+
+    def test_optional_fields_default_none(self):
+        t = TradeRead(**self._base())
+        assert t.exit_price is None
+        assert t.profit is None
+        assert t.closed_at is None
+        assert t.exit_reason is None
+        assert t.phase is None
+        assert t.mae is None
+        assert t.mfe is None
+
+    def test_full_trade_valid(self):
+        from datetime import datetime, timezone
+        t = TradeRead(
+            id=1, run_id=2, symbol="EURUSD", direction="sell",
+            entry_price=1.1, exit_price=1.09, volume=1.0,
+            sl_price=1.11, tp_price=1.08, profit=100.0,
+            opened_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            closed_at=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            exit_reason="tp", phase="oos", mae=0.003, mfe=0.012,
+        )
+        assert t.exit_reason == "tp"
+        assert t.phase == "oos"
+        assert t.mfe == 0.012
+
+    def test_from_attributes_builds_from_orm_like_object(self):
+        from datetime import datetime, timezone
+
+        class FakeTrade:
+            id = 5
+            run_id = 3
+            symbol = "BTCUSD"
+            direction = "buy"
+            entry_price = 50000.0
+            exit_price = None
+            volume = 0.01
+            sl_price = None
+            tp_price = None
+            profit = None
+            opened_at = datetime(2024, 6, 1, tzinfo=timezone.utc)
+            closed_at = None
+            exit_reason = None
+            phase = None
+            mae = None
+            mfe = None
+
+        t = TradeRead.model_validate(FakeTrade())
+        assert t.id == 5
+        assert t.symbol == "BTCUSD"
+        assert t.exit_price is None
+
+    def test_missing_required_field_raises(self):
+        from pydantic import ValidationError
+        from datetime import datetime, timezone
+        with pytest.raises(ValidationError):
+            TradeRead(id=1, run_id=2, direction="buy", entry_price=1.0, volume=0.1,
+                      opened_at=datetime(2024, 1, 1, tzinfo=timezone.utc))  # missing symbol
 
 
 # ── Response envelope ──────────────────────────────────────────────────────────

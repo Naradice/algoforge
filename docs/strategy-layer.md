@@ -39,6 +39,16 @@ Strategy
     ],
     "logic": "or"
   },
+  "groups": {
+    "trend_up": {
+      "name": "Trend Up",
+      "conditions": [
+        { "left": "macd_line", "op": ">", "right": "macd_signal" },
+        { "left": "renko_direction", "op": "==", "right": 1 }
+      ],
+      "logic": "and"
+    }
+  },
   "risk": {
     "sl_pct": 0.02,
     "tp_pct": 0.04,
@@ -77,6 +87,65 @@ All indicators also have access to the base OHLCV columns: `open`, `high`, `low`
 { "left": "macd_line", "op": ">", "right": "macd_signal" }
 ```
 `left` and `right` can be column names (strings) or numeric literals. `op`: `<`, `>`, `<=`, `>=`, `==`, `!=`.
+
+### Condition Groups
+
+Groups let you name a reusable set of conditions and reference them by name inside any entry or exit block.
+
+**Define** groups at the top level under `"groups"` (keyed by group id):
+```json
+"groups": {
+  "trend_up": {
+    "name": "Trend Up",
+    "conditions": [
+      { "left": "macd_line", "op": ">", "right": "macd_signal" },
+      { "left": "renko_direction", "op": "==", "right": 1 }
+    ],
+    "logic": "and"
+  }
+}
+```
+
+**Reference** a group inside any condition array:
+```json
+{ "type": "group_ref", "group_id": "trend_up" }
+```
+
+A `group_ref` evaluates to the result of the entire group (True/False). Example — exit on group OR a range signal:
+```json
+"exit": {
+  "conditions": [
+    { "type": "group_ref", "group_id": "trend_up" },
+    { "left": "rt_is_range", "op": "==", "right": 1 }
+  ],
+  "logic": "or"
+}
+```
+
+Groups cannot nest other `group_ref` conditions.
+
+### Streak
+```json
+{
+  "type": "streak",
+  "left": "macd_line",
+  "op": ">",
+  "right": "macd_signal",
+  "min_streak": 3
+}
+```
+True when the sub-condition (`left op right`) has been continuously True for **at least `min_streak` consecutive bars** up to and including the current bar. The count resets to 0 the moment the sub-condition is False.
+
+Example timeline (MACD line > MACD signal, `min_streak: 3`):
+```
+bar 1:  True  → streak 1, condition False
+bar 2:  True  → streak 2, condition False
+bar 3:  True  → streak 3, condition True  ✓
+bar 4:  False → streak 0, condition False
+bar 5:  True  → streak 1, condition False
+```
+
+`left` and `right` follow the same rules as standard comparison (column name or numeric literal).
 
 ### ML signal
 ```json

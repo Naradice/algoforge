@@ -90,3 +90,9 @@ async def client():
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
+
+
+@pytest.fixture
+def db_session():
+    """Yield the test session factory for tests that need to insert rows directly."""
+    return TestingSession

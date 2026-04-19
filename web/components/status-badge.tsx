@@ -8,6 +8,7 @@ const STYLE: Record<string, string> = {
   running:   "bg-brand-500/15 text-brand-400 border-brand-500/30",
   training:  "bg-brand-500/15 text-brand-400 border-brand-500/30",
   pending:   "bg-warning/15 text-warning border-warning/30",
+  scheduled: "bg-warning/15 text-warning border-warning/30",
   trained:   "bg-teal-500/15 text-teal-400 border-teal-500/30",
   error:     "bg-danger/15 text-danger border-danger/30",
   idle:      "bg-gray-700/50 text-gray-400 border-gray-700",
@@ -20,7 +21,7 @@ const STYLE: Record<string, string> = {
 const DOT: Record<string, string> = {
   active: "bg-success", ready: "bg-success", deployed: "bg-success", completed: "bg-success",
   running: "bg-brand-400 animate-pulse", training: "bg-brand-400 animate-pulse",
-  pending: "bg-warning",
+  pending: "bg-warning", scheduled: "bg-warning",
   error: "bg-danger",
 };
 

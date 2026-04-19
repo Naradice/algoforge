@@ -6,10 +6,8 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/fetcher";
 import { EquityChart } from "@/components/equity-chart";
 import { MetricsGrid } from "@/components/metrics-grid";
-import { OHLCChart } from "@/components/ohlc-chart";
-import { OscillatorChart } from "@/components/oscillator-chart";
+import { StrategyChart } from "@/components/strategy-chart";
 import { useSSE } from "@/hooks/use-sse";
-import type { IndicatorSeries, MarketEvent } from "@/components/ohlc-chart";
 
 interface Trade {
   id: number;
@@ -50,7 +48,19 @@ export default function RunDetailPage() {
   const equityUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/equity`;
   const tradesUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/trades`;
   const chatUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/chat`;
-  const chartDataUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/chart-data`;
+
+  const [chartFrom, setChartFrom] = useState("");
+  const [chartTo, setChartTo] = useState("");
+  const [appliedRange, setAppliedRange] = useState({ from: "", to: "" });
+
+  function chartDataUrl() {
+    const base = `/api/v1/strategies/${strategyId}/runs/${runId}/chart-data`;
+    const p = new URLSearchParams();
+    if (appliedRange.from) p.set("from_ts", String(Math.floor(new Date(appliedRange.from).getTime() / 1000)));
+    if (appliedRange.to)   p.set("to_ts",   String(Math.floor(new Date(appliedRange.to).getTime()   / 1000)));
+    const qs = p.toString();
+    return qs ? `${base}?${qs}` : base;
+  }
 
   const { data: strategy } = useSWR(strategyUrl, fetcher);
   const { data: run, mutate: mutateRun } = useSWR(runUrl, fetcher, {
@@ -62,9 +72,10 @@ export default function RunDetailPage() {
   const { data: equityData } = useSWR(equityUrl, fetcher);
   const { data: trades } = useSWR(tradesUrl, fetcher);
   const { data: chatHistory, mutate: mutateChat } = useSWR(chatUrl, fetcher);
-  const { data: chartData } = useSWR(
-    run?.status === "completed" ? chartDataUrl : null,
+  const { data: chartData, isLoading: chartLoading } = useSWR(
+    run?.status === "completed" ? chartDataUrl() : null,
     fetcher,
+    { revalidateOnFocus: false },
   );
 
   const onSSEEvent = useCallback((data: unknown) => {
@@ -171,46 +182,53 @@ export default function RunDetailPage() {
       {/* Metrics */}
       {metrics && <MetricsGrid metrics={metrics} />}
 
-      {/* Time Series Chart — OHLC + indicators + trade markers */}
-      {chartData && (
-        <div className="rounded border border-gray-700 bg-gray-900 p-4 space-y-1">
-          <div className="mb-2 flex items-center gap-3">
+      {/* Price Chart */}
+      {run?.status === "completed" && (
+        <div className="rounded border border-gray-700 bg-gray-900 p-4 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-medium text-gray-300">Price Chart</h3>
-            {(chartData.events ?? []).length > 0 && (
-              <span className="rounded px-1.5 py-0.5 text-xs bg-yellow-900 text-yellow-300">
-                {(chartData.events as MarketEvent[]).length} economic events
-              </span>
+            <span className="text-gray-600 text-xs">|</span>
+            <input
+              type="datetime-local"
+              value={chartFrom}
+              onChange={(e) => setChartFrom(e.target.value)}
+              className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+            <span className="text-gray-600 text-xs">→</span>
+            <input
+              type="datetime-local"
+              value={chartTo}
+              onChange={(e) => setChartTo(e.target.value)}
+              className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+            <button
+              onClick={() => setAppliedRange({ from: chartFrom, to: chartTo })}
+              className="rounded bg-brand-500 px-2 py-0.5 text-xs text-white hover:bg-sky-400"
+            >
+              Apply
+            </button>
+            {(appliedRange.from || appliedRange.to) && (
+              <button
+                onClick={() => { setChartFrom(""); setChartTo(""); setAppliedRange({ from: "", to: "" }); }}
+                className="text-xs text-gray-500 hover:text-gray-300"
+              >
+                Reset
+              </button>
+            )}
+            {chartData && (
+              <span className="text-xs text-gray-600 ml-auto">{chartData.candles?.length ?? 0} bars</span>
             )}
           </div>
-
-          {/* Candlestick + overlay indicators + trade markers + economic events */}
-          <OHLCChart
-            candles={chartData.candles ?? []}
-            indicators={chartData.indicators ?? {}}
-            markers={chartData.markers ?? []}
-            events={(chartData.events ?? []) as MarketEvent[]}
-          />
-
-          {/* Oscillator sub-panels (RSI, MACD, ATR, …) */}
-          {(() => {
-            const separate = Object.entries(
-              (chartData.indicators ?? {}) as Record<string, IndicatorSeries>
-            ).filter(([, s]) => s.pane === "separate" && s.data.length > 0);
-
-            // Group by s.group
-            const groups: Record<string, Record<string, IndicatorSeries>> = {};
-            for (const [name, s] of separate) {
-              if (!groups[s.group]) groups[s.group] = {};
-              groups[s.group][name] = s;
-            }
-
-            return Object.entries(groups).map(([group, seriesMap]) => (
-              <div key={group}>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mt-3 mb-1">{group}</p>
-                <OscillatorChart group={group} series={seriesMap} />
-              </div>
-            ));
-          })()}
+          {chartLoading && (
+            <div className="flex items-center justify-center h-16 text-gray-500 text-sm">Loading chart…</div>
+          )}
+          {chartData && (
+            <StrategyChart
+              candles={chartData.candles ?? []}
+              indicators={chartData.indicators ?? {}}
+              markers={chartData.markers ?? []}
+            />
+          )}
         </div>
       )}
 

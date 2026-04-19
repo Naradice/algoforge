@@ -445,10 +445,11 @@ def collect(datasource_id: int, config: dict, *, force: bool = False) -> Collect
 
     _update_last_check(url, state_file)
 
+    total_files = len([f for f in out_dir.rglob("*") if f.is_file()])
     now = datetime.now(tz=timezone.utc)
     return CollectResult(
         artifact_path=f"web_reports/{subfolder}",
-        row_count=files_downloaded,
+        row_count=total_files,
         from_ts=now,
         to_ts=now,
     )

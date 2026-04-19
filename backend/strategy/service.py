@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from strategy.models import (
     Strategy, StrategyCreate, StrategyUpdate,
-    StrategyRun, StrategyRunCreate, StrategyRunRead,
+    StrategyRun, StrategyRunCreate,
     ChatMessageCreate, ChatMessageRead,
 )
 from strategy.repository import strategy_repo
@@ -63,6 +63,7 @@ class StrategyService:
             dataset_id=body.dataset_id,
             broker_client=body.broker_client,
             walk_forward_ratio=body.walk_forward_ratio,
+            risk_override=body.risk_override,
             from_ts=body.from_ts,
             to_ts=body.to_ts,
         )
@@ -80,7 +81,7 @@ class StrategyService:
         return await strategy_repo.get_chat_history(db, run_id)
 
     async def send_chat_message(self, db: AsyncSession, strategy_id: int, run_id: int, body: ChatMessageCreate) -> ChatMessageRead:
-        run = await self.get_run(db, strategy_id, run_id)
+        await self.get_run(db, strategy_id, run_id)
         strategy = await self.get_strategy(db, strategy_id)
 
         # Persist user message
@@ -149,14 +150,19 @@ class StrategyService:
         await self.get_strategy(db, strategy_id)
         return await strategy_repo.get_versions(db, strategy_id)
 
-    async def get_chart_data(self, db: AsyncSession, strategy_id: int, run_id: int) -> dict:
-        """
-        Return OHLC candles + indicator series + trade markers + economic events
-        for the run chart. Candle times are Unix seconds (int) as required by
-        lightweight-charts.
+    async def get_chart_data(
+        self,
+        db: AsyncSession,
+        strategy_id: int,
+        run_id: int,
+        from_ts: int | None = None,
+        to_ts: int | None = None,
+    ) -> dict:
+        """Return OHLC candles + indicator series + trade markers + economic events.
 
-        Economic calendar datasets that overlap the OHLC time window are
-        auto-discovered and merged — no manual linking required.
+        from_ts / to_ts (Unix seconds) restrict the window; when set and the
+        resulting slice fits within _MAX_CHART_BARS, bars are returned at the
+        original dataset resolution with no resampling.
         """
         import asyncio
         import functools
@@ -181,7 +187,7 @@ class StrategyService:
         if artifact_path:
             base = await loop.run_in_executor(
                 None,
-                functools.partial(_build_chart_base, artifact_path, indicator_specs),
+                functools.partial(_build_chart_base, artifact_path, indicator_specs, from_ts, to_ts),
             )
         else:
             base = {"candles": [], "indicators": {}}
@@ -195,23 +201,70 @@ class StrategyService:
         trades, _ = await strategy_repo.get_trades(db, run_id, offset=0, limit=10_000)
         markers: list[dict] = []
         for t in trades:
+            dir_label = t.direction.upper()
+            dir_color = "#22c55e" if t.direction == "buy" else "#ef4444"
             if t.opened_at:
+                entry_html = (
+                    f"<b style='color:{dir_color}'>{dir_label}</b> "
+                    f"@ {t.entry_price:.4f}<br/>"
+                    f"<span style='color:#9ca3af;font-size:10px'>"
+                    f"SL {t.sl_price:.4f} &nbsp; TP {t.tp_price:.4f}"
+                    f"</span>"
+                ) if t.sl_price and t.tp_price else (
+                    f"<b style='color:{dir_color}'>{dir_label}</b> @ {t.entry_price:.4f}"
+                )
                 markers.append({
                     "time": int(t.opened_at.timestamp()),
                     "position": "belowBar" if t.direction == "buy" else "aboveBar",
-                    "color": "#22c55e" if t.direction == "buy" else "#ef4444",
+                    "color": dir_color,
                     "shape": "arrowUp" if t.direction == "buy" else "arrowDown",
-                    "text": f"{t.direction.upper()} {t.entry_price:.4f}",
+                    "text": entry_html,
                 })
             if t.closed_at and t.exit_price is not None:
+                pnl = t.profit or 0.0
+                pnl_color = "#22c55e" if pnl >= 0 else "#ef4444"
+                reason = t.exit_reason or "exit"
+                if t.direction == "buy":
+                    gross = (t.exit_price - t.entry_price) / t.entry_price
+                else:
+                    gross = (t.entry_price - t.exit_price) / t.entry_price
+                gross_color = "#22c55e" if gross >= 0 else "#ef4444"
+                exit_html = (
+                    f"<b style='color:#f59e0b'>EXIT</b> ({reason})<br/>"
+                    f"<span style='color:#9ca3af;font-size:10px'>"
+                    f"{dir_label} {t.entry_price:.4f} → {t.exit_price:.4f}</span><br/>"
+                    f"Gross: <span style='color:{gross_color}'>{gross * 100:+.2f}%</span>"
+                    f" &nbsp; Net: <b style='color:{pnl_color}'>{pnl * 100:+.2f}%</b>"
+                )
                 markers.append({
                     "time": int(t.closed_at.timestamp()),
                     "position": "aboveBar" if t.direction == "buy" else "belowBar",
                     "color": "#f59e0b",
                     "shape": "arrowDown" if t.direction == "buy" else "arrowUp",
-                    "text": f"EXIT {t.exit_price:.4f}",
+                    "text": exit_html,
                 })
         markers.sort(key=lambda m: m["time"])
+
+        # Snap marker timestamps to nearest preceding candle bar so they render correctly
+        # when candles are resampled to a coarser timeframe than the trade timestamps.
+        if candle_times:
+            import bisect
+            candle_times_sorted = sorted(candle_times)
+
+            def snap_to_candle(t: int) -> int | None:
+                idx = bisect.bisect_right(candle_times_sorted, t) - 1
+                if idx < 0:
+                    return None  # before first candle — drop the marker
+                return candle_times_sorted[idx]
+
+            snapped: list[dict] = []
+            for m in markers:
+                st = snap_to_candle(m["time"])
+                if st is not None:
+                    m["time"] = st
+                    snapped.append(m)
+            markers = snapped
+
         base["markers"] = markers
 
         # Auto-discover economic calendar datasets that overlap the OHLC window
@@ -251,6 +304,229 @@ class StrategyService:
         base["events"] = events
         return base
 
+    async def validate_strategy(
+        self,
+        db: AsyncSession,
+        strategy_id: int,
+        dataset_id: int,
+        definition_override: dict | None = None,
+    ) -> dict:
+        """Run a synchronous (no-Celery) backtest and return chart data for inline validation.
+
+        Returns the same shape as get_chart_data: {candles, indicators, markers}.
+        No database writes — purely ephemeral.
+        """
+        import asyncio
+        import functools
+
+        strategy = await self.get_strategy(db, strategy_id)
+        definition = definition_override if definition_override is not None else (strategy.definition or {})
+
+        from data.models import Dataset
+        from sqlalchemy import select as sa_select
+        result = await db.execute(sa_select(Dataset).where(Dataset.id == dataset_id))
+        ds_rec = result.scalar_one_or_none()
+        if ds_rec is None or not ds_rec.artifact_path:
+            return {"candles": [], "indicators": {}, "markers": []}
+
+        artifact_path = ds_rec.artifact_path
+        indicator_specs = definition.get("indicators", [])
+
+        loop = asyncio.get_event_loop()
+
+        # Build candles + indicator series
+        base = await loop.run_in_executor(
+            None,
+            functools.partial(_build_chart_base, artifact_path, indicator_specs),
+        )
+
+        # Run backtest synchronously to get trades
+        from strategy.engine.backtest import run_backtest
+        trades_raw, _, _ = await loop.run_in_executor(
+            None,
+            functools.partial(run_backtest, definition, artifact_path),
+        )
+
+        candle_times: list[int] = [c["time"] for c in base["candles"]]
+
+        # Build markers from raw trade dicts (same shape as get_chart_data)
+        markers: list[dict] = []
+        for t in trades_raw:
+            dir_label = t["direction"].upper()
+            dir_color = "#22c55e" if t["direction"] == "buy" else "#ef4444"
+            if t.get("opened_at"):
+                opened_ts = int(t["opened_at"].timestamp()) if hasattr(t["opened_at"], "timestamp") else int(t["opened_at"])
+                entry_html = (
+                    f"<b style='color:{dir_color}'>{dir_label}</b> @ {t['entry_price']:.4f}"
+                )
+                if t.get("sl_price") and t.get("tp_price"):
+                    entry_html += (
+                        f"<br/><span style='color:#9ca3af;font-size:10px'>"
+                        f"SL {t['sl_price']:.4f} &nbsp; TP {t['tp_price']:.4f}</span>"
+                    )
+                markers.append({
+                    "time": opened_ts,
+                    "position": "belowBar" if t["direction"] == "buy" else "aboveBar",
+                    "color": dir_color,
+                    "shape": "arrowUp" if t["direction"] == "buy" else "arrowDown",
+                    "text": entry_html,
+                })
+            if t.get("closed_at") and t.get("exit_price") is not None:
+                closed_ts = int(t["closed_at"].timestamp()) if hasattr(t["closed_at"], "timestamp") else int(t["closed_at"])
+                pnl = t.get("profit") or 0.0
+                pnl_color = "#22c55e" if pnl >= 0 else "#ef4444"
+                reason = t.get("exit_reason") or "exit"
+                gross = ((t["exit_price"] - t["entry_price"]) / t["entry_price"]
+                         if t["direction"] == "buy"
+                         else (t["entry_price"] - t["exit_price"]) / t["entry_price"])
+                gross_color = "#22c55e" if gross >= 0 else "#ef4444"
+                exit_html = (
+                    f"<b style='color:#f59e0b'>EXIT</b> ({reason})<br/>"
+                    f"<span style='color:#9ca3af;font-size:10px'>"
+                    f"{dir_label} {t['entry_price']:.4f} → {t['exit_price']:.4f}</span><br/>"
+                    f"Gross: <span style='color:{gross_color}'>{gross * 100:+.2f}%</span>"
+                    f" &nbsp; Net: <b style='color:{pnl_color}'>{pnl * 100:+.2f}%</b>"
+                )
+                markers.append({
+                    "time": closed_ts,
+                    "position": "aboveBar" if t["direction"] == "buy" else "belowBar",
+                    "color": "#f59e0b",
+                    "shape": "arrowDown" if t["direction"] == "buy" else "arrowUp",
+                    "text": exit_html,
+                })
+
+        markers.sort(key=lambda m: m["time"])
+
+        # Snap markers to nearest preceding candle bar
+        if candle_times:
+            import bisect
+            candle_times_sorted = sorted(candle_times)
+
+            def snap(t: int) -> int | None:
+                idx = bisect.bisect_right(candle_times_sorted, t) - 1
+                return candle_times_sorted[idx] if idx >= 0 else None
+
+            snapped = []
+            for m in markers:
+                st = snap(m["time"])
+                if st is not None:
+                    m["time"] = st
+                    snapped.append(m)
+            markers = snapped
+
+        base["markers"] = markers
+        base["trade_count"] = len(trades_raw)
+        return base
+
+    async def validate_strategy_stream(
+        self,
+        db: AsyncSession,
+        strategy_id: int,
+        dataset_id: int,
+        definition_override: dict | None = None,
+        limit_bars: int | None = None,
+    ):
+        """Async generator yielding SSE lines for streaming condition validation.
+
+        Uses vectorised condition evaluation (no full backtest) for speed.
+        Events:
+          init    — {type, candles, indicators, total_bars}
+          signals — {type, long_entry, long_exit, short_entry, short_exit}
+                    each value is a list of unix timestamps where the block fires
+          done    — {type}
+          error   — {type, message}
+        """
+        import asyncio
+        import functools
+        import json
+
+        strategy = await self.get_strategy(db, strategy_id)
+        definition = definition_override if definition_override is not None else (strategy.definition or {})
+
+        from data.models import Dataset
+        from sqlalchemy import select as sa_select
+        result = await db.execute(sa_select(Dataset).where(Dataset.id == dataset_id))
+        ds_rec = result.scalar_one_or_none()
+        if ds_rec is None or not ds_rec.artifact_path:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Dataset not found'})}\n\n"
+            return
+
+        artifact_path = ds_rec.artifact_path
+        indicator_specs = definition.get("indicators", [])
+        groups = definition.get("groups", {})
+
+        loop = asyncio.get_event_loop()
+
+        # Build candles + indicators (limited to last limit_bars rows)
+        base = await loop.run_in_executor(
+            None,
+            functools.partial(_build_chart_base, artifact_path, indicator_specs, limit_bars=limit_bars),
+        )
+
+        total_bars = len(base["candles"])
+        yield f"data: {json.dumps({'type': 'init', 'candles': base['candles'], 'indicators': base['indicators'], 'total_bars': total_bars})}\n\n"
+
+        # Vectorised condition evaluation — runs in thread executor to stay non-blocking
+        def compute_signals() -> dict:
+            import os
+            import bisect
+            from pathlib import Path
+            from strategy.engine.backtest import _load_df, _normalise
+            from strategy.engine.indicators import apply_indicators
+            from strategy.engine.conditions import eval_block_series
+
+            store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
+            df = _load_df(store / artifact_path)
+            if limit_bars and limit_bars < len(df):
+                df = df.iloc[-limit_bars:]
+
+            defn = _normalise(definition)
+            if indicator_specs:
+                df = apply_indicators(df, indicator_specs)
+
+            candle_times_sorted = sorted(c["time"] for c in base["candles"])
+
+            def snap(t: int) -> int | None:
+                idx = bisect.bisect_right(candle_times_sorted, t) - 1
+                return candle_times_sorted[idx] if idx >= 0 else None
+
+            signals: dict[str, list[int]] = {
+                "long_entry": [], "long_exit": [],
+                "short_entry": [], "short_exit": [],
+            }
+
+            blocks = {
+                "long_entry":  defn.get("long", {}).get("entry"),
+                "long_exit":   defn.get("long", {}).get("exit"),
+                "short_entry": defn.get("short", {}).get("entry"),
+                "short_exit":  defn.get("short", {}).get("exit"),
+            }
+
+            for key, block in blocks.items():
+                if not block or not block.get("conditions"):
+                    continue
+                try:
+                    mask = eval_block_series(df, block, groups)
+                    for ts, fired in zip(df.index, mask):
+                        if fired:
+                            raw_ts = int(ts.timestamp()) if hasattr(ts, "timestamp") else int(ts)
+                            snapped = snap(raw_ts)
+                            if snapped is not None:
+                                signals[key].append(snapped)
+                except Exception:
+                    pass
+
+            return signals
+
+        try:
+            signals = await loop.run_in_executor(None, compute_signals)
+            yield f"data: {json.dumps({'type': 'signals', **signals})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            return
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
     async def update_strategy_with_version(self, db: AsyncSession, strategy_id: int, body) -> "Strategy":
         existing = await self.get_strategy(db, strategy_id)
         updates = body.model_dump(exclude_none=True)
@@ -267,45 +543,158 @@ strategy_service = StrategyService()
 
 
 # ---------------------------------------------------------------------------
+# Marker helpers
+# ---------------------------------------------------------------------------
+
+def _trade_to_stream_markers(trade: dict, kind: str) -> list[dict]:
+    """Convert a partial (open) or complete (close) trade dict to chart marker(s)."""
+    markers = []
+    direction = trade.get("direction", "buy")
+    dir_label = direction.upper()
+    dir_color = "#22c55e" if direction == "buy" else "#ef4444"
+    entry_price = trade.get("entry_price", 0.0)
+
+    if kind == "open":
+        opened_at = trade.get("opened_at")
+        if opened_at is None:
+            return markers
+        ts = int(opened_at.timestamp()) if hasattr(opened_at, "timestamp") else int(opened_at)
+        text = f"<b style='color:{dir_color}'>{dir_label}</b> @ {entry_price:.4f}"
+        sl = trade.get("sl_price")
+        tp = trade.get("tp_price")
+        if sl and tp:
+            text += f"<br/><span style='color:#9ca3af;font-size:10px'>SL {sl:.4f} &nbsp; TP {tp:.4f}</span>"
+        markers.append({
+            "time": ts,
+            "position": "belowBar" if direction == "buy" else "aboveBar",
+            "color": dir_color,
+            "shape": "arrowUp" if direction == "buy" else "arrowDown",
+            "text": text,
+        })
+
+    elif kind == "close":
+        closed_at = trade.get("closed_at")
+        exit_price = trade.get("exit_price")
+        if closed_at is None or exit_price is None:
+            return markers
+        ts = int(closed_at.timestamp()) if hasattr(closed_at, "timestamp") else int(closed_at)
+        pnl = trade.get("profit") or 0.0
+        pnl_color = "#22c55e" if pnl >= 0 else "#ef4444"
+        reason = trade.get("exit_reason") or "exit"
+        gross = (
+            (exit_price - entry_price) / entry_price if direction == "buy"
+            else (entry_price - exit_price) / entry_price
+        )
+        gross_color = "#22c55e" if gross >= 0 else "#ef4444"
+        text = (
+            f"<b style='color:#f59e0b'>EXIT</b> ({reason})<br/>"
+            f"<span style='color:#9ca3af;font-size:10px'>{dir_label} {entry_price:.4f} → {exit_price:.4f}</span><br/>"
+            f"Gross: <span style='color:{gross_color}'>{gross * 100:+.2f}%</span>"
+            f" &nbsp; Net: <b style='color:{pnl_color}'>{pnl * 100:+.2f}%</b>"
+        )
+        markers.append({
+            "time": ts,
+            "position": "aboveBar" if direction == "buy" else "belowBar",
+            "color": "#f59e0b",
+            "shape": "arrowDown" if direction == "buy" else "arrowUp",
+            "text": text,
+        })
+
+    return markers
+
+
+# ---------------------------------------------------------------------------
 # Sync helpers (run in thread executor)
 # ---------------------------------------------------------------------------
 
-# Indicator types that are drawn on the price axis (same scale as OHLC)
-_OVERLAY_TYPES = {"ema", "sma", "bb"}
-# Which grouped prefix maps to "separate" pane label
-_PANE_GROUPS = {
-    "macd_line": "macd",
-    "macd_signal": "macd",
-    "macd_hist": "macd",
-    "bb_upper": "bb",
-    "bb_middle": "bb",
-    "bb_lower": "bb",
+# Indicator types drawn on the price axis (same scale as OHLC candles)
+_OVERLAY_TYPES = {"ema", "sma", "bb", "donchian", "sar"}
+
+# Per-column color overrides; keys may be exact column names or type prefixes
+_INDICATOR_COLORS: dict[str, str] = {
+    "ema":           "#f59e0b",
+    "sma":           "#a78bfa",
+    "bb_upper":      "#64748b",
+    "bb_middle":     "#94a3b8",
+    "bb_lower":      "#64748b",
+    "macd_line":     "#0ea5e9",
+    "macd_signal":   "#f97316",
+    "macd_hist":     "#6b7280",
+    "rsi":           "#a855f7",
+    "atr":           "#84cc16",
+    "slope":         "#22d3ee",
+    "adx":           "#fb923c",
+    "plus_di":       "#4ade80",
+    "minus_di":      "#f87171",
+    "stochastic_k":  "#818cf8",
+    "stochastic_d":  "#c084fc",
+    "donchian":      "#475569",
+    "sar":           "#facc15",
+    "cci":           "#2dd4bf",
+    "roc":           "#38bdf8",
+    "renko":         "#d946ef",
+    "rangetrend":    "#34d399",
+    "candle":        "#e879f9",
+    "streak":        "#fbbf24",
 }
 
-_INDICATOR_COLORS = {
-    "ema": "#f59e0b",
-    "sma": "#a78bfa",
-    "bb_upper": "#64748b",
-    "bb_middle": "#94a3b8",
-    "bb_lower": "#64748b",
-    "macd_line": "#0ea5e9",
-    "macd_signal": "#f97316",
-    "macd_hist": "#6b7280",
-    "rsi": "#a855f7",
-    "atr": "#84cc16",
-    "slope": "#22d3ee",
+# Multi-column indicator suffix specs: type → [(suffix, series_type), ...]
+# Single-output indicators (ema, rsi, etc.) are handled by the fallback.
+_MULTI_COL_SPECS: dict[str, list[tuple[str, str]]] = {
+    "macd":       [("_line", "line"), ("_signal", "line"), ("_hist", "histogram")],
+    "bb":         [("_upper", "line"), ("_middle", "line"), ("_lower", "line")],
+    "adx":        [("", "line"), ("_plus_di", "line"), ("_minus_di", "line")],
+    "stochastic": [("_k", "line"), ("_d", "line")],
+    "donchian":   [("_upper", "line"), ("_lower", "line"), ("_mid", "line")],
+    "renko":      [("_direction", "line"), ("_flip", "line")],
+    "candle":     [
+        ("_bull_engulf", "line"), ("_bear_engulf", "line"),
+        ("_bull_pin", "line"), ("_bear_pin", "line"),
+        ("_bull_outside", "line"), ("_bear_outside", "line"),
+    ],
 }
 
-_MAX_BARS = 2_000
+_MAX_CHART_BARS = 100_000  # max candles/indicator points sent to the frontend
 
 
-def _build_chart_base(artifact_path: str, indicator_specs: list) -> dict:
-    """Load parquet, apply indicators, downsample, return candles + indicator series."""
-    import math
+def _resample_ohlcv(df, step: int):
+    """Aggregate rows in chunks of `step`, preserving proper OHLC semantics."""
+    import pandas as pd
+
+    chunks = [df.iloc[i:i + step] for i in range(0, len(df), step)]
+    records = []
+    for chunk in chunks:
+        if chunk.empty:
+            continue
+        rec: dict = {}
+        rec["open"] = float(chunk["open"].iloc[0]) if "open" in chunk.columns else float(chunk["close"].iloc[0])
+        rec["high"] = float(chunk["high"].max()) if "high" in chunk.columns else float(chunk["close"].max())
+        rec["low"] = float(chunk["low"].min()) if "low" in chunk.columns else float(chunk["close"].min())
+        rec["close"] = float(chunk["close"].iloc[-1])
+        records.append((chunk.index[-1], rec))
+    if not records:
+        return df.iloc[0:0]
+    idx, rows = zip(*records)
+    return pd.DataFrame(rows, index=pd.DatetimeIndex(idx))
+
+
+def _build_chart_base(
+    artifact_path: str,
+    indicator_specs: list,
+    from_ts: int | None = None,
+    to_ts: int | None = None,
+    limit_bars: int | None = None,
+) -> dict:
+    """Load parquet, resample if needed, apply indicators, return candles + series.
+
+    When from_ts / to_ts are supplied the dataset is sliced to that window first.
+    If the slice fits within _MAX_CHART_BARS, bars are returned at original
+    resolution. Otherwise they are aggregated so MACD/RSI are consistent with
+    the displayed candle timeframe.
+    """
     import os
     from pathlib import Path
 
-    import numpy as np
     import pandas as pd
 
     from strategy.engine.backtest import _load_df
@@ -314,54 +703,72 @@ def _build_chart_base(artifact_path: str, indicator_specs: list) -> dict:
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
     df = _load_df(store / artifact_path)
 
+    # Slice to requested time window before resampling
+    # Convert index to Unix seconds regardless of datetime64 sub-unit (us/ns)
+    if from_ts is not None or to_ts is not None:
+        unix = df.index.astype("datetime64[s]").astype("int64")
+        mask = pd.Series(True, index=df.index)
+        if from_ts is not None:
+            mask = mask & (unix >= from_ts)
+        if to_ts is not None:
+            mask = mask & (unix <= to_ts)
+        df = df.loc[mask]
+
+    if df.empty:
+        return {"candles": [], "indicators": {}}
+
+    # Caller-supplied limit (e.g. validate panel) takes precedence, then the global cap.
+    cap = limit_bars if limit_bars else _MAX_CHART_BARS
+    if len(df) > cap:
+        df = df.iloc[-cap:]
+
     if indicator_specs:
         df = apply_indicators(df, indicator_specs)
 
-    # Downsample to keep the payload manageable
-    if len(df) > _MAX_BARS:
-        step = math.ceil(len(df) / _MAX_BARS)
-        df = df.iloc[::step]
-
-    # Build candle list
+    # Build candle list — skip rows with invalid prices
+    import math as _math
     candles: list[dict] = []
     for ts, row in df.iterrows():
         if not isinstance(ts, pd.Timestamp):
             continue
-        t = int(ts.timestamp())
-        candles.append({
-            "time": t,
-            "open": float(row.get("open", row["close"])),
-            "high": float(row.get("high", row["close"])),
-            "low": float(row.get("low", row["close"])),
-            "close": float(row["close"]),
-        })
+        o = float(row.get("open", row["close"]))
+        h = float(row.get("high", row["close"]))
+        lo = float(row.get("low", row["close"]))
+        c = float(row["close"])
+        if any(_math.isnan(v) or _math.isinf(v) or v <= 0 for v in (o, h, lo, c)):
+            continue
+        if h < lo:
+            h, lo = lo, h
+        # Enforce proper OHLC relationship: high must be ≥ max(open,close) and low ≤ min(open,close)
+        if h < max(o, c) or lo > min(o, c):
+            continue
+        candles.append({"time": int(ts.timestamp()), "open": o, "high": h, "low": lo, "close": c})
 
-    # Build indicator series from spec (preserves original bar resolution)
+    # Build indicator series — same resolution as candles
     indicators: dict[str, dict] = {}
     for spec in indicator_specs:
         itype = spec["type"].lower()
         iid = spec.get("id", itype)
         pane = "overlay" if itype in _OVERLAY_TYPES else "separate"
 
-        if itype == "macd":
-            for suffix, stype in [("_line", "line"), ("_signal", "line"), ("_hist", "histogram")]:
-                col = f"{iid}{suffix}"
-                if col in df.columns:
-                    indicators[col] = _series_from_col(df, col, stype, pane)
-        elif itype == "bb":
-            for suffix in ("_upper", "_middle", "_lower"):
-                col = f"{iid}{suffix}"
-                if col in df.columns:
-                    indicators[col] = _series_from_col(df, col, "line", pane)
-        else:
-            if iid in df.columns:
-                indicators[iid] = _series_from_col(df, iid, "line", pane)
+        def _add(col: str, stype: str = "line", _itype: str = itype, _pane: str = pane) -> None:
+            if col not in df.columns:
+                return
+            s = _series_from_col(df, col, stype, _pane)
+            s["group"] = _itype
+            base_key = next((k for k in _INDICATOR_COLORS if col.startswith(k)), col)
+            s["color"] = _INDICATOR_COLORS.get(base_key, "#6b7280")
+            indicators[col] = s
 
-    # Attach display metadata (color, pane group)
-    for name, series in indicators.items():
-        base_key = next((k for k in _INDICATOR_COLORS if name.startswith(k)), name)
-        series["color"] = _INDICATOR_COLORS.get(base_key, "#6b7280")
-        series["group"] = _PANE_GROUPS.get(name, name)
+        if itype in _MULTI_COL_SPECS:
+            for suffix, stype in _MULTI_COL_SPECS[itype]:
+                _add(f"{iid}{suffix}", stype)
+        elif itype == "rangetrend":
+            method = (spec.get("params") or {}).get("method", "atr")
+            for suffix, stype in [("_is_range", "line"), ("_direction", "line"), (f"_{method}", "line")]:
+                _add(f"{iid}{suffix}", stype)
+        else:
+            _add(iid)
 
     return {"candles": candles, "indicators": indicators}
 

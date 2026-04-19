@@ -237,7 +237,41 @@ async def _run_collection_job(job_id: int) -> dict:
             return {"error": str(e)}
 
         async with factory() as db:
-            if incremental_context is not None:
+            if source.type == "web_report":
+                # web_report: one persistent dataset per datasource, updated on every run.
+                # row_count = total files on disk; from_ts = first ever run; to_ts = this run.
+                existing = (await db.execute(
+                    select(Dataset)
+                    .where(Dataset.datasource_id == source.id)
+                    .order_by(Dataset.id)
+                    .limit(1)
+                )).scalar_one_or_none()
+                if existing is not None:
+                    await db.execute(
+                        update(Dataset).where(Dataset.id == existing.id).values(
+                            to_ts=collect_result.to_ts,
+                            row_count=collect_result.row_count,
+                            status="ready",
+                        )
+                    )
+                    dataset_id = existing.id
+                else:
+                    dataset = Dataset(
+                        datasource_id=source.id,
+                        name=source.name,
+                        symbol=None,
+                        timeframe=None,
+                        from_ts=collect_result.from_ts,
+                        to_ts=collect_result.to_ts,
+                        row_count=collect_result.row_count,
+                        artifact_path=collect_result.artifact_path,
+                        status="ready",
+                    )
+                    db.add(dataset)
+                    await db.flush()
+                    await db.refresh(dataset)
+                    dataset_id = dataset.id
+            elif incremental_context is not None:
                 # Incremental: update the existing dataset row; preserve original from_ts
                 await db.execute(
                     update(Dataset).where(Dataset.id == incremental_context["dataset_id"]).values(
@@ -288,9 +322,10 @@ async def _run_collection_job(job_id: int) -> dict:
         logger.info(f"Collection job {job_id} completed: dataset {dataset_id}, {collect_result.row_count} rows")
 
         # Auto-trigger characteristics computation for all datasource types that
-        # produce numeric time-series data. Skip economic_calendar — its schema
-        # (indicator / value / unit) is not what the characteristics system expects.
-        if source.type != "economic_calendar":
+        # produce numeric time-series data. Skip types whose artifacts are not
+        # numeric parquet DataFrames (web_report stores PDFs/HTMLs; economic_calendar
+        # has a non-standard schema).
+        if source.type not in ("economic_calendar", "web_report"):
             compute_characteristics.apply_async(args=[dataset_id], queue="characteristics")
             logger.info(f"[job {job_id}] auto-enqueued compute_characteristics for dataset {dataset_id}")
 
@@ -304,15 +339,29 @@ def _compute_next_run(datasource_type: str, config: dict, schedule_cron: str | N
     """Return the next UTC datetime this job should run, or None (one-off)."""
     from datetime import timedelta
 
-    # web_report uses interval_days from the datasource config
+    # web_report uses interval_days (and optional download_time) from the datasource config
     if datasource_type == "web_report":
         interval_days = config.get("interval_days")
         if interval_days is None:
             return None  # one-off download
         try:
-            return datetime.now(timezone.utc) + timedelta(days=int(interval_days))
+            days = int(interval_days)
         except (TypeError, ValueError):
             return None
+        now = datetime.now(timezone.utc)
+        download_time = config.get("download_time")  # "HH:MM" UTC, e.g. "18:00"
+        if download_time:
+            try:
+                h, m = map(int, str(download_time).split(":"))
+                # Next occurrence of HH:MM that is strictly in the future.
+                # Try today first; if that moment has passed, step forward by interval_days.
+                candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                if candidate <= now:
+                    candidate += timedelta(days=days)
+                return candidate
+            except (ValueError, AttributeError):
+                pass  # fall back to interval-only below
+        return now + timedelta(days=days)
 
     # Other types use schedule_cron on the job (e.g. "0 9 * * *")
     if schedule_cron:

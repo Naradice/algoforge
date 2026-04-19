@@ -92,6 +92,11 @@ const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
       placeholder: "1",
       hint: "Minimum days between downloads. Leave blank to always run.",
     },
+    {
+      key: "download_time", label: "Download time (UTC)", type: "text",
+      placeholder: "18:00",
+      hint: "Optional. Run at this time each day (HH:MM, UTC).",
+    },
   ],
   manual_upload: [],
 };
@@ -680,47 +685,53 @@ export default function DatasourceDetailPage() {
           {webReportFiles && webReportFiles.length === 0 && (
             <p className="text-sm text-gray-500">No files downloaded yet.</p>
           )}
-          {webReportFiles && webReportFiles.length > 0 && (
-            <div className="rounded border border-gray-800 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-800 text-left">
-                    <th className="px-4 py-2 text-xs text-gray-400 font-medium">Filename</th>
-                    <th className="px-4 py-2 text-xs text-gray-400 font-medium">Size</th>
-                    <th className="px-4 py-2 text-xs text-gray-400 font-medium">Downloaded</th>
-                    <th className="px-4 py-2 text-xs text-gray-400 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {webReportFiles.map((f: any) => (
-                    <tr key={f.path} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                      <td className="px-4 py-2 font-mono text-xs text-white">{f.name}</td>
-                      <td className="px-4 py-2 text-gray-400 text-xs tabular-nums">
-                        {f.size_bytes >= 1024 * 1024
-                          ? `${(f.size_bytes / 1024 / 1024).toFixed(1)} MB`
-                          : f.size_bytes >= 1024
-                          ? `${(f.size_bytes / 1024).toFixed(1)} KB`
-                          : `${f.size_bytes} B`}
-                      </td>
-                      <td className="px-4 py-2 text-gray-400 text-xs">
-                        {new Date(f.modified_at).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        <a
-                          href={`/api/v1/datasources/${id}/web-report/files/${f.path}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-brand-400 hover:text-brand-300 hover:underline"
-                        >
-                          Open
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {webReportFiles && webReportFiles.length > 0 && (() => {
+            // Group files by download date (YYYY-MM-DD in local time)
+            const byDay = webReportFiles.reduce((acc: Record<string, any[]>, f: any) => {
+              const day = new Date(f.modified_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+              (acc[day] ??= []).push(f);
+              return acc;
+            }, {});
+            const days = Object.keys(byDay).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+            return (
+              <div className="space-y-3">
+                {days.map((day) => (
+                  <div key={day} className="rounded border border-gray-800 overflow-hidden">
+                    <div className="bg-gray-800/60 px-4 py-2 flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-300">{day}</span>
+                      <span className="text-xs text-gray-500">{byDay[day].length} file{byDay[day].length !== 1 ? "s" : ""}</span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {byDay[day].map((f: any) => (
+                          <tr key={f.path} className="border-t border-gray-800/50 hover:bg-gray-800/30">
+                            <td className="px-4 py-2 font-mono text-xs text-white">{f.name}</td>
+                            <td className="px-4 py-2 text-gray-400 text-xs tabular-nums">
+                              {f.size_bytes >= 1024 * 1024
+                                ? `${(f.size_bytes / 1024 / 1024).toFixed(1)} MB`
+                                : f.size_bytes >= 1024
+                                ? `${(f.size_bytes / 1024).toFixed(1)} KB`
+                                : `${f.size_bytes} B`}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              <a
+                                href={`/api/v1/datasources/${id}/web-report/files/${f.path}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-brand-400 hover:text-brand-300 hover:underline"
+                              >
+                                Open
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </section>
       )}
 

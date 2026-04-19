@@ -134,3 +134,72 @@ async def test_no_version_on_name_only_change(client):
     r = await client.get(f"/api/v1/strategies/{strat_id}/versions")
     assert r.status_code == 200
     assert len(r.json()["data"]) == 0
+
+
+# ── Trades endpoint ────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_get_run_trades_empty(client):
+    cr = await client.post("/api/v1/strategies", json={"name": "Trades Strat", "description": ""})
+    strat_id = cr.json()["data"]["id"]
+    rr = await client.post(f"/api/v1/strategies/{strat_id}/runs", json={"mode": "backtest"})
+    run_id = rr.json()["data"]["id"]
+
+    r = await client.get(f"/api/v1/strategies/{strat_id}/runs/{run_id}/trades")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["data"] == []
+    assert body["meta"]["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_run_trades_returns_trade_fields(client, db_session):
+    from datetime import datetime, timezone
+    from strategy.models import Trade
+
+    cr = await client.post("/api/v1/strategies", json={"name": "Trade Fields Strat", "description": ""})
+    strat_id = cr.json()["data"]["id"]
+    rr = await client.post(f"/api/v1/strategies/{strat_id}/runs", json={"mode": "backtest"})
+    run_id = rr.json()["data"]["id"]
+
+    async with db_session() as db:
+        trade = Trade(
+            id=9001,  # explicit id — SQLite BigInteger doesn't autoincrement
+            run_id=run_id, symbol="USDJPY", direction="buy",
+            entry_price=150.0, exit_price=151.0, volume=0.1,
+            profit=1000.0,
+            opened_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            closed_at=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            exit_reason="tp", phase="is", mae=0.5, mfe=1.5,
+        )
+        db.add(trade)
+        await db.commit()
+
+    r = await client.get(f"/api/v1/strategies/{strat_id}/runs/{run_id}/trades")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["meta"]["total"] == 1
+    t = body["data"][0]
+    assert t["symbol"] == "USDJPY"
+    assert t["direction"] == "buy"
+    assert t["entry_price"] == 150.0
+    assert t["exit_price"] == 151.0
+    assert t["profit"] == 1000.0
+    assert t["exit_reason"] == "tp"
+    assert t["phase"] == "is"
+    assert t["mae"] == 0.5
+    assert t["mfe"] == 1.5
+
+
+@pytest.mark.asyncio
+async def test_get_run_trades_wrong_strategy_returns_404(client, db_session):
+    cr1 = await client.post("/api/v1/strategies", json={"name": "Owner Strat", "description": ""})
+    strat1_id = cr1.json()["data"]["id"]
+    rr = await client.post(f"/api/v1/strategies/{strat1_id}/runs", json={"mode": "backtest"})
+    run_id = rr.json()["data"]["id"]
+
+    cr2 = await client.post("/api/v1/strategies", json={"name": "Other Strat", "description": ""})
+    strat2_id = cr2.json()["data"]["id"]
+
+    r = await client.get(f"/api/v1/strategies/{strat2_id}/runs/{run_id}/trades")
+    assert r.status_code == 404

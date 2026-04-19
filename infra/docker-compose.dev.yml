@@ -16,6 +16,9 @@ x-backend-dev: &backend-dev
     # Set ARTIFACT_REMOTE_URL in .env to enable write-through backup to object storage.
     # e.g. ARTIFACT_REMOTE_URL=s3://my-bucket/algoforge
     # Leave unset to use local-only storage (default).
+    # finance_client source is volume-mounted and takes precedence over the installed package,
+    # so YAML config files and code changes are picked up without a rebuild.
+    PYTHONPATH: /finance_client_src
   depends_on:
     postgres:
       condition: service_healthy
@@ -23,6 +26,7 @@ x-backend-dev: &backend-dev
       condition: service_healthy
   volumes:
     - ../backend:/app
+    - ../../finance_client/src:/finance_client_src
     - artifacts:/app/artifacts
     - artifact_backup:/mnt/artifact_backup
 

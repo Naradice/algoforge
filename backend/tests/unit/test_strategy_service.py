@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException
 
 from strategy.service import StrategyService
-from strategy.models import Strategy, StrategyRun, StrategyUpdate, StrategyRunCreate
+from strategy.models import Strategy, StrategyRun, Trade, StrategyUpdate
 
 
 PATCH = "strategy.service.strategy_repo"
@@ -219,3 +219,51 @@ class TestGetRun:
             with pytest.raises(HTTPException) as exc:
                 await svc.get_run(AsyncMock(), strategy_id=1, run_id=5)
             assert exc.value.status_code == 404
+
+
+# ── get_trades ─────────────────────────────────────────────────────────────────
+
+class TestGetTrades:
+    @pytest.mark.asyncio
+    async def test_delegates_to_repo_with_run_id(self):
+        svc = StrategyService()
+        run = MagicMock(spec=StrategyRun, strategy_id=1)
+        trades = [MagicMock(spec=Trade), MagicMock(spec=Trade)]
+        with patch(PATCH) as repo:
+            repo.get_run = AsyncMock(return_value=run)
+            repo.get_trades = AsyncMock(return_value=(trades, 2))
+            result, total = await svc.get_trades(AsyncMock(), strategy_id=1, run_id=5)
+        repo.get_trades.assert_called_once()
+        assert total == 2
+        assert result is trades
+
+    @pytest.mark.asyncio
+    async def test_raises_404_when_run_not_found(self):
+        svc = StrategyService()
+        with patch(PATCH) as repo:
+            repo.get_run = AsyncMock(return_value=None)
+            with pytest.raises(HTTPException) as exc:
+                await svc.get_trades(AsyncMock(), strategy_id=1, run_id=999)
+            assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_raises_404_when_run_belongs_to_different_strategy(self):
+        svc = StrategyService()
+        run = MagicMock(spec=StrategyRun, strategy_id=99)
+        with patch(PATCH) as repo:
+            repo.get_run = AsyncMock(return_value=run)
+            with pytest.raises(HTTPException) as exc:
+                await svc.get_trades(AsyncMock(), strategy_id=1, run_id=5)
+            assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_passes_offset_and_limit_to_repo(self):
+        svc = StrategyService()
+        run = MagicMock(spec=StrategyRun, strategy_id=1)
+        with patch(PATCH) as repo:
+            repo.get_run = AsyncMock(return_value=run)
+            repo.get_trades = AsyncMock(return_value=([], 0))
+            await svc.get_trades(AsyncMock(), strategy_id=1, run_id=5, offset=20, limit=10)
+        _, kwargs = repo.get_trades.call_args
+        assert kwargs["offset"] == 20
+        assert kwargs["limit"] == 10
