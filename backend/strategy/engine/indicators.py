@@ -19,7 +19,9 @@ in AlgoForge strategy definitions so existing saved strategies keep working:
     stochastic  → {id}_k, {id}_d                       (default id: stoch)
     sar         → {id}                                  (default id: sar)
     donchian    → {id}_upper, {id}_lower, {id}_mid     (default id: dc)
-    renko       → {id}_direction (+1/-1 last brick direction, carried fwd), {id}_flip (+1 bullish flip, -1 bearish flip, 0 none)
+    renko       → {id}_direction (+1/-1 last brick direction, carried fwd), {id}_flip (+1 bullish flip, -1 bearish flip, 0 none),
+                  {id}_momentum (raw ffilled diff — matches trade_strategy renko_cons_num; compare with >= threshold),
+                  {id}_pos (continuous brick position: (price - last_ref) / brick_size, same as finance_client renko_BrickSize)
     streak      → {id}  integer count of consecutive bars where left op right is true (default id: streak)
     roc         → {id}                                  (default id: roc)
     candle      → {id}_bull_engulf, {id}_bear_engulf,  (default id: candle)
@@ -54,6 +56,52 @@ def apply_indicators(df: pd.DataFrame, indicator_specs: list[dict]) -> pd.DataFr
         params = spec.get("params", {})
         df = _apply_one(df, itype, iid, params)
     return df
+
+
+def estimate_warmup_bars(indicator_specs: list[dict]) -> int:
+    """Return the minimum history length required before indicators are safe to evaluate."""
+    if not indicator_specs:
+        return 1
+    return max(_estimate_one_warmup(spec) for spec in indicator_specs)
+
+
+def _estimate_one_warmup(spec: dict) -> int:
+    itype = str(spec.get("type", "")).lower()
+    params = spec.get("params", {})
+
+    if itype == "macd":
+        return int(params.get("slow", 26)) + int(params.get("signal_period", 9)) - 2
+    if itype in ("rsi", "atr", "ema", "sma", "bb", "slope", "cci", "adx", "donchian"):
+        return int(params.get("period", 14))
+    if itype == "stochastic":
+        return max(int(params.get("k_period", 14)), int(params.get("d_period", 3)))
+    if itype == "renko":
+        brick_size = params.get("brick_size", None)
+        if brick_size not in (None, "", 0, "0"):
+            return 2
+        return int(params.get("atr_window", 14)) + 30
+    if itype == "rangetrend":
+        method = str(params.get("method", "bband"))
+        if method == "bband":
+            return int(params.get("bb_period", 20)) + int(params.get("slope_window", 4))
+        if method == "atr":
+            return max(int(params.get("mean_window", 100)), int(params.get("atr_window", 14)))
+        if method == "bollinger":
+            return max(int(params.get("std_window", 200)), int(params.get("window", 20)))
+        if method == "swing":
+            return int(params.get("window", 50))
+        if method == "adx":
+            return int(params.get("adx_window", 14))
+        if method == "ma_deviation":
+            return max(int(params.get("short_window", 10)), int(params.get("long_window", 50)))
+        return 1
+    if itype == "lrmomentum":
+        return int(params.get("period", 90))
+    if itype in ("roc",):
+        return int(params.get("period", 10))
+    if itype in ("sar", "candle"):
+        return 2
+    return 1
 
 
 def _apply_one(df: pd.DataFrame, itype: str, iid: str, params: dict) -> pd.DataFrame:
@@ -267,20 +315,30 @@ def _apply_one(df: pd.DataFrame, itype: str, iid: str, params: dict) -> pd.DataF
             brick_size=fixed,
             atr_window=atr_window,
             total_brick_name=f"{iid}_count",
-            brick_size_name=f"{iid}_bricksize",
+            brick_size_name=f"__{iid}_raw",
         )
         renko_df.index = df.index
         count = renko_df[f"{iid}_count"]
+        raw_diff = count.diff()
         # Per-bar brick direction: +1 if up brick(s) formed, -1 if down, 0 if no new brick
-        brick_dir = count.diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+        brick_dir = raw_diff.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
         # Carry forward the last known direction
         direction = brick_dir.where(brick_dir != 0).ffill().fillna(0).astype(int)
         # Flip fires only on the bar a new brick changes direction
         prev_dir = direction.shift(1).fillna(0).astype(int)
         flip = brick_dir.copy()
         flip[(brick_dir == 0) | (brick_dir == prev_dir)] = 0
+        # momentum: forward-filled raw diff. This is useful for debugging, but it is
+        # not the same as trade_strategy's renko_cons_num, which sums the trailing
+        # N bars of this forward-filled series. For legacy MACDRenko threshold=2,
+        # prefer a streak condition on {id}_direction instead.
+        momentum = raw_diff.replace(0, float("nan")).ffill().fillna(0)
         df[f"{iid}_direction"] = direction
         df[f"{iid}_flip"] = flip.astype(int)
+        df[f"{iid}_momentum"] = momentum
+        # Continuous brick value: (price - last_ref) / brick_size, same as finance_client
+        # renko_BrickSize. +2 means 2 up-bricks from last reference; -2 means 2 down-bricks.
+        df[f"{iid}_pos"] = renko_df[f"__{iid}_raw"]
 
     elif itype == "streak":
         left_key = str(params.get("left", "close"))

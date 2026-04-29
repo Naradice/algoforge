@@ -211,6 +211,68 @@ async def test_dataset_preview_not_found(client):
 
 
 @pytest.mark.asyncio
+async def test_dataset_artifact_download_returns_file(client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        orig = os.environ.get("ARTIFACT_STORE_PATH")
+        os.environ["ARTIFACT_STORE_PATH"] = tmpdir
+        try:
+            csv_content = "datetime,open,high,low,close,volume\n2000-01-03 00:01:00,100,101,99,100,30\n"
+            files = [("files", ("data.csv", csv_content.encode(), "text/csv"))]
+            upload_r = await client.post("/api/v1/datasets/upload", files=files)
+            assert upload_r.status_code == 202
+            dataset_id = upload_r.json()["data"]["dataset_id"]
+
+            r = await client.get(f"/api/v1/datasets/{dataset_id}/artifact")
+            assert r.status_code == 200
+            assert r.headers["content-type"] == "application/octet-stream"
+            assert "filename=" in r.headers["content-disposition"]
+            assert len(r.content) > 0
+        finally:
+            if orig is None:
+                os.environ.pop("ARTIFACT_STORE_PATH", None)
+            else:
+                os.environ["ARTIFACT_STORE_PATH"] = orig
+
+
+@pytest.mark.asyncio
+async def test_dataset_artifact_download_zips_directory(client, db_session):
+    from data.models import Dataset
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        orig = os.environ.get("ARTIFACT_STORE_PATH")
+        os.environ["ARTIFACT_STORE_PATH"] = tmpdir
+        try:
+            artifact_rel = Path("datasets") / "src_42" / "ddm_ticks"
+            part_dir = Path(tmpdir) / artifact_rel / "year=2024" / "month=01" / "day=01"
+            part_dir.mkdir(parents=True, exist_ok=True)
+            _write_test_parquet(str(part_dir))
+
+            async with db_session() as db:
+                dataset = Dataset(
+                    name="DDM Directory Dataset",
+                    symbol="USDJPY",
+                    timeframe="M1",
+                    artifact_path=str(artifact_rel),
+                    status="ready",
+                )
+                db.add(dataset)
+                await db.commit()
+                await db.refresh(dataset)
+                dataset_id = dataset.id
+
+            r = await client.get(f"/api/v1/datasets/{dataset_id}/artifact")
+            assert r.status_code == 200
+            assert r.headers["content-type"] == "application/zip"
+            assert "dataset-" in r.headers["content-disposition"]
+            assert r.content[:2] == b"PK"
+        finally:
+            if orig is None:
+                os.environ.pop("ARTIFACT_STORE_PATH", None)
+            else:
+                os.environ["ARTIFACT_STORE_PATH"] = orig
+
+
+@pytest.mark.asyncio
 async def test_dataset_get_not_found(client):
     r = await client.get("/api/v1/datasets/999999")
     assert r.status_code == 404

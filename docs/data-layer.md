@@ -231,6 +231,15 @@ table = dataset.to_table(filter=(ds.field("year") == 2024) & (ds.field("month") 
 
 This means backtest and training jobs only read the partition files they need — no full-scan of a 100 GB file.
 
+### Downloading artifacts
+
+- `GET /datasets/{id}/download` exports the dataset as CSV.
+- `GET /datasets/{id}/artifact` downloads the original stored artifact:
+  - file-backed datasets are returned directly
+  - directory-backed partitioned datasets are packaged as a zip archive
+
+The MCP tool `get_dataset_download(dataset_id)` returns the artifact path plus the API download URL for the full dataset contents.
+
 ### Writing
 
 Collectors write partitions incrementally using `pyarrow.parquet.ParquetWriter`. New partitions are flushed to disk as data arrives; the full dataset never needs to fit in memory.

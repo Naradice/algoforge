@@ -105,40 +105,49 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
         return {"error": "unknown_mode"}
 
     # ── Backtest ──────────────────────────────────────────────────────────────
-    loop = asyncio.get_event_loop()
-
-    # Progress updater (called from sync backtest thread → schedule coroutine)
-    async def _update_progress(pct: float) -> None:
-        async with session_factory() as db:
-            await db.execute(
-                update(StrategyRun).where(StrategyRun.id == run_id).values(progress_pct=pct)
-            )
-            await db.commit()
-
+    # _progress_pct is written by the backtest thread and read by the async
+    # watcher task. A one-element list is used so the reference is stable
+    # inside the closures; CPython's GIL makes single-slot float writes atomic.
     _progress_pct: list[float] = [0.0]
 
     def _on_progress(pct: float) -> None:
-        # Only push every ~5% to avoid DB spam
-        if pct - _progress_pct[0] >= 5.0:
-            _progress_pct[0] = pct
-            asyncio.run_coroutine_threadsafe(_update_progress(pct), loop)
+        _progress_pct[0] = pct
 
+    async def _progress_watcher() -> None:
+        """Polls the shared progress value every 5 s and flushes it to the DB."""
+        last_written = -1.0
+        while True:
+            await asyncio.sleep(5)
+            current = _progress_pct[0]
+            if current - last_written >= 5.0:
+                last_written = current
+                try:
+                    async with session_factory() as db:
+                        await db.execute(
+                            update(StrategyRun).where(StrategyRun.id == run_id).values(progress_pct=current)
+                        )
+                        await db.commit()
+                except Exception:
+                    pass  # non-fatal; final commit below will capture the end state
+
+    import contextlib
     import functools
     wf_ratio = run.walk_forward_ratio or 0.0
+    _watcher = asyncio.create_task(_progress_watcher())
     try:
-        raw_trades, metrics, equity_curve = await loop.run_in_executor(
+        raw_trades, metrics, equity_curve = await asyncio.get_event_loop().run_in_executor(
             None,
             functools.partial(
                 run_backtest,
                 definition,
                 ds_rec.artifact_path,
-                _on_progress,
-                model_cache,
-                wf_ratio,
+                on_progress=_on_progress,
+                model_cache=model_cache,
+                walk_forward_ratio=wf_ratio,
             ),
         )
     except Exception as e:
-        await logger.exception("Backtest failed", context={"run_id": run_id})
+        await logger.error("Backtest failed", context={"run_id": run_id, "error": str(e)})
         async with session_factory() as db:
             await db.execute(
                 update(StrategyRun).where(StrategyRun.id == run_id).values(
@@ -147,6 +156,10 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
             )
             await db.commit()
         return {"error": str(e)}
+    finally:
+        _watcher.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _watcher
 
     # ── Persist trades + metrics ──────────────────────────────────────────────
     async with session_factory() as db:

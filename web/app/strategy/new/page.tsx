@@ -28,6 +28,9 @@ const defaultRisk = {
   max_positions: 1,
   daily_loss_limit_pct: 0.0,
   cooldown_bars: 0,
+  trailing_stop: false,
+  trailing_atr_multiplier: 3.0,
+  trailing_clip_with_price: false,
 };
 
 const TEMPLATES: StrategyTemplate[] = [

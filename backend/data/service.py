@@ -206,6 +206,52 @@ class DataService:
             raise HTTPException(status_code=404, detail=DATASET_NOT_FOUND)
         return obj
 
+    async def resolve_dataset_artifact(self, db: AsyncSession, dataset_id: int) -> tuple[Dataset, "Path"]:
+        import os
+        from pathlib import Path
+
+        dataset = await self.get_dataset(db, dataset_id)
+        if dataset.artifact_path is None or dataset.status not in ("ready", "running"):
+            raise HTTPException(status_code=422, detail=DATASET_NOT_READY)
+
+        store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts")).resolve()
+        full_path = (store / dataset.artifact_path).resolve()
+
+        try:
+            full_path.relative_to(store)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "DATASET_ARTIFACT_INVALID",
+                    "message": "Dataset artifact resolves outside the artifact store",
+                },
+            ) from exc
+
+        if not full_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "DATASET_FILE_NOT_FOUND",
+                    "message": "Dataset artifact not found",
+                },
+            )
+
+        return dataset, full_path
+
+    async def get_dataset_download_info(self, db: AsyncSession, dataset_id: int) -> dict:
+        dataset, artifact = await self.resolve_dataset_artifact(db, dataset_id)
+        is_directory = artifact.is_dir()
+        return {
+            "id": dataset.id,
+            "name": dataset.name,
+            "status": dataset.status,
+            "artifact_path": dataset.artifact_path,
+            "artifact_kind": "directory" if is_directory else "file",
+            "download_format": "zip" if is_directory else artifact.suffix.lstrip(".") or "binary",
+            "download_filename": f"dataset-{dataset.id}.zip" if is_directory else artifact.name,
+        }
+
     async def list_collection_jobs(self, db: AsyncSession, datasource_id: int | None = None, offset: int = 0, limit: int = 20) -> tuple[list, int]:
         return await data_repo.get_collection_jobs(db, datasource_id=datasource_id, offset=offset, limit=limit)
 
@@ -423,17 +469,10 @@ class DataService:
 
         File-based OHLC datasets: returns the first `rows` rows.
         """
-        import os
-        from pathlib import Path
         import numpy as np
         import pandas as pd
 
-        dataset = await self.get_dataset(db, dataset_id)
-        if dataset.artifact_path is None or dataset.status not in ("ready", "running"):
-            raise HTTPException(status_code=422, detail=DATASET_NOT_READY)
-
-        store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
-        full_path = store / dataset.artifact_path
+        dataset, full_path = await self.resolve_dataset_artifact(db, dataset_id)
 
         is_tick_dir = full_path.is_dir()
 

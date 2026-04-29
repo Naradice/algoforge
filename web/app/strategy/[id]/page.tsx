@@ -252,11 +252,15 @@ export default function StrategyDetailPage() {
     max_positions: number;
     daily_loss_limit_pct: number;
     cooldown_bars: number;
+    trailing_stop: boolean;
+    trailing_atr_multiplier: number;
+    trailing_clip_with_price: boolean;
   };
   const DEFAULT_RISK: RiskOverride = {
     risk_type: "fixed", position_size: 1.0, risk_pct: 0.01, atr_multiplier: 2.0,
     sl_pct: 0.02, tp_pct: 0.04, slippage_pct: 0.0005, commission_pct: 0.001,
     max_positions: 1, daily_loss_limit_pct: 0.0, cooldown_bars: 0,
+    trailing_stop: false, trailing_atr_multiplier: 3.0, trailing_clip_with_price: false,
   };
   const [risk, setRisk] = useState<RiskOverride>(DEFAULT_RISK);
   const patchRisk = (p: Partial<RiskOverride>) => setRisk((r) => ({ ...r, ...p }));
@@ -279,6 +283,7 @@ export default function StrategyDetailPage() {
   const [chartFrom, setChartFrom] = useState("");
   const [chartTo, setChartTo] = useState("");
   const [appliedRange, setAppliedRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
+  const [chartMode, setChartMode] = useState<"indicators" | "conditions">("indicators");
 
   function buildChartUrl() {
     if (!selectedRun || selectedRunObj?.status !== "completed") return null;
@@ -308,32 +313,98 @@ export default function StrategyDetailPage() {
 
   const [showValidate, setShowValidate] = useState(false);
   const [validateDatasetId, setValidateDatasetId] = useState("");
+  const [validateLimitBars, setValidateLimitBars] = useState("3000");
+  const [disabledConds, setDisabledConds] = useState<Record<string, number[]>>({});
+  const validateAbortRef = useRef<AbortController | null>(null);
   const [validating, setValidating] = useState(false);
-  const [validateResult, setValidateResult] = useState<null | { candles: any[]; indicators: any; markers: any[]; trade_count: number }>(null);
+  const [validateCandles, setValidateCandles] = useState<any[]>([]);
+  const [validateIndicators, setValidateIndicators] = useState<any>({});
+  const [validateMarkers, setValidateMarkers] = useState<any[]>([]);
+  const [validateCounts, setValidateCounts] = useState<Record<string, number>>({});
   const [validateError, setValidateError] = useState<string | null>(null);
 
-  async function runValidate() {
+  function signalsToMarkers(signals: Record<string, number[]>) {
+    const defs = [
+      { key: "long_entry",  color: "#22c55e", position: "belowBar" as const, label: "Long entry" },
+      { key: "long_exit",   color: "#38bdf8", position: "aboveBar" as const, label: "Long exit" },
+      { key: "short_entry", color: "#ef4444", position: "aboveBar" as const, label: "Short entry" },
+      { key: "short_exit",  color: "#f97316", position: "belowBar" as const, label: "Short exit" },
+    ];
+    const out: any[] = [];
+    for (const { key, color, position, label } of defs)
+      for (const ts of (signals[key] ?? []))
+        out.push({ time: ts, position, color, shape: "circle", text: label });
+    return out.sort((a, b) => a.time - b.time);
+  }
+
+  function toggleCond(blockKey: string, idx: number) {
+    setDisabledConds((prev) => {
+      const arr = prev[blockKey] ?? [];
+      const next = arr.includes(idx) ? arr.filter((i) => i !== idx) : [...arr, idx];
+      return { ...prev, [blockKey]: next };
+    });
+  }
+
+  function buildFilteredDef() {
+    const def = JSON.parse(JSON.stringify(strategy?.definition ?? {}));
+    const blockMap: Record<string, [string, string]> = {
+      long_entry: ["long", "entry"], long_exit: ["long", "exit"],
+      short_entry: ["short", "entry"], short_exit: ["short", "exit"],
+    };
+    for (const [key, [dir, phase]] of Object.entries(blockMap)) {
+      const disabled = disabledConds[key] ?? [];
+      if (disabled.length > 0 && def[dir]?.[phase]?.conditions) {
+        def[dir][phase].conditions = def[dir][phase].conditions.filter((_: any, i: number) => !disabled.includes(i));
+      }
+    }
+    return def;
+  }
+
+  const validateCandlesRef = useRef<any[]>([]);
+  validateCandlesRef.current = validateCandles;
+
+  useEffect(() => {
+    if (!validateDatasetId || validateCandlesRef.current.length === 0) return;
+    const t = setTimeout(() => runValidate(true), 350);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabledConds]);
+
+  async function runValidate(soft = false) {
     if (!validateDatasetId) return;
+    validateAbortRef.current?.abort();
     setValidating(true);
     setValidateError(null);
-    setValidateResult(null);
+    if (!soft) { setValidateCandles([]); setValidateIndicators({}); }
+    setValidateMarkers([]); setValidateCounts({});
     try {
-      const res = await fetch(`/api/v1/strategies/${id}/validate`, {
+      const limitBars = validateLimitBars === "all" ? undefined : parseInt(validateLimitBars);
+      const res = await fetch(`/api/v1/strategies/${id}/validate/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataset_id: parseInt(validateDatasetId) }),
+        body: JSON.stringify({ dataset_id: parseInt(validateDatasetId), definition: buildFilteredDef(), ...(limitBars ? { limit_bars: limitBars } : {}) }),
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setValidateError(body.error?.message ?? body.detail ?? `Error ${res.status}`);
-        return;
+      if (!res.ok || !res.body) { setValidateError(`Error ${res.status}`); return; }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n"); buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let evt: any; try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+          if (evt.type === "init") { setValidateCandles(evt.candles ?? []); setValidateIndicators(evt.indicators ?? {}); }
+          else if (evt.type === "signals") {
+            setValidateMarkers(signalsToMarkers(evt));
+            setValidateCounts({ long_entry: (evt.long_entry ?? []).length, long_exit: (evt.long_exit ?? []).length, short_entry: (evt.short_entry ?? []).length, short_exit: (evt.short_exit ?? []).length });
+          } else if (evt.type === "error") { setValidateError(evt.message ?? "Error"); break; }
+        }
       }
-      setValidateResult(body.data);
-    } catch (e: any) {
-      setValidateError(e.message ?? "Unknown error");
-    } finally {
-      setValidating(false);
-    }
+    } catch (e: any) { setValidateError(e.message ?? "Unknown error"); }
+    finally { setValidating(false); }
   }
 
   function startEditDef() {
@@ -516,7 +587,7 @@ export default function StrategyDetailPage() {
                 Edit definition
               </button>
               <button
-                onClick={() => { setShowValidate(!showValidate); setValidateResult(null); setValidateError(null); }}
+                onClick={() => { setShowValidate(!showValidate); setValidateCandles([]); setValidateMarkers([]); setValidateError(null); }}
                 className="text-xs text-sky-400 hover:text-sky-300"
               >
                 {showValidate ? "Hide validate" : "Validate →"}
@@ -525,37 +596,88 @@ export default function StrategyDetailPage() {
 
             {showValidate && (
               <div className="mt-3 space-y-3">
-                <div className="flex items-center gap-3">
+                {/* Condition toggles — derived from saved definition */}
+                {(() => {
+                  const def = strategy?.definition ?? {};
+                  const blocks = [
+                    { key: "long_entry",  label: "Long entry",  color: "#22c55e", conds: def.long?.entry?.conditions ?? [] },
+                    { key: "long_exit",   label: "Long exit",   color: "#38bdf8", conds: def.long?.exit?.conditions  ?? [] },
+                    { key: "short_entry", label: "Short entry", color: "#ef4444", conds: def.short?.entry?.conditions ?? [] },
+                    { key: "short_exit",  label: "Short exit",  color: "#f97316", conds: def.short?.exit?.conditions  ?? [] },
+                  ].filter((b) => b.conds.length > 0);
+                  if (blocks.length === 0) return null;
+                  return (
+                    <div className="rounded border border-gray-700 bg-gray-900 p-3 space-y-2">
+                      {blocks.map(({ key, label, color, conds }) => (
+                        <div key={key}>
+                          <p className="text-xs font-medium mb-1" style={{ color }}>{label}</p>
+                          <div className="space-y-0.5 pl-2">
+                            {conds.map((c: any, i: number) => {
+                              const isDisabled = (disabledConds[key] ?? []).includes(i);
+                              const label = c.type === "streak" ? `streak(${c.left} ${c.op} ${c.right}, ${c.min_streak})`
+                                : c.type === "group_ref" ? `group: ${c.group_id}`
+                                : c.type === "ml_signal" ? "ML signal"
+                                : c.type === "llm_signal" ? "LLM signal"
+                                : `${c.left} ${c.op} ${c.right}`;
+                              return (
+                                <label key={i} className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                                  <input type="checkbox" checked={!isDisabled} onChange={() => toggleCond(key, i)} className="accent-sky-500 shrink-0" />
+                                  <span className={isDisabled ? "text-gray-600 line-through" : "text-gray-300"}>{label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <div className="flex items-center gap-2 flex-wrap">
                   <select
                     value={validateDatasetId}
-                    onChange={(e) => setValidateDatasetId(e.target.value)}
+                    onChange={(e) => { setValidateDatasetId(e.target.value); setValidateCandles([]); setValidateMarkers([]); }}
                     className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
                   >
                     <option value="">Select dataset…</option>
                     {datasets?.map((d: any) => (
-                      <option key={d.id} value={d.id}>{d.name} ({d.row_count} rows)</option>
+                      <option key={d.id} value={d.id}>{d.name} ({d.row_count?.toLocaleString()} rows)</option>
                     ))}
                   </select>
+                  <select
+                    value={validateLimitBars}
+                    onChange={(e) => setValidateLimitBars(e.target.value)}
+                    className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  >
+                    <option value="1000">Last 1 000 bars</option>
+                    <option value="3000">Last 3 000 bars</option>
+                    <option value="10000">Last 10 000 bars</option>
+                    <option value="all">All bars</option>
+                  </select>
                   <button
-                    onClick={runValidate}
+                    onClick={() => runValidate()}
                     disabled={!validateDatasetId || validating}
                     className="rounded bg-sky-700 px-3 py-1.5 text-xs text-white hover:bg-sky-600 disabled:opacity-50"
                   >
-                    {validating ? "Running…" : "Run"}
+                    {validating ? "Loading…" : "Run"}
                   </button>
                 </div>
+                {validating && <div className="h-0.5 w-full rounded bg-gray-700 overflow-hidden"><div className="h-full bg-sky-500 animate-pulse w-full" /></div>}
                 {validateError && <p className="text-xs text-red-400">{validateError}</p>}
-                {validateResult && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-gray-500">
-                      {validateResult.trade_count} trade{validateResult.trade_count !== 1 ? "s" : ""} — green ▲ entry, amber ▼ exit
-                    </p>
-                    <StrategyChart
-                      candles={validateResult.candles}
-                      indicators={validateResult.indicators}
-                      markers={validateResult.markers}
-                    />
-                  </div>
+                {Object.keys(validateCounts).some((k) => (validateCounts[k] ?? 0) > 0) && (
+                  <p className="text-xs text-gray-400 flex gap-3 flex-wrap">
+                    {validateCounts.long_entry > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1" />Long entry: {validateCounts.long_entry}</span>}
+                    {validateCounts.long_exit > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-sky-400 mr-1" />Long exit: {validateCounts.long_exit}</span>}
+                    {validateCounts.short_entry > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1" />Short entry: {validateCounts.short_entry}</span>}
+                    {validateCounts.short_exit > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1" />Short exit: {validateCounts.short_exit}</span>}
+                  </p>
+                )}
+                {validateCandles.length > 0 && (
+                  <StrategyChart
+                    candles={validateCandles}
+                    indicators={validateIndicators}
+                    markers={validateMarkers}
+                    defaultZoom={1}
+                  />
                 )}
               </div>
             )}
@@ -744,6 +866,28 @@ export default function StrategyDetailPage() {
                   className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
                 <span className="text-xs text-gray-600">bars</span>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="w-32 shrink-0 text-xs text-gray-500">Trailing stop</span>
+                <input type="checkbox" checked={risk.trailing_stop} onChange={(e) => patchRisk({ trailing_stop: e.target.checked })}
+                  className="rounded border border-gray-700 bg-gray-800" />
+                <span className="text-xs text-gray-600">ATR-based (requires ATR indicator)</span>
+              </div>
+              {risk.trailing_stop && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-xs text-gray-500">Trail ATR mult.</span>
+                    <input type="number" value={risk.trailing_atr_multiplier} step={0.5} min={0.5} onChange={(e) => patchRisk({ trailing_atr_multiplier: parseFloat(e.target.value) || 3.0 })}
+                      className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none" />
+                    <span className="text-xs text-gray-600">× ATR distance from close</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-xs text-gray-500">Clip with price</span>
+                    <input type="checkbox" checked={risk.trailing_clip_with_price} onChange={(e) => patchRisk({ trailing_clip_with_price: e.target.checked })}
+                      className="rounded border border-gray-700 bg-gray-800" />
+                    <span className="text-xs text-gray-600">Floor stop at entry price (breakeven)</span>
+                  </div>
+                </>
+              )}
             </div>
 
             {runError && <p className="text-xs text-red-400">{runError}</p>}
@@ -855,6 +999,18 @@ export default function StrategyDetailPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-xs font-medium text-gray-400">Price Chart</h3>
                 <span className="text-gray-600 text-xs">|</span>
+                <div className="flex rounded border border-gray-700 overflow-hidden text-xs">
+                  {(["indicators", "conditions"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setChartMode(mode)}
+                      className={`px-2 py-0.5 capitalize ${chartMode === mode ? "bg-brand-500 text-white" : "bg-gray-900 text-gray-400 hover:text-gray-200"}`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-gray-600 text-xs">|</span>
                 <span className="text-xs text-gray-500">Range:</span>
                 <input
                   type="datetime-local"
@@ -895,7 +1051,13 @@ export default function StrategyDetailPage() {
               {chartData && (
                 <StrategyChart
                   candles={chartData.candles ?? []}
-                  indicators={chartData.indicators ?? {}}
+                  indicators={Object.fromEntries(
+                    Object.entries(chartData.indicators ?? {}).filter(([, s]: [string, any]) =>
+                      chartMode === "conditions"
+                        ? true
+                        : !(s.group?.startsWith("cond:") || s.line_style === "dashed" || s.line_style === "step")
+                    )
+                  )}
                   markers={chartData.markers ?? []}
                 />
               )}

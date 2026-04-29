@@ -246,6 +246,8 @@ function deriveColumnMeta(indicators: IndicatorDef[]): ColMeta[] {
         derived.push(
           e(`${ind.id}_direction`, "Current brick direction", [{ label: "Long (+1)", value: 1 }, { label: "Short (−1)", value: -1 }]),
           e(`${ind.id}_flip`,      "Brick flip this bar",     [{ label: "No flip (0)", value: 0 }, { label: "Up flip (+1)", value: 1 }, { label: "Down flip (−1)", value: -1 }]),
+          f(`${ind.id}_momentum`,  "Forward-filled Renko diff used to match legacy consecutive-brick MACDRenko thresholds"),
+          f(`${ind.id}_bricksize`, `Brick size in price units (${ind.params.brick_size > 0 ? "fixed" : "ATR-based"})`),
         ); break;
       case "rangetrend":
         if (!ind.params.method || ind.params.method === "bband") {
@@ -1226,6 +1228,7 @@ export function StrategyEditor({ initialDefinition, onChange, strategyId, datase
 
   const [validateDatasetId, setValidateDatasetId] = useState("");
   const [validateLimitBars, setValidateLimitBars] = useState("3000");
+  const [disabledConds, setDisabledConds] = useState<Record<string, number[]>>({});
   const [validating, setValidating] = useState(false);
   const [validateCandles, setValidateCandles] = useState<any[]>([]);
   const [validateIndicators, setValidateIndicators] = useState<any>({});
@@ -1233,17 +1236,28 @@ export function StrategyEditor({ initialDefinition, onChange, strategyId, datase
   const [validateCounts, setValidateCounts] = useState<Record<string, number>>({});
   const [validateError, setValidateError] = useState<string | null>(null);
   const validateAbortRef = useRef<AbortController | null>(null);
+  const validateCandlesRef = useRef(validateCandles);
+  validateCandlesRef.current = validateCandles;
 
-  function clearValidate() {
-    setValidateCandles([]); setValidateIndicators({}); setValidateMarkers([]); setValidateCounts({}); setValidateError(null);
+  // Auto-rerun (soft) when condition toggles change, but only after first successful run
+  useEffect(() => {
+    if (!strategyId || !validateDatasetId || validateCandlesRef.current.length === 0) return;
+    const t = setTimeout(() => runValidate(true), 350);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabledConds]);
+
+  function clearValidate(soft = false) {
+    if (!soft) { setValidateCandles([]); setValidateIndicators({}); }
+    setValidateMarkers([]); setValidateCounts({}); setValidateError(null);
   }
 
   function signalsToMarkers(signals: Record<string, number[]>): any[] {
     const defs: Array<{ key: string; color: string; position: "aboveBar" | "belowBar"; label: string }> = [
       { key: "long_entry",  color: "#22c55e", position: "belowBar", label: "Long entry" },
-      { key: "long_exit",   color: "#f59e0b", position: "aboveBar", label: "Long exit" },
+      { key: "long_exit",   color: "#38bdf8", position: "aboveBar", label: "Long exit" },
       { key: "short_entry", color: "#ef4444", position: "aboveBar", label: "Short entry" },
-      { key: "short_exit",  color: "#f59e0b", position: "belowBar", label: "Short exit" },
+      { key: "short_exit",  color: "#f97316", position: "belowBar", label: "Short exit" },
     ];
     const markers: any[] = [];
     for (const { key, color, position, label } of defs) {
@@ -1255,10 +1269,35 @@ export function StrategyEditor({ initialDefinition, onChange, strategyId, datase
     return markers;
   }
 
-  async function runValidate() {
+  function toggleCond(blockKey: string, idx: number) {
+    setDisabledConds((prev) => {
+      const arr = prev[blockKey] ?? [];
+      const next = arr.includes(idx) ? arr.filter((i) => i !== idx) : [...arr, idx];
+      return { ...prev, [blockKey]: next };
+    });
+  }
+
+  function buildFilteredDef(): Record<string, any> {
+    const def = serialiseForm(form) as any;
+    const blockMap: Record<string, [string, string]> = {
+      long_entry: ["long", "entry"], long_exit: ["long", "exit"],
+      short_entry: ["short", "entry"], short_exit: ["short", "exit"],
+    };
+    const out = JSON.parse(JSON.stringify(def));
+    for (const [key, [dir, phase]] of Object.entries(blockMap)) {
+      const disabled = disabledConds[key] ?? [];
+      if (disabled.length > 0 && out[dir]?.[phase]?.conditions) {
+        out[dir][phase].conditions = out[dir][phase].conditions.filter((_: any, i: number) => !disabled.includes(i));
+      }
+    }
+    return out;
+  }
+
+  async function runValidate(soft = false) {
     if (!strategyId || !validateDatasetId) return;
+    validateAbortRef.current?.abort();
     setValidating(true);
-    clearValidate();
+    clearValidate(soft);
     const abort = new AbortController();
     validateAbortRef.current = abort;
     try {
@@ -1268,7 +1307,7 @@ export function StrategyEditor({ initialDefinition, onChange, strategyId, datase
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dataset_id: parseInt(validateDatasetId),
-          definition: serialiseForm(form),
+          definition: buildFilteredDef(),
           ...(limitBars ? { limit_bars: limitBars } : {}),
         }),
         signal: abort.signal,
@@ -1379,6 +1418,42 @@ export function StrategyEditor({ initialDefinition, onChange, strategyId, datase
           {strategyId && datasets && (
             <section className="space-y-3 border-t border-gray-800 pt-4">
               <h3 className="text-xs font-medium uppercase tracking-wide text-gray-400">Validate conditions</h3>
+
+              {/* Condition toggles */}
+              {(() => {
+                const blocks = [
+                  { key: "long_entry",  label: "Long entry",  color: "#22c55e", conds: form.long_entry.enabled  ? form.long_entry.conditions  : [] },
+                  { key: "long_exit",   label: "Long exit",   color: "#38bdf8", conds: form.long_exit.enabled   ? form.long_exit.conditions   : [] },
+                  { key: "short_entry", label: "Short entry", color: "#ef4444", conds: form.short_entry.enabled ? form.short_entry.conditions : [] },
+                  { key: "short_exit",  label: "Short exit",  color: "#f97316", conds: form.short_exit.enabled  ? form.short_exit.conditions  : [] },
+                ].filter((b) => b.conds.length > 0);
+                if (blocks.length === 0) return null;
+                return (
+                  <div className="rounded border border-gray-700 bg-gray-900 p-3 space-y-2">
+                    {blocks.map(({ key, label, color, conds }) => (
+                      <div key={key}>
+                        <p className="text-xs font-medium mb-1" style={{ color }}>{label}</p>
+                        <div className="space-y-0.5 pl-2">
+                          {conds.map((c, i) => {
+                            const disabled = (disabledConds[key] ?? []).includes(i);
+                            return (
+                              <label key={i} className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                                <input type="checkbox" checked={!disabled}
+                                  onChange={() => toggleCond(key, i)}
+                                  className="accent-sky-500 shrink-0" />
+                                <span className={disabled ? "text-gray-600 line-through" : "text-gray-300"}>
+                                  {conditionLabel(c)}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
               <div className="flex items-center gap-2 flex-wrap">
                 <select
                   value={validateDatasetId}
@@ -1400,7 +1475,7 @@ export function StrategyEditor({ initialDefinition, onChange, strategyId, datase
                   <option value="10000">Last 10 000 bars</option>
                   <option value="all">All bars</option>
                 </select>
-                <button type="button" onClick={runValidate} disabled={!validateDatasetId || validating}
+                <button type="button" onClick={() => runValidate()} disabled={!validateDatasetId || validating}
                   className="rounded bg-sky-700 px-3 py-1.5 text-xs text-white hover:bg-sky-600 disabled:opacity-50">
                   {validating ? "Loading…" : "Run"}
                 </button>
@@ -1410,9 +1485,9 @@ export function StrategyEditor({ initialDefinition, onChange, strategyId, datase
               {Object.keys(validateCounts).length > 0 && (
                 <p className="text-xs text-gray-400 flex gap-3 flex-wrap">
                   {validateCounts.long_entry > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1" />Long entry: {validateCounts.long_entry}</span>}
-                  {validateCounts.long_exit > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />Long exit: {validateCounts.long_exit}</span>}
+                  {validateCounts.long_exit > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-sky-400 mr-1" />Long exit: {validateCounts.long_exit}</span>}
                   {validateCounts.short_entry > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1" />Short entry: {validateCounts.short_entry}</span>}
-                  {validateCounts.short_exit > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />Short exit: {validateCounts.short_exit}</span>}
+                  {validateCounts.short_exit > 0 && <span><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1" />Short exit: {validateCounts.short_exit}</span>}
                 </p>
               )}
               {validateCandles.length > 0 && (

@@ -27,8 +27,11 @@ Definition format (new)
     "slippage_pct":        0.0005,       # 0.05% half-spread per fill
     "commission_pct":      0.001,        # 0.1% round-trip (deducted per trade)
     "max_positions":       1,            # max simultaneous open trades
-    "daily_loss_limit_pct":0.0,          # 0 = disabled; circuit breaker
-    "cooldown_bars":       0,            # bars to skip after a loss
+    "daily_loss_limit_pct":    0.0,      # 0 = disabled; circuit breaker
+    "cooldown_bars":           0,        # bars to skip after a loss
+    "trailing_stop":           false,    # ATR-based trailing stop (requires atr indicator)
+    "trailing_atr_multiplier": 3.0,      # distance from close in ATR multiples
+    "trailing_clip_with_price": false,   # floor stop at entry price (breakeven guarantee)
   }
 }
 
@@ -46,7 +49,6 @@ from __future__ import annotations
 
 import math
 import os
-from dataclasses import dataclass, field
 from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Callable
@@ -54,57 +56,9 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-from strategy.engine.indicators import apply_indicators
+from strategy.engine.indicators import apply_indicators, estimate_warmup_bars
 from strategy.engine.conditions import evaluate_conditions
-
-
-# ---------------------------------------------------------------------------
-# Data structures
-# ---------------------------------------------------------------------------
-
-@dataclass
-class _OpenPosition:
-    direction: str       # "buy" | "sell"
-    entry_price: float
-    sl_price: float | None
-    tp_price: float | None
-    volume: float
-    opened_at: datetime
-    bar_index: int       # bar that triggered entry
-    # MAE / MFE tracking
-    mae: float = 0.0     # maximum adverse excursion (always positive)
-    mfe: float = 0.0     # maximum favorable excursion (always positive)
-
-
-@dataclass
-class _RiskParams:
-    risk_type: str           = "fixed"
-    position_size: float     = 1.0
-    risk_pct: float          = 0.01
-    atr_multiplier: float    = 2.0
-    sl_pct: float            = 0.02
-    tp_pct: float            = 0.04
-    slippage_pct: float      = 0.0005
-    commission_pct: float    = 0.001
-    max_positions: int       = 1
-    daily_loss_limit_pct: float = 0.0
-    cooldown_bars: int       = 0
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "_RiskParams":
-        return cls(
-            risk_type            = str(d.get("risk_type", "fixed")),
-            position_size        = float(d.get("position_size", 1.0)),
-            risk_pct             = float(d.get("risk_pct", 0.01)),
-            atr_multiplier       = float(d.get("atr_multiplier", 2.0)),
-            sl_pct               = float(d.get("sl_pct", 0.02)),
-            tp_pct               = float(d.get("tp_pct", 0.04)),
-            slippage_pct         = float(d.get("slippage_pct", 0.0005)),
-            commission_pct       = float(d.get("commission_pct", 0.001)),
-            max_positions        = int(d.get("max_positions", 1)),
-            daily_loss_limit_pct = float(d.get("daily_loss_limit_pct", 0.0)),
-            cooldown_bars        = int(d.get("cooldown_bars", 0)),
-        )
+from strategy.engine.execution import RiskParams, OpenPosition, calc_volume, fill_price, check_sl_tp, close_trade
 
 
 # ---------------------------------------------------------------------------
@@ -126,27 +80,6 @@ def _normalise(definition: dict) -> dict:
     else:
         result["short"] = {"entry": entry, "exit": exit_}
     return result
-
-
-# ---------------------------------------------------------------------------
-# Position sizing
-# ---------------------------------------------------------------------------
-
-def _calc_volume(rp: _RiskParams, equity: float, entry_price: float, atr: float | None) -> float:
-    if rp.risk_type == "percent_equity" and rp.sl_pct > 0:
-        # Risk X% of equity; stop is sl_pct of price
-        return (equity * rp.risk_pct) / (entry_price * rp.sl_pct)
-    if rp.risk_type == "atr" and atr is not None and atr > 0:
-        stop_dist = atr * rp.atr_multiplier
-        return (equity * rp.risk_pct) / stop_dist
-    return rp.position_size
-
-
-def _fill_price(mid: float, direction: str, slippage_pct: float) -> float:
-    """Apply slippage: buys fill above mid, sells fill below mid."""
-    if direction == "buy":
-        return mid * (1 + slippage_pct)
-    return mid * (1 - slippage_pct)
 
 
 # ---------------------------------------------------------------------------
@@ -172,15 +105,14 @@ def run_backtest(
     _clear_llm_cache()
 
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
-    df = _load_df(store / artifact_path)
+    raw_df = _load_df(store / artifact_path)
 
     definition = _normalise(definition)
 
     indicator_specs = definition.get("indicators", [])
-    if indicator_specs:
-        df = apply_indicators(df, indicator_specs)
+    warmup_bars = estimate_warmup_bars(indicator_specs)
 
-    rp = _RiskParams.from_dict(definition.get("risk", {}))
+    rp = RiskParams.from_dict(definition.get("risk", {}))
     symbol = definition.get("symbol", "unknown")
     _model_cache = model_cache or {}
 
@@ -190,15 +122,15 @@ def run_backtest(
     # ATR column for dynamic sizing
     atr_col = next((s["id"] for s in indicator_specs if s.get("type") == "atr"), None)
 
-    n = len(df)
+    n = len(raw_df)
     split_idx = int(n * walk_forward_ratio) if 0 < walk_forward_ratio < 1 else n
 
     trades: list[dict] = []
     equity_curve: list[dict] = []
 
     # Simulation state
-    pos_long:  _OpenPosition | None = None
-    pos_short: _OpenPosition | None = None
+    pos_long: OpenPosition | None = None
+    pos_short: OpenPosition | None = None
     equity = 1.0      # normalised starting equity
     pending_long_entry  = False
     pending_short_entry = False
@@ -206,20 +138,43 @@ def run_backtest(
     trading_halted_date: date | None = None
     day_loss: dict[date, float] = {}
 
-    rows = list(df.iterrows())
+    # Pre-compute indicators on the full dataset once (O(n) instead of O(n²)).
+    # Standard backward-looking indicators give the same value at bar i regardless
+    # of whether computed on the full series or only on data up to bar i.
+    # Skip pre-computation when n <= warmup_bars: the whole dataset is warmup,
+    # so conditions are never evaluated and indicator columns are never needed.
+    if indicator_specs and n > warmup_bars:
+        df_with_indicators = apply_indicators(raw_df, indicator_specs)
+    else:
+        df_with_indicators = raw_df
 
-    for i, (ts, row) in enumerate(rows):
+    rows = list(raw_df.iterrows())
+
+    for i, (ts, _) in enumerate(rows):
         if stop_event is not None and stop_event.is_set():
             break
         phase = "is" if i < split_idx else "oos"
+        bar_dt = _row_dt(ts)
+        bar_date = bar_dt.date()
+
+        if (i + 1) < warmup_bars:
+            equity_curve.append({
+                "timestamp": bar_dt.isoformat(),
+                "equity": round(equity, 6),
+                "drawdown": 0.0,
+                "phase": phase,
+            })
+            if on_progress and (i % max(1, n // 200) == 0):
+                on_progress(100.0 * i / n)
+            continue
+
+        row = df_with_indicators.iloc[i]
+        df_upto = df_with_indicators.iloc[: i + 1]
         close = float(row["close"])
         high  = float(row["high"])  if "high"  in row.index else close
         low   = float(row["low"])   if "low"   in row.index else close
         open_ = float(row["open"])  if "open"  in row.index else close
         atr   = float(row[atr_col]) if atr_col and atr_col in row.index and not math.isnan(float(row[atr_col])) else None
-
-        bar_dt = _row_dt(ts)
-        bar_date = bar_dt.date()
 
         # ── Fill pending entries at this bar's open ───────────────────────
         # num_open is updated after each fill so max_positions is respected
@@ -227,22 +182,22 @@ def run_backtest(
         num_open = (1 if pos_long else 0) + (1 if pos_short else 0)
 
         if pending_long_entry and pos_long is None and num_open < rp.max_positions:
-            fill = _fill_price(open_, "buy", rp.slippage_pct)
+            fill = fill_price(open_, "buy", rp.slippage_pct)
             sl = fill * (1 - rp.sl_pct) if rp.sl_pct > 0 else None
             tp = fill * (1 + rp.tp_pct) if rp.tp_pct > 0 else None
-            vol = _calc_volume(rp, equity, fill, atr)
-            pos_long = _OpenPosition("buy", fill, sl, tp, vol, bar_dt, i)
+            vol = calc_volume(rp, equity, fill, atr)
+            pos_long = OpenPosition("buy", fill, sl, tp, vol, bar_dt, i)
             num_open += 1
             if on_trade:
                 on_trade({"direction": "buy", "entry_price": fill, "sl_price": sl, "tp_price": tp,
                           "opened_at": bar_dt, "symbol": symbol}, "open")
 
         if pending_short_entry and pos_short is None and num_open < rp.max_positions:
-            fill = _fill_price(open_, "sell", rp.slippage_pct)
+            fill = fill_price(open_, "sell", rp.slippage_pct)
             sl = fill * (1 + rp.sl_pct) if rp.sl_pct > 0 else None
             tp = fill * (1 - rp.tp_pct) if rp.tp_pct > 0 else None
-            vol = _calc_volume(rp, equity, fill, atr)
-            pos_short = _OpenPosition("sell", fill, sl, tp, vol, bar_dt, i)
+            vol = calc_volume(rp, equity, fill, atr)
+            pos_short = OpenPosition("sell", fill, sl, tp, vol, bar_dt, i)
             num_open += 1
             if on_trade:
                 on_trade({"direction": "sell", "entry_price": fill, "sl_price": sl, "tp_price": tp,
@@ -264,8 +219,11 @@ def run_backtest(
             pos_short.mae = max(pos_short.mae, adv)
 
         # ── SL / TP checks ───────────────────────────────────────────────
+        # Must run BEFORE trailing stop update so the new stop (based on this
+        # bar's close) cannot immediately be triggered by this bar's low/high.
+        # trade_strategy checks SL/TP when fetching each new bar, before updating stops.
         if pos_long:
-            closed, pos_long = _check_sl_tp(pos_long, high, low, close, bar_dt, trades, symbol, rp, equity, phase)
+            closed, pos_long = check_sl_tp(pos_long, high, low, bar_dt, trades, symbol, rp, phase)
             if closed:
                 pnl = trades[-1]["profit"]
                 equity += pnl
@@ -276,7 +234,7 @@ def run_backtest(
                     on_trade(trades[-1], "close")
 
         if pos_short:
-            closed, pos_short = _check_sl_tp(pos_short, high, low, close, bar_dt, trades, symbol, rp, equity, phase)
+            closed, pos_short = check_sl_tp(pos_short, high, low, bar_dt, trades, symbol, rp, phase)
             if closed:
                 pnl = trades[-1]["profit"]
                 equity += pnl
@@ -285,6 +243,24 @@ def run_backtest(
                     last_loss_bar = i
                 if on_trade:
                     on_trade(trades[-1], "close")
+
+        # ── Trailing stop update ─────────────────────────────────────────
+        # Runs AFTER SL/TP check: the new stop level takes effect from the
+        # next bar onward, matching trade_strategy's TrailingStopByATR behaviour.
+        if rp.trailing_stop and atr is not None:
+            trail_dist = rp.trailing_atr_multiplier * atr
+            if pos_long and close > pos_long.entry_price:
+                new_sl = close - trail_dist
+                if rp.trailing_clip_with_price and new_sl < pos_long.entry_price:
+                    new_sl = pos_long.entry_price
+                if pos_long.sl_price is None or new_sl > pos_long.sl_price:
+                    pos_long.sl_price = new_sl
+            if pos_short and close < pos_short.entry_price:
+                new_sl = close + trail_dist
+                if rp.trailing_clip_with_price and new_sl > pos_short.entry_price:
+                    new_sl = pos_short.entry_price
+                if pos_short.sl_price is None or new_sl < pos_short.sl_price:
+                    pos_short.sl_price = new_sl
 
         # ── Daily loss circuit breaker ────────────────────────────────────
         halted = (
@@ -299,15 +275,15 @@ def run_backtest(
         can_enter = not halted and not in_cooldown
 
         # ── Context for ML / LLM / group_ref conditions ──────────────────
-        ctx = {"df_upto": df.iloc[: i + 1], "bar_index": i, "model_cache": _model_cache,
+        ctx = {"df_upto": df_upto, "bar_index": i, "model_cache": _model_cache,
                "groups": definition.get("groups", {})}
 
         # ── Long exit conditions ──────────────────────────────────────────
         if pos_long and long_def.get("exit"):
             try:
                 if evaluate_conditions(row, long_def["exit"], context=ctx):
-                    fill = _fill_price(close, "sell", rp.slippage_pct)
-                    pnl = _close(pos_long, fill, bar_dt, "signal", trades, symbol, rp, phase)
+                    fill = fill_price(close, "sell", rp.slippage_pct)
+                    pnl = close_trade(pos_long, fill, bar_dt, "signal", trades, symbol, rp, phase)
                     equity += pnl
                     _record_day_loss(day_loss, bar_date, pnl)
                     if pnl < 0:
@@ -322,8 +298,8 @@ def run_backtest(
         if pos_short and short_def.get("exit"):
             try:
                 if evaluate_conditions(row, short_def["exit"], context=ctx):
-                    fill = _fill_price(close, "buy", rp.slippage_pct)
-                    pnl = _close(pos_short, fill, bar_dt, "signal", trades, symbol, rp, phase)
+                    fill = fill_price(close, "buy", rp.slippage_pct)
+                    pnl = close_trade(pos_short, fill, bar_dt, "signal", trades, symbol, rp, phase)
                     equity += pnl
                     _record_day_loss(day_loss, bar_date, pnl)
                     if pnl < 0:
@@ -382,8 +358,8 @@ def run_backtest(
         last_phase = "is" if (n - 1) < split_idx else "oos"
         for pos in [pos_long, pos_short]:
             if pos:
-                fill = _fill_price(last_close, "sell" if pos.direction == "buy" else "buy", rp.slippage_pct)
-                pnl = _close(pos, fill, last_dt, "end_of_data", trades, symbol, rp, last_phase)
+                fill = fill_price(last_close, "sell" if pos.direction == "buy" else "buy", rp.slippage_pct)
+                pnl = close_trade(pos, fill, last_dt, "end_of_data", trades, symbol, rp, last_phase)
                 equity += pnl
 
     # ── Compute drawdown on equity curve ─────────────────────────────────
@@ -393,90 +369,8 @@ def run_backtest(
     for j, p in enumerate(equity_curve):
         p["drawdown"] = round(float(drawdowns[j]), 6)
 
-    metrics = _compute_metrics(trades, equity_curve, df, split_idx)
+    metrics = _compute_metrics(trades, equity_curve, raw_df, split_idx)
     return trades, metrics, equity_curve
-
-
-# ---------------------------------------------------------------------------
-# SL / TP check
-# ---------------------------------------------------------------------------
-
-def _check_sl_tp(
-    pos: _OpenPosition,
-    high: float, low: float, close: float,
-    bar_dt: datetime,
-    trades: list[dict],
-    symbol: str,
-    rp: _RiskParams,
-    equity: float,
-    phase: str,
-) -> tuple[bool, _OpenPosition | None]:
-    """Check SL/TP against bar range. TP before SL (pessimistic for P&L)."""
-    if pos.direction == "buy":
-        if pos.tp_price and high >= pos.tp_price:
-            fill = _fill_price(pos.tp_price, "sell", rp.slippage_pct)
-            _close(pos, fill, bar_dt, "tp", trades, symbol, rp, phase)
-            return True, None
-        if pos.sl_price and low <= pos.sl_price:
-            fill = _fill_price(pos.sl_price, "sell", rp.slippage_pct)
-            _close(pos, fill, bar_dt, "sl", trades, symbol, rp, phase)
-            return True, None
-    else:  # sell
-        if pos.tp_price and low <= pos.tp_price:
-            fill = _fill_price(pos.tp_price, "buy", rp.slippage_pct)
-            _close(pos, fill, bar_dt, "tp", trades, symbol, rp, phase)
-            return True, None
-        if pos.sl_price and high >= pos.sl_price:
-            fill = _fill_price(pos.sl_price, "buy", rp.slippage_pct)
-            _close(pos, fill, bar_dt, "sl", trades, symbol, rp, phase)
-            return True, None
-    return False, pos
-
-
-# ---------------------------------------------------------------------------
-# Close position
-# ---------------------------------------------------------------------------
-
-def _close(
-    pos: _OpenPosition,
-    exit_price: float,
-    closed_at: datetime,
-    reason: str,
-    trades: list[dict],
-    symbol: str,
-    rp: _RiskParams,
-    phase: str,
-) -> float:
-    if pos.direction == "buy":
-        gross = (exit_price - pos.entry_price) / pos.entry_price * pos.volume
-    else:
-        gross = (pos.entry_price - exit_price) / pos.entry_price * pos.volume
-
-    commission = rp.commission_pct * pos.volume
-    profit = round(gross - commission, 6)
-
-    mae_pct = pos.mae / pos.entry_price if pos.entry_price > 0 else 0.0
-    mfe_pct = pos.mfe / pos.entry_price if pos.entry_price > 0 else 0.0
-
-    trades.append({
-        "symbol":      symbol,
-        "direction":   pos.direction,
-        "entry_price": pos.entry_price,
-        "exit_price":  exit_price,
-        "volume":      pos.volume,
-        "sl_price":    pos.sl_price,
-        "tp_price":    pos.tp_price,
-        "profit":      profit,
-        "opened_at":   pos.opened_at,
-        "closed_at":   closed_at,
-        "exit_reason": reason,
-        "phase":       phase,
-        "mae":         round(mae_pct, 6),
-        "mfe":         round(mfe_pct, 6),
-    })
-    return profit
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

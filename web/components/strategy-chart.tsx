@@ -1,7 +1,7 @@
 "use client";
 
 import ReactECharts from "echarts-for-react";
-import { useMemo, useRef, useCallback } from "react";
+import { useMemo, useRef, useCallback, useState, useEffect } from "react";
 
 export interface Candle {
   time: number;
@@ -17,6 +17,7 @@ export interface IndicatorSeries {
   color: string;
   group: string;
   data: { time: number; value: number }[];
+  line_style?: "solid" | "dashed" | "step";
 }
 
 export interface TradeMarker {
@@ -34,6 +35,14 @@ interface StrategyChartProps {
   defaultZoom?: number | null; // months to zoom on mount; null = show all
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+
 const PRESETS = [
   { label: "1M", months: 1 },
   { label: "3M", months: 3 },
@@ -45,6 +54,69 @@ const PRESETS = [
 
 export function StrategyChart({ candles, indicators, markers, defaultZoom }: StrategyChartProps) {
   const chartRef = useRef<ReactECharts>(null);
+  // Persist zoom across option recomputes that don't change the candle set
+  const zoomStateRef = useRef<{ start: number; end: number } | null>(null);
+  const candlesSigRef = useRef<string>("");
+
+  // Background shading indicator selector
+  const indicatorKeys = Object.keys(indicators);
+  // Synthetic BG keys for combined condition masks
+  const COND_LE_KEY = "__cond_long_entry__";
+  const COND_SE_KEY = "__cond_short_entry__";
+  const defaultBgKey = indicatorKeys.find((k) => k.endsWith("_is_range")) ?? "";
+  const [bgKey, setBgKey] = useState(defaultBgKey);
+  // Reset when indicators change (new run selected)
+  useEffect(() => {
+    setBgKey(indicatorKeys.find((k) => k.endsWith("_is_range")) ?? "");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Object.keys(indicators).join(",")]);
+
+  // Compute combined condition masks (AND of all step series per side) — used both in chart and dropdown
+  const { leMask, seMask } = useMemo(() => {
+    const expand = (s: IndicatorSeries): boolean[] => {
+      const result = new Array(candles.length).fill(false);
+      if (!s.data.length) return result;
+      let cur = 0, di = 0;
+      for (let i = 0; i < candles.length; i++) {
+        while (di + 1 < s.data.length && s.data[di + 1].time <= candles[i].time) di++;
+        if (s.data[di].time <= candles[i].time) cur = s.data[di].value;
+        result[i] = cur >= 0.5;
+      }
+      return result;
+    };
+    const mask = (suffix: string): boolean[] => {
+      const matching = Object.values(indicators).filter(
+        (s) => s.line_style === "step" && s.group?.endsWith(suffix)
+      );
+      if (!matching.length) return new Array(candles.length).fill(false);
+      const expanded = matching.map(expand);
+      return candles.map((_, i) => expanded.every((arr) => arr[i]));
+    };
+    return { leMask: mask("long_entry"), seMask: mask("short_entry") };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candles, indicators]);
+
+  // Sub-graph group visibility
+  const allOscGroups = useMemo(() => {
+    const groups = new Map<string, string>(); // group → representative color
+    for (const s of Object.values(indicators)) {
+      if (s.pane === "separate" && !groups.has(s.group)) groups.set(s.group, s.color);
+    }
+    return groups;
+  }, [indicators]);
+  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
+  // Reset hidden groups when the indicator set changes
+  useEffect(() => {
+    setHiddenGroups(new Set());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Object.keys(indicators).join(",")]);
+  const toggleGroup = useCallback((g: string) => {
+    setHiddenGroups((prev) => {
+      const next = new Set(prev);
+      next.has(g) ? next.delete(g) : next.add(g);
+      return next;
+    });
+  }, []);
 
   const zoomTo = useCallback((months: number | null) => {
     const instance = (chartRef.current as any)?.getEchartsInstance?.();
@@ -64,23 +136,33 @@ export function StrategyChart({ candles, indicators, markers, defaultZoom }: Str
   const option = useMemo(() => {
     if (candles.length === 0) return null;
 
-    // Compute initial zoom start percentage from defaultZoom prop
-    let initialStartPct = 0;
-    if (defaultZoom != null && candles.length > 0) {
+    // Determine zoom start/end: preserve user zoom unless the candle set changed
+    const candlesSig = candles.length > 0
+      ? `${candles[0].time}-${candles[candles.length - 1].time}-${candles.length}`
+      : "";
+    const candlesChanged = candlesSig !== candlesSigRef.current;
+    candlesSigRef.current = candlesSig;
+
+    let zoomStart = 0;
+    let zoomEnd = 100;
+    if (!candlesChanged && zoomStateRef.current) {
+      zoomStart = zoomStateRef.current.start;
+      zoomEnd = zoomStateRef.current.end;
+    } else if (defaultZoom != null && candles.length > 0) {
       const lastTs = candles[candles.length - 1].time;
       const firstTs = candles[0].time;
       const fromTs = lastTs - defaultZoom * 30 * 24 * 3600;
       const range = lastTs - firstTs;
-      initialStartPct = range > 0 ? Math.max(0, ((fromTs - firstTs) / range) * 100) : 0;
+      zoomStart = range > 0 ? Math.max(0, ((fromTs - firstTs) / range) * 100) : 0;
     }
 
     const times = candles.map((c) => new Date(c.time * 1000).toISOString());
 
-    // Separate overlay and oscillator groups
+    // Separate overlay and oscillator groups (hidden groups excluded)
     const overlayEntries = Object.entries(indicators).filter(([, s]) => s.pane === "overlay");
     const oscillatorGroups: Record<string, [string, IndicatorSeries][]> = {};
     for (const [name, s] of Object.entries(indicators)) {
-      if (s.pane === "separate") {
+      if (s.pane === "separate" && !hiddenGroups.has(s.group)) {
         if (!oscillatorGroups[s.group]) oscillatorGroups[s.group] = [];
         oscillatorGroups[s.group].push([name, s]);
       }
@@ -154,26 +236,44 @@ export function StrategyChart({ candles, indicators, markers, defaultZoom }: Str
     // Direct lookup from candle index → candle, used in tooltip to bypass ECharts p.value quirks
     const candleByIdx = new Map(candles.map((c, i) => [i, c]));
 
-    // Range/trend background shading from any *_is_range indicator
-    const isRangeKey = Object.keys(indicators).find((k) => k.endsWith("_is_range"));
+    // Background shading: either from user-selected indicator key or combined condition masks
     const markAreaData: [object, object][] = [];
-    if (isRangeKey) {
-      const isRangeSeries = indicators[isRangeKey];
-      const timeToIsRange = new Map(isRangeSeries.data.map((d) => [d.time, d.value]));
-      let spanStart: number | null = null;
-      for (let i = 0; i < candles.length; i++) {
-        const val = timeToIsRange.get(candles[i].time);
-        const isRange = val != null && val >= 0.5;
-        if (isRange && spanStart === null) {
-          spanStart = i;
-        } else if (!isRange && spanStart !== null) {
-          markAreaData.push([{ xAxis: spanStart }, { xAxis: i - 1 }]);
-          spanStart = null;
+    const addMaskShading = (mask: boolean[], color: string) => {
+      let start: number | null = null;
+      for (let i = 0; i < mask.length; i++) {
+        if (mask[i] && start === null) { start = i; }
+        else if (!mask[i] && start !== null) {
+          markAreaData.push([{ xAxis: start, itemStyle: { color: hexToRgba(color, 0.18) } }, { xAxis: i - 1 }]);
+          start = null;
         }
       }
-      if (spanStart !== null) {
-        markAreaData.push([{ xAxis: spanStart }, { xAxis: candles.length - 1 }]);
-      }
+      if (start !== null)
+        markAreaData.push([{ xAxis: start, itemStyle: { color: hexToRgba(color, 0.18) } }, { xAxis: mask.length - 1 }]);
+    };
+
+    if (bgKey === COND_LE_KEY) {
+      addMaskShading(leMask, "#22c55e");
+    } else if (bgKey === COND_SE_KEY) {
+      addMaskShading(seMask, "#ef4444");
+    } else if (bgKey && indicators[bgKey]) {
+      const bgSeries = indicators[bgKey];
+      const timeToVal = new Map(bgSeries.data.map((d) => [d.time, d.value]));
+      const bgMask = candles.map((c) => {
+        const v = timeToVal.get(c.time);
+        return v != null && v >= 0.5;
+      });
+      addMaskShading(bgMask, "#60a5fa");
+    }
+
+    // Condition-signal background: one shaded column per circle marker
+    for (const m of markers) {
+      if (m.shape !== "circle") continue;
+      const idx = candles.findIndex((c) => c.time === m.time);
+      if (idx < 0) continue;
+      markAreaData.push([
+        { xAxis: idx, itemStyle: { color: hexToRgba(m.color, 0.18) } },
+        { xAxis: idx },
+      ]);
     }
 
     series.push({
@@ -214,9 +314,10 @@ export function StrategyChart({ candles, indicators, markers, defaultZoom }: Str
         xAxisIndex: 0,
         yAxisIndex: 0,
         data,
-        lineStyle: { color: s.color, width: 1 },
+        lineStyle: { color: s.color, width: 1, type: s.line_style === "dashed" ? "dashed" : "solid" },
+        itemStyle: { color: s.color },
         symbol: "none",
-        connectNulls: false,
+        connectNulls: s.line_style === "dashed" || s.line_style === "step",
         smooth: false,
       });
     }
@@ -245,15 +346,19 @@ export function StrategyChart({ candles, indicators, markers, defaultZoom }: Str
             barMaxWidth: 4,
           });
         } else {
+          const isStep = s.line_style === "step";
+          const isDashed = s.line_style === "dashed";
           series.push({
             name,
             type: "line",
             xAxisIndex: gridIdx,
             yAxisIndex: gridIdx,
             data,
-            lineStyle: { color: s.color, width: 1 },
+            lineStyle: { color: s.color, width: isDashed ? 1 : isStep ? 1.5 : 1, type: isDashed ? "dashed" : "solid" },
+            itemStyle: { color: s.color },
             symbol: "none",
-            connectNulls: false,
+            connectNulls: isStep || isDashed,
+            ...(isStep ? { step: "end" } : {}),
           });
         }
       }
@@ -264,8 +369,8 @@ export function StrategyChart({ candles, indicators, markers, defaultZoom }: Str
       {
         type: "inside",
         xAxisIndex: grids.map((_, i) => i),
-        start: initialStartPct,
-        end: 100,
+        start: zoomStart,
+        end: zoomEnd,
         zoomOnMouseWheel: true,
         moveOnMouseMove: true,
       },
@@ -274,8 +379,8 @@ export function StrategyChart({ candles, indicators, markers, defaultZoom }: Str
         xAxisIndex: grids.map((_, i) => i),
         bottom: 4,
         height: 20,
-        start: initialStartPct,
-        end: 100,
+        start: zoomStart,
+        end: zoomEnd,
         fillerColor: "rgba(55, 65, 81, 0.5)",
         borderColor: "#374151",
         handleStyle: { color: "#6b7280" },
@@ -345,7 +450,7 @@ export function StrategyChart({ candles, indicators, markers, defaultZoom }: Str
         itemHeight: 8,
       },
     };
-  }, [candles, indicators, markers]);
+  }, [candles, indicators, markers, bgKey, hiddenGroups]);
 
   if (!option || candles.length === 0) {
     return (
@@ -362,23 +467,75 @@ export function StrategyChart({ candles, indicators, markers, defaultZoom }: Str
 
   return (
     <div>
-      <div className="flex gap-1 mb-1">
-        {PRESETS.map(({ label, months }) => (
-          <button
-            key={label}
-            onClick={() => zoomTo(months)}
-            className="rounded px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-gray-700 border border-gray-700"
-          >
-            {label}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
+        <div className="flex gap-1">
+          {PRESETS.map(({ label, months }) => (
+            <button
+              key={label}
+              onClick={() => zoomTo(months)}
+              className="rounded px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-gray-700 border border-gray-700"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {indicatorKeys.length > 0 && (
+          <div className="flex items-center gap-1 ml-auto">
+            <span className="text-xs text-gray-500">BG:</span>
+            <select
+              value={bgKey}
+              onChange={(e) => setBgKey(e.target.value)}
+              className="rounded border border-gray-700 bg-gray-900 px-1.5 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            >
+              <option value="">None</option>
+              {leMask.some(Boolean) && <option value={COND_LE_KEY}>All Long Entry conditions</option>}
+              {seMask.some(Boolean) && <option value={COND_SE_KEY}>All Short Entry conditions</option>}
+              {indicatorKeys.filter((k) => !k.startsWith("__cond_")).map((k) => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
+      {allOscGroups.size > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+          {Array.from(allOscGroups.entries()).map(([group, color]) => {
+            const hidden = hiddenGroups.has(group);
+            return (
+              <button
+                key={group}
+                onClick={() => toggleGroup(group)}
+                className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs border transition-opacity ${
+                  hidden
+                    ? "border-gray-700 text-gray-600 opacity-40"
+                    : "border-gray-600 text-gray-300"
+                }`}
+              >
+                <span
+                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: hidden ? "#4b5563" : color }}
+                />
+                {group}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <ReactECharts
         ref={chartRef}
         option={option}
         style={{ height: totalHeight, width: "100%" }}
         opts={{ renderer: "canvas" }}
         notMerge={true}
+        onEvents={{
+          datazoom: () => {
+            const instance = (chartRef.current as any)?.getEchartsInstance?.();
+            if (!instance) return;
+            const opt = instance.getOption();
+            const dz = opt?.dataZoom?.[0];
+            if (dz != null) zoomStateRef.current = { start: dz.start ?? 0, end: dz.end ?? 100 };
+          },
+        }}
       />
     </div>
   );

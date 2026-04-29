@@ -41,6 +41,7 @@ useful documentation under the “docs” directory to help us build a web app t
 | [architecture.md](architecture.md) | System design, layer overview, data flow |
 | [roadmap.md](roadmap.md) | Phased feature and UX improvement plan |
 | [strategy-layer.md](strategy-layer.md) | Strategy definition, events, conditions, execution |
+| [strategy-execution-migration.md](strategy-execution-migration.md) | Canonical execution model and migration plan for retiring `trade_strategy` |
 | [data-layer.md](data-layer.md) | Data sources, collection, characteristics |
 | [model-layer.md](model-layer.md) | ML model lifecycle, training, deployment |
 | [mcp-guide.md](mcp-guide.md) | Using the platform as an AI agent via MCP |

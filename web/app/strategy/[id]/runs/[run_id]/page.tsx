@@ -52,6 +52,7 @@ export default function RunDetailPage() {
   const [chartFrom, setChartFrom] = useState("");
   const [chartTo, setChartTo] = useState("");
   const [appliedRange, setAppliedRange] = useState({ from: "", to: "" });
+  const [chartMode, setChartMode] = useState<"indicators" | "conditions">("indicators");
 
   function chartDataUrl() {
     const base = `/api/v1/strategies/${strategyId}/runs/${runId}/chart-data`;
@@ -188,6 +189,18 @@ export default function RunDetailPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-medium text-gray-300">Price Chart</h3>
             <span className="text-gray-600 text-xs">|</span>
+            <div className="flex rounded border border-gray-700 overflow-hidden text-xs">
+              {(["indicators", "conditions"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setChartMode(mode)}
+                  className={`px-2 py-0.5 capitalize ${chartMode === mode ? "bg-brand-500 text-white" : "bg-gray-800 text-gray-400 hover:text-gray-200"}`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <span className="text-gray-600 text-xs">|</span>
             <input
               type="datetime-local"
               value={chartFrom}
@@ -225,7 +238,13 @@ export default function RunDetailPage() {
           {chartData && (
             <StrategyChart
               candles={chartData.candles ?? []}
-              indicators={chartData.indicators ?? {}}
+              indicators={Object.fromEntries(
+                Object.entries(chartData.indicators ?? {}).filter(([, s]: [string, any]) =>
+                  chartMode === "conditions"
+                    ? true
+                    : !(s.group?.startsWith("cond:") || s.line_style === "dashed" || s.line_style === "step")
+                )
+              )}
               markers={chartData.markers ?? []}
             />
           )}

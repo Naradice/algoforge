@@ -258,3 +258,65 @@ class TestGetDatasetPreview:
             with pytest.raises(HTTPException) as exc:
                 await svc.get_dataset_preview(AsyncMock(), 999)
             assert exc.value.status_code == 404
+
+
+class TestGetDatasetDownloadInfo:
+    @pytest.mark.asyncio
+    async def test_returns_file_info_for_file_artifact(self):
+        svc = DataService()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_name = "dataset.parquet"
+            artifact_path = Path(tmpdir) / artifact_name
+            artifact_path.write_bytes(b"parquet")
+            ds = MagicMock(spec=Dataset)
+            ds.id = 7
+            ds.name = "Test Dataset"
+            ds.artifact_path = artifact_name
+            ds.status = "ready"
+
+            orig = os.environ.get("ARTIFACT_STORE_PATH")
+            os.environ["ARTIFACT_STORE_PATH"] = tmpdir
+            try:
+                with patch(PATCH_REPO) as repo:
+                    repo.get_dataset = AsyncMock(return_value=ds)
+                    info = await svc.get_dataset_download_info(AsyncMock(), 7)
+            finally:
+                if orig is None:
+                    os.environ.pop("ARTIFACT_STORE_PATH", None)
+                else:
+                    os.environ["ARTIFACT_STORE_PATH"] = orig
+
+        assert info["artifact_kind"] == "file"
+        assert info["download_filename"] == "dataset.parquet"
+        assert info["download_format"] == "parquet"
+
+    @pytest.mark.asyncio
+    async def test_returns_zip_info_for_directory_artifact(self):
+        svc = DataService()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_name = os.path.join("datasets", "src_5", "ddm_ticks")
+            artifact_path = Path(tmpdir) / artifact_name
+            artifact_path.mkdir(parents=True)
+            (artifact_path / "_meta.json").write_text("{}", encoding="utf-8")
+
+            ds = MagicMock(spec=Dataset)
+            ds.id = 5
+            ds.name = "DDM Dataset"
+            ds.artifact_path = artifact_name
+            ds.status = "ready"
+
+            orig = os.environ.get("ARTIFACT_STORE_PATH")
+            os.environ["ARTIFACT_STORE_PATH"] = tmpdir
+            try:
+                with patch(PATCH_REPO) as repo:
+                    repo.get_dataset = AsyncMock(return_value=ds)
+                    info = await svc.get_dataset_download_info(AsyncMock(), 5)
+            finally:
+                if orig is None:
+                    os.environ.pop("ARTIFACT_STORE_PATH", None)
+                else:
+                    os.environ["ARTIFACT_STORE_PATH"] = orig
+
+        assert info["artifact_kind"] == "directory"
+        assert info["download_filename"] == "dataset-5.zip"
+        assert info["download_format"] == "zip"

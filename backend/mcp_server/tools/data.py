@@ -183,6 +183,31 @@ async def get_dataset_preview(dataset_id: int, rows: int = 5) -> dict:
     }
 
 
+@mcp.tool()
+async def get_dataset_download(dataset_id: int) -> dict:
+    """
+    Get the artifact path and API download URL for the full dataset contents.
+
+    File-backed datasets are downloaded directly. Partitioned dataset directories
+    are packaged as a zip archive by the API download endpoint.
+
+    Args:
+        dataset_id: ID of the dataset.
+    """
+    from database import async_session_factory
+    from data.service import data_service
+
+    async with async_session_factory() as db:
+        info = await data_service.get_dataset_download_info(db, dataset_id)
+
+    info["download_url"] = f"/api/v1/datasets/{dataset_id}/artifact"
+    info["note"] = (
+        "Use the download_url to fetch the full dataset artifact. "
+        "Directory-backed datasets are served as a zip archive."
+    )
+    return info
+
+
 def _interpret_characteristics(metrics: dict) -> str:
     if not metrics:
         return "No metrics to interpret."

@@ -346,19 +346,13 @@ async def delete_dataset(dataset_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/datasets/{dataset_id}/download")
 async def download_dataset(dataset_id: int, timeframe: str | None = None, db: AsyncSession = Depends(get_db)):
-    import os
     import io
-    from pathlib import Path
     import pandas as pd
     from fastapi.responses import StreamingResponse as _SR
     from data.service import _resample_ticks
 
-    ds = await data_service.get_dataset(db, dataset_id)
-    if not ds.artifact_path:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail={"code": "DATASET_FILE_NOT_FOUND", "message": "Dataset file not found"})
-    store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
-    df = pd.read_parquet(store / ds.artifact_path)
+    ds, artifact_path = await data_service.resolve_dataset_artifact(db, dataset_id)
+    df = pd.read_parquet(artifact_path)
 
     if "price" in df.columns:
         df = _resample_ticks(df["price"], timeframe or ds.timeframe or "M1")
@@ -370,6 +364,46 @@ async def download_dataset(dataset_id: int, timeframe: str | None = None, db: As
         iter([buf.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="dataset-{dataset_id}.csv"'},
+    )
+
+
+@router.get("/datasets/{dataset_id}/artifact")
+async def download_dataset_artifact(dataset_id: int, db: AsyncSession = Depends(get_db)):
+    import shutil
+    import tempfile
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    dataset, artifact_path = await data_service.resolve_dataset_artifact(db, dataset_id)
+
+    if artifact_path.is_file():
+        return FileResponse(
+            str(artifact_path),
+            media_type="application/octet-stream",
+            filename=artifact_path.name,
+        )
+
+    temp_dir = Path(tempfile.mkdtemp(prefix=f"algoforge-dataset-{dataset_id}-"))
+    archive_base = temp_dir / f"dataset-{dataset_id}"
+    archive_path = shutil.make_archive(
+        str(archive_base),
+        "zip",
+        root_dir=str(artifact_path.parent),
+        base_dir=artifact_path.name,
+    )
+
+    def _cleanup(path: str, directory: str) -> None:
+        try:
+            Path(path).unlink(missing_ok=True)
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+
+    return FileResponse(
+        archive_path,
+        media_type="application/zip",
+        filename=f"dataset-{dataset.id}.zip",
+        background=BackgroundTask(_cleanup, archive_path, str(temp_dir)),
     )
 
 

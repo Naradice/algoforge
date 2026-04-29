@@ -29,6 +29,7 @@ The MCP server is mounted at `http://localhost:8000/mcp` using SSE transport. Ad
 | `create_datasource(name, type, config)` | Create a new datasource |
 | `collect_data(datasource_id)` | Trigger data collection |
 | `list_datasets()` | List all datasets with metadata |
+| `get_dataset_download(dataset_id)` | Get artifact path and download URL for the full dataset |
 | `get_dataset_preview(dataset_id, rows=5)` | Get first/last N rows |
 | `get_dataset_characteristics(dataset_id)` | Get Hurst, ACF, kurtosis, etc. with interpretation |
 | `analyze_dataset(dataset_id)` | Compute dataset characteristics |

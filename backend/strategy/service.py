@@ -187,7 +187,10 @@ class StrategyService:
         if artifact_path:
             base = await loop.run_in_executor(
                 None,
-                functools.partial(_build_chart_base, artifact_path, indicator_specs, from_ts, to_ts),
+                functools.partial(
+                    _build_chart_base, artifact_path, indicator_specs, from_ts, to_ts,
+                    definition=strategy.definition or {},
+                ),
             )
         else:
             base = {"candles": [], "indicators": {}}
@@ -678,12 +681,236 @@ def _resample_ohlcv(df, step: int):
     return pd.DataFrame(rows, index=pd.DatetimeIndex(idx))
 
 
+def _inject_condition_indicators(
+    df,
+    indicator_specs: list,
+    definition: dict,
+    indicators: dict,
+    candle_times: list,
+) -> None:
+    """Augment `indicators` in-place with condition-derived series:
+
+    1. For every numeric comparison (left op NUMBER): add a constant dashed threshold
+       line in the indicator's existing pane, and make sure the left column is shown.
+    2. For every evaluable condition: add a 0/1 boolean series in a new
+       "cond:{group}" pane so the user can see exactly when each condition fires.
+    """
+    import math as _math
+    import pandas as pd
+    from strategy.engine.conditions import eval_condition_series
+
+    # col → (group, pane)
+    col_to_meta: dict[str, tuple[str, str]] = {}
+    # indicator-id prefix → (group, pane)  — used for sub-columns not in _MULTI_COL_SPECS
+    prefix_to_meta: dict[str, tuple[str, str]] = {}
+
+    for spec in indicator_specs:
+        itype = spec["type"].lower()
+        iid = spec.get("id", itype)
+        pane = "overlay" if itype in _OVERLAY_TYPES else "separate"
+        prefix_to_meta[iid] = (itype, pane)
+        if itype in _MULTI_COL_SPECS:
+            for suffix, _ in _MULTI_COL_SPECS[itype]:
+                col_to_meta[f"{iid}{suffix}"] = (itype, pane)
+        elif itype == "rangetrend":
+            method = (spec.get("params") or {}).get("method", "atr")
+            for suffix in ("_is_range", "_direction", f"_{method}"):
+                col_to_meta[f"{iid}{suffix}"] = (itype, pane)
+        else:
+            col_to_meta[iid] = (itype, pane)
+
+    def _resolve_meta(col: str) -> tuple[str, str] | None:
+        m = col_to_meta.get(col)
+        if m:
+            return m
+        for prefix, pm in prefix_to_meta.items():
+            if col.startswith(prefix + "_") or col == prefix:
+                return pm
+        return None
+
+    groups_def = definition.get("groups", {})
+
+    def _collect(block: dict) -> list[dict]:
+        out: list[dict] = []
+        for cond in block.get("conditions", []):
+            ctype = cond.get("type") or "comparison"
+            if ctype == "group_ref":
+                gid = cond.get("group_id", "")
+                if gid in groups_def:
+                    out.extend(_collect(groups_def[gid]))
+            elif ctype not in ("ml_signal", "llm_signal"):
+                out.append(cond)
+        return out
+
+    # (cond, side_tag) pairs — side+phase aware for separate panes and colors
+    _SIDE_COLORS = {
+        "long_entry":  "#22c55e",  # green
+        "long_exit":   "#f59e0b",  # amber
+        "short_entry": "#ef4444",  # red
+        "short_exit":  "#a78bfa",  # purple
+        "group":       "#60a5fa",  # blue
+    }
+    _SIDE_LABELS = {
+        "long_entry": "LE", "long_exit": "LX",
+        "short_entry": "SE", "short_exit": "SX",
+        "group": "G",
+    }
+    all_conds: list[tuple[dict, str]] = []
+    for side in ("long", "short"):
+        for phase in ("entry", "exit"):
+            for c in _collect(definition.get(side, {}).get(phase, {})):
+                all_conds.append((c, f"{side}_{phase}"))
+    for gdef in groups_def.values():
+        for c in _collect(gdef):
+            all_conds.append((c, "group"))
+
+    seen: set[tuple] = set()
+    _OP_SYM = {">=": "≥", "<=": "≤", "==": "=", "!=": "≠", ">": ">", "<": "<"}
+
+    for cond, side_tag in all_conds:
+        ctype = cond.get("type") or "comparison"
+
+        # ── regime ──────────────────────────────────────────────────────────
+        if ctype == "regime":
+            indicator = cond.get("indicator", "rt")
+            mode = cond.get("mode", "range")
+            threshold = float(cond.get("threshold", 0.5 if mode in ("range", "trend") else 0.3))
+            cond_key = ("regime", indicator, mode, threshold, side_tag)
+            if cond_key in seen:
+                continue
+            seen.add(cond_key)
+            group = "rangetrend"
+            color = _SIDE_COLORS[side_tag]
+            # threshold line in existing rangetrend pane (score-based indicators only)
+            range_col = f"{indicator}_range"
+            if range_col in df.columns and range_col not in indicators:
+                s = _series_from_col(df, range_col, "line", "separate")
+                s["group"] = group
+                s["color"] = _INDICATOR_COLORS.get("rangetrend", "#34d399")
+                indicators[range_col] = s
+            if range_col in df.columns and candle_times:
+                tkey = f"regime_threshold_{threshold}"
+                if tkey not in indicators:
+                    indicators[tkey] = {
+                        "type": "line", "pane": "separate",
+                        "color": _INDICATOR_COLORS.get("rangetrend", "#34d399"),
+                        "group": group,
+                        "data": [
+                            {"time": candle_times[0], "value": threshold},
+                            {"time": candle_times[-1], "value": threshold},
+                        ],
+                        "line_style": "dashed",
+                    }
+            # 0/1 condition pane (transition-point encoded)
+            try:
+                met = eval_condition_series(df, cond)
+                if met is not None:
+                    met_set = {int(ts.timestamp()) for ts, v in zip(df.index, met)
+                               if v and isinstance(ts, pd.Timestamp)}
+                    label = f"[{_SIDE_LABELS[side_tag]}] regime:{mode}"
+                    if label not in indicators:
+                        rle: list[dict] = []
+                        prev_v: int | None = None
+                        for t in candle_times:
+                            val = 1 if t in met_set else 0
+                            if val != prev_v:
+                                rle.append({"time": t, "value": val})
+                                prev_v = val
+                        if candle_times:
+                            lv = 1 if candle_times[-1] in met_set else 0
+                            if not rle or rle[-1]["time"] != candle_times[-1]:
+                                rle.append({"time": candle_times[-1], "value": lv})
+                        indicators[label] = {
+                            "type": "line", "pane": "separate", "color": color,
+                            "group": f"cond:{group}:{side_tag}",
+                            "data": rle,
+                            "line_style": "step",
+                        }
+            except Exception:
+                pass
+            continue
+
+        # ── standard comparison / streak ────────────────────────────────────
+        left = cond.get("left")
+        right = cond.get("right")
+        op = cond.get("op", ">")
+        if not left:
+            continue
+
+        meta = _resolve_meta(left)
+        if meta is None:
+            continue
+        group, pane = meta
+        cond_color = _SIDE_COLORS[side_tag]
+
+        cond_key = (left, op, str(right), side_tag)
+        if cond_key in seen:
+            continue
+        seen.add(cond_key)
+
+        # Ensure the left column is visible in the chart (uses indicator's own color, not side color)
+        if left in df.columns and left not in indicators:
+            s = _series_from_col(df, left, "line", pane)
+            s["group"] = group
+            base_key = next((k for k in _INDICATOR_COLORS if left.startswith(k)), group)
+            s["color"] = _INDICATOR_COLORS.get(base_key, _INDICATOR_COLORS.get(group, "#6b7280"))
+            indicators[left] = s
+
+        # Constant threshold line — only endpoints needed; frontend fills in between
+        if isinstance(right, (int, float)) and not _math.isnan(float(right)):
+            thresh_val = float(right)
+            tkey = f"{left}_{op}_{thresh_val}_line"
+            if tkey not in indicators and candle_times:
+                ind_color = _INDICATOR_COLORS.get(group, "#6b7280")
+                indicators[tkey] = {
+                    "type": "line", "pane": pane, "color": ind_color, "group": group,
+                    "data": [
+                        {"time": candle_times[0], "value": thresh_val},
+                        {"time": candle_times[-1], "value": thresh_val},
+                    ],
+                    "line_style": "dashed",
+                }
+
+        # 0/1 condition-state line — prefixed with side, colored by side
+        op_sym = _OP_SYM.get(op, op)
+        right_label = right if isinstance(right, str) else str(right)
+        side_prefix = _SIDE_LABELS[side_tag]
+        cond_label = f"[{side_prefix}] {left} {op_sym} {right_label}"
+        if cond_label not in indicators:
+            try:
+                met = eval_condition_series(df, cond)
+                if met is None:
+                    continue
+                met_set = {int(ts.timestamp()) for ts, v in zip(df.index, met)
+                           if v and isinstance(ts, pd.Timestamp)}
+                data: list[dict] = []
+                prev: int | None = None
+                for t in candle_times:
+                    val = 1 if t in met_set else 0
+                    if val != prev:
+                        data.append({"time": t, "value": val})
+                        prev = val
+                if candle_times:
+                    last_val = 1 if candle_times[-1] in met_set else 0
+                    if not data or data[-1]["time"] != candle_times[-1]:
+                        data.append({"time": candle_times[-1], "value": last_val})
+                indicators[cond_label] = {
+                    "type": "line", "pane": "separate", "color": cond_color,
+                    "group": f"cond:{group}:{side_tag}",
+                    "data": data,
+                    "line_style": "step",
+                }
+            except Exception:
+                pass
+
+
 def _build_chart_base(
     artifact_path: str,
     indicator_specs: list,
     from_ts: int | None = None,
     to_ts: int | None = None,
     limit_bars: int | None = None,
+    definition: dict | None = None,
 ) -> dict:
     """Load parquet, resample if needed, apply indicators, return candles + series.
 
@@ -769,6 +996,15 @@ def _build_chart_base(
                 _add(f"{iid}{suffix}", stype)
         else:
             _add(iid)
+
+    if definition:
+        try:
+            _inject_condition_indicators(
+                df, indicator_specs, definition, indicators,
+                [c["time"] for c in candles],
+            )
+        except Exception:
+            pass
 
     return {"candles": candles, "indicators": indicators}
 

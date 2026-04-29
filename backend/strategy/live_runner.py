@@ -41,21 +41,23 @@ async def run_paper(
     from strategy.models import StrategyRun, Trade, RunMetric
     from strategy.engine.indicators import apply_indicators
     from strategy.engine.conditions import evaluate_conditions
-    from strategy.engine.backtest import _OpenPosition, _check_sl_tp, _close_position, _compute_metrics
+    from strategy.engine.backtest import _metrics_for, _normalise
+    from strategy.engine.execution import OpenPosition, RiskParams, check_sl_tp, close_trade
     from sqlalchemy import select, update
+
+    strategy_definition = _normalise(strategy_definition)
 
     symbol = strategy_definition.get("symbol", "AAPL")
     indicator_specs = strategy_definition.get("indicators", [])
-    entry_block = strategy_definition.get("entry", {})
-    exit_block = strategy_definition.get("exit", {})
-    risk = strategy_definition.get("risk", {})
+    long_def = strategy_definition.get("long", {})
+    short_def = strategy_definition.get("short", {})
+    risk = RiskParams.from_dict(strategy_definition.get("risk", {}))
 
-    direction = entry_block.get("direction", "buy")
-    sl_pct = float(risk.get("sl_pct", 0.0))
-    tp_pct = float(risk.get("tp_pct", 0.0))
-    position_size = float(risk.get("position_size", 1.0))
+    entry_block = long_def.get("entry") or short_def.get("entry") or {}
+    exit_block = long_def.get("exit") or short_def.get("exit") or {}
+    direction = "buy" if long_def.get("entry") else "sell"
 
-    position: _OpenPosition | None = None
+    position: OpenPosition | None = None
     last_bar_ts = None
     trade_records: list[dict] = []
     bar_index = 0
@@ -105,10 +107,9 @@ async def run_paper(
 
         # ── SL/TP check ────────────────────────────────────────────────────────
         if position is not None:
-            closed = _check_sl_tp(position, high, low, close, bar_dt, trade_records, symbol)
+            closed, position = check_sl_tp(position, high, low, bar_dt, trade_records, symbol, risk)
             if closed:
                 await _persist_last_trade(run_id, trade_records, async_session_factory, Trade)
-                position = None
 
         # ── Entry / exit ───────────────────────────────────────────────────────
         if position is None:
@@ -118,18 +119,19 @@ async def run_paper(
                 should_enter = False
 
             if should_enter:
-                sl_price = close * (1 - sl_pct) if sl_pct > 0 else None
-                tp_price = close * (1 + tp_pct) if tp_pct > 0 else None
+                sl_price = close * (1 - risk.sl_pct) if risk.sl_pct > 0 else None
+                tp_price = close * (1 + risk.tp_pct) if risk.tp_pct > 0 else None
                 if direction == "sell":
-                    sl_price = close * (1 + sl_pct) if sl_pct > 0 else None
-                    tp_price = close * (1 - tp_pct) if tp_pct > 0 else None
-                position = _OpenPosition(
+                    sl_price = close * (1 + risk.sl_pct) if risk.sl_pct > 0 else None
+                    tp_price = close * (1 - risk.tp_pct) if risk.tp_pct > 0 else None
+                position = OpenPosition(
                     direction=direction,
                     entry_price=close,
                     sl_price=sl_price,
                     tp_price=tp_price,
-                    volume=position_size,
+                    volume=risk.position_size,
                     opened_at=bar_dt,
+                    bar_index=bar_index,
                 )
                 logger.info(f"Paper run {run_id}: entered {direction} @ {close:.4f}")
         else:
@@ -139,7 +141,7 @@ async def run_paper(
                 should_exit = False
 
             if should_exit:
-                _close_position(position, close, bar_dt, "signal", trade_records, symbol)
+                close_trade(position, close, bar_dt, "signal", trade_records, symbol, risk)
                 await _persist_last_trade(run_id, trade_records, async_session_factory, Trade)
                 position = None
 
@@ -157,10 +159,10 @@ async def run_paper(
     # ── Finalise ──────────────────────────────────────────────────────────────
     if position is not None:
         last_close = float(df["close"].iloc[-1]) if not df.empty else 0.0
-        _close_position(position, last_close, datetime.now(timezone.utc), "end_of_run", trade_records, symbol)
+        close_trade(position, last_close, datetime.now(timezone.utc), "end_of_run", trade_records, symbol, risk)
         await _persist_last_trade(run_id, trade_records, async_session_factory, Trade)
 
-    metrics = _compute_metrics(trade_records, df if not df.empty else None)
+    metrics = _metrics_for(trade_records)
 
     async with async_session_factory() as db:
         for key, value in metrics.items():
