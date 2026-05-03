@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 import { MultiRunLossChart } from "@/components/multi-run-loss-chart";
 import type { RunSeries } from "@/components/multi-run-loss-chart";
 
@@ -62,9 +62,9 @@ export default function ModelComparePage() {
 
       // Fetch summary comparison + per-run epoch metrics in parallel
       const [compRes, ...metricResults] = await Promise.all([
-        fetch(`/api/v1/training-runs/compare?run_ids=${idsParam}`).then((r) => r.json()),
+        apiFetch(`/api/v1/training-runs/compare?run_ids=${idsParam}`).then((r) => r.json()),
         ...ids.map((id) =>
-          fetch(`/api/v1/training-runs/${id}/metrics`).then((r) => r.json())
+          apiFetch(`/api/v1/training-runs/${id}/metrics`).then((r) => r.json())
         ),
       ]);
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
 
@@ -66,7 +66,7 @@ export default function ModelDetailPage() {
     }
     setStartingRun(true);
     try {
-      const res = await fetch(`/api/v1/models/${id}/training-runs`, {
+      const res = await apiFetch(`/api/v1/models/${id}/training-runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dataset_id: parseInt(datasetId), hyperparams: hp }),
@@ -89,7 +89,7 @@ export default function ModelDetailPage() {
     setDeployError(null);
     setDeploying(runId);
     try {
-      const res = await fetch(`/api/v1/models/${id}/deploy?training_run_id=${runId}`, {
+      const res = await apiFetch(`/api/v1/models/${id}/deploy?training_run_id=${runId}`, {
         method: "POST",
       });
       if (!res.ok) {
@@ -123,7 +123,7 @@ export default function ModelDetailPage() {
     const combos = Object.values(grid).reduce((acc, vals) => acc * (vals as unknown[]).length, 1);
     setStartingSearch(true);
     try {
-      const res = await fetch("/api/v1/training-runs/search", {
+      const res = await apiFetch("/api/v1/training-runs/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -155,7 +155,7 @@ export default function ModelDetailPage() {
     }
     setValidating(true);
     try {
-      const res = await fetch(`/api/v1/models/${id}/validations`, {
+      const res = await apiFetch(`/api/v1/models/${id}/validations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ training_run_id: parseInt(validateRunId), dataset_id: parseInt(validateDatasetId) }),

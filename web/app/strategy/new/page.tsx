@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { StrategyEditor } from "@/components/strategy-editor";
+import { apiFetch } from "@/lib/fetcher";
 
 // ---------------------------------------------------------------------------
 // Strategy templates
@@ -31,6 +32,7 @@ const defaultRisk = {
   trailing_stop: false,
   trailing_atr_multiplier: 3.0,
   trailing_clip_with_price: false,
+  trailing_only_in_profit: true,
 };
 
 const TEMPLATES: StrategyTemplate[] = [
@@ -499,7 +501,7 @@ export default function NewStrategyPage() {
     setError(null);
     setSaving(true);
     try {
-      const res = await fetch("/api/v1/strategies", {
+      const res = await apiFetch("/api/v1/strategies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description, definition: definitionRef.current }),

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import { resolveApiUrl } from "@/lib/fetcher";
 
 export function useSSE(url: string | null, onEvent: (data: unknown) => void) {
   useEffect(() => {
     if (!url) return;
-    const es = new EventSource(url);
+    const es = new EventSource(resolveApiUrl(url));
     es.onmessage = (e) => {
       try {
         onEvent(JSON.parse(e.data));

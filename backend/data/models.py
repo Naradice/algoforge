@@ -162,18 +162,37 @@ class CollectionJobRead(BaseModel):
     last_error: str | None
     created_at: datetime
 
-    @model_validator(mode="after")
-    def _derive_status(self) -> "CollectionJobRead":
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_status(cls, data: object) -> object:
         """Return 'scheduled' when idle with a future next_run_at so the UI
         can distinguish a planned daily download from a never-run job."""
         from datetime import timezone
-        if (
-            self.status == "idle"
-            and self.next_run_at is not None
-            and self.next_run_at > datetime.now(tz=timezone.utc)
-        ):
-            self.status = "scheduled"
-        return self
+
+        # Support both ORM objects (from_attributes) and plain dicts
+        if isinstance(data, dict):
+            status = data.get("status")
+            next_run_at = data.get("next_run_at")
+        else:
+            status = getattr(data, "status", None)
+            next_run_at = getattr(data, "next_run_at", None)
+
+        if status == "idle" and next_run_at is not None:
+            # Normalise to aware datetime for comparison
+            if isinstance(next_run_at, datetime):
+                nra = next_run_at if next_run_at.tzinfo else next_run_at.replace(tzinfo=timezone.utc)
+                if nra > datetime.now(tz=timezone.utc):
+                    if isinstance(data, dict):
+                        data = {**data, "status": "scheduled"}
+                    else:
+                        # Wrap in dict so Pydantic can build the model cleanly
+                        data = {
+                            field: getattr(data, field)
+                            for field in ("id", "datasource_id", "schedule_cron", "status",
+                                         "last_run_at", "next_run_at", "last_error", "created_at")
+                        }
+                        data["status"] = "scheduled"
+        return data
 
 
 class DataCharacteristicsRead(BaseModel):

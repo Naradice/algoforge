@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 import {
   ScatterChart,
   Scatter,
@@ -432,13 +432,13 @@ function CompareContent() {
   const { data: datasetsData } = useSWR(
     ids.length ? ["compare-datasets", ...ids] : null,
     () => Promise.all(ids.map((id) =>
-      fetch(`/api/v1/datasets/${id}`).then((r) => r.json()).then((j) => j.data)
+      apiFetch(`/api/v1/datasets/${id}`).then((r) => r.json()).then((j) => j.data)
     ))
   );
   const { data: charsData } = useSWR(
     ids.length ? ["compare-chars", ...ids] : null,
     () => Promise.all(ids.map((id) =>
-      fetch(`/api/v1/datasets/${id}/characteristics`).then((r) => r.json()).then((j) => j.data)
+      apiFetch(`/api/v1/datasets/${id}/characteristics`).then((r) => r.json()).then((j) => j.data)
     ))
   );
 

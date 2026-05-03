@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import useSWR, { mutate } from "swr";
 import { useParams, useRouter } from "next/navigation";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
 import {
@@ -859,12 +859,12 @@ export default function DatasetDetailPage() {
     setComputingElapsed(0);
     if (computingTimerRef.current) clearInterval(computingTimerRef.current);
     computingTimerRef.current = setInterval(() => setComputingElapsed((s) => s + 1), 1000);
-    await fetch(`/api/v1/datasets/${id}/characteristics/compute`, { method: "POST" });
+    await apiFetch(`/api/v1/datasets/${id}/characteristics/compute`, { method: "POST" });
   }
 
   async function renameDataset() {
     if (renamingName === null || !renamingName.trim()) return;
-    const res = await fetch(`/api/v1/datasets/${id}`, {
+    const res = await apiFetch(`/api/v1/datasets/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: renamingName.trim() }),
@@ -882,7 +882,7 @@ export default function DatasetDetailPage() {
   async function deleteDataset() {
     if (!confirm(`Delete dataset "${dataset?.name}"? This cannot be undone.`)) return;
     setDeleting(true);
-    const res = await fetch(`/api/v1/datasets/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`/api/v1/datasets/${id}`, { method: "DELETE" });
     if (res.ok) {
       window.location.href = "/data";
     } else {

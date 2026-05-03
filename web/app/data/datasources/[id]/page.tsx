@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useParams } from "next/navigation";
 import { useToast } from "@/lib/toast";
@@ -175,7 +175,7 @@ export default function DatasourceDetailPage() {
     setTestResult(null);
     setTestShowLinks(false);
     try {
-      const res = await fetch("/api/v1/datasources/web-report/test-fetch", {
+      const res = await apiFetch("/api/v1/datasources/web-report/test-fetch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, fetch_type, ext }),
@@ -197,7 +197,7 @@ export default function DatasourceDetailPage() {
     const linkFetchType = cfg.type === "goto_load" ? "goto_download" : (cfg.type ?? "load");
     const steps = [{ type: "link_parse", targets: [{ value: `.*\\.${ext}`, ext, filename: `{YYYYMMDD}_{filename}`, type: linkFetchType, unique: "text", interval_days: cfg.interval_days ?? 1 }] }];
     const newConfig = { ...cfg, custom: steps };
-    const res = await fetch(`/api/v1/datasources/${id}`, {
+    const res = await apiFetch(`/api/v1/datasources/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config: newConfig }),
@@ -247,7 +247,7 @@ export default function DatasourceDetailPage() {
         }
         // runForever → no length key → backend runs endlessly
       }
-      const res = await fetch(`/api/v1/datasources/${id}`, {
+      const res = await apiFetch(`/api/v1/datasources/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editName.trim(), config: baseConfig }),
@@ -268,7 +268,7 @@ export default function DatasourceDetailPage() {
   async function deleteDatasource() {
     if (!confirm(`Delete datasource "${ds?.name}"? This cannot be undone.`)) return;
     setDeleting(true);
-    const res = await fetch(`/api/v1/datasources/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`/api/v1/datasources/${id}`, { method: "DELETE" });
     if (res.ok) {
       window.location.href = "/data";
     } else {
@@ -293,7 +293,7 @@ export default function DatasourceDetailPage() {
       if (colMap.volume)   form.append("volume_col",   colMap.volume);
       if (colMap.datetime) form.append("datetime_col", colMap.datetime);
       form.append("merge", String(options.merge));
-      const res = await fetch("/api/v1/datasets/upload", { method: "POST", body: form });
+      const res = await apiFetch("/api/v1/datasets/upload", { method: "POST", body: form });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         toast(body.error?.message ?? body.detail ?? "Upload failed", "error");
@@ -322,7 +322,7 @@ export default function DatasourceDetailPage() {
   }
 
   async function startCollection() {
-    const res = await fetch(`/api/v1/datasources/${id}/collect`, { method: "POST" });
+    const res = await apiFetch(`/api/v1/datasources/${id}/collect`, { method: "POST" });
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
       toast("Collection queued", "success");
@@ -336,7 +336,7 @@ export default function DatasourceDetailPage() {
   }
 
   async function runJob(jobId: number) {
-    const res = await fetch(`/api/v1/collection-jobs/${jobId}/run`, { method: "POST" });
+    const res = await apiFetch(`/api/v1/collection-jobs/${jobId}/run`, { method: "POST" });
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
       toast("Collection queued", "success");
@@ -350,7 +350,7 @@ export default function DatasourceDetailPage() {
   }
 
   async function resetJob(jobId: number) {
-    const res = await fetch(`/api/v1/collection-jobs/${jobId}/reset`, { method: "POST" });
+    const res = await apiFetch(`/api/v1/collection-jobs/${jobId}/reset`, { method: "POST" });
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
       toast("Job reset — you can now run it again", "success");

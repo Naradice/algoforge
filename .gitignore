@@ -9,5 +9,10 @@ __pycache__/
 *.db
 .claude
 _meta.json
-docs/*
 tsconfig.tsbuildinfo
+backend/alembic/
+backend/artifacts/
+tsconfig.tsbuildinfo
+docs
+.github
+.vscode

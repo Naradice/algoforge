@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/fetcher";
 
 export default function NewJobPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,7 +16,7 @@ export default function NewJobPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/collection-jobs", {
+      const res = await apiFetch("/api/v1/collection-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { apiFetch } from "@/lib/fetcher";
 
 const StrategyChartImport = lazy(() =>
   import("@/components/strategy-chart").then((m) => ({ default: m.StrategyChart }))
@@ -18,7 +19,7 @@ function StrategyChartLazy(props: React.ComponentProps<typeof import("@/componen
 // Types
 // ---------------------------------------------------------------------------
 
-type IndicatorCategory = "technical" | "ml" | "economic";
+type IndicatorCategory = "technical" | "ml" | "economic" | "post_process";
 
 type IndicatorDef = {
   id: string;
@@ -60,7 +61,15 @@ type RegimeCondition = {
   indicator: string;
   threshold: number;
 };
-type Condition = ComparisonCondition | StreakCondition | MlCondition | LlmCondition | RegimeCondition | GroupRefCondition;
+type RollingCondition = {
+  type: "rolling";
+  function: "sum" | "mean" | "std" | "min" | "max" | "diff" | "pct_change";
+  column: string;
+  window: number;
+  op: string;
+  right: number;
+};
+type Condition = ComparisonCondition | StreakCondition | RollingCondition | MlCondition | LlmCondition | RegimeCondition | GroupRefCondition;
 
 type ColMeta = {
   name: string;
@@ -102,15 +111,17 @@ type FormState = {
 // ---------------------------------------------------------------------------
 
 const CATEGORIES: { value: IndicatorCategory; label: string }[] = [
-  { value: "technical", label: "Technical" },
-  { value: "ml",        label: "ML Output" },
-  { value: "economic",  label: "Economic" },
+  { value: "technical",    label: "Technical" },
+  { value: "ml",           label: "ML Output" },
+  { value: "economic",     label: "Economic" },
+  { value: "post_process", label: "Post Process" },
 ];
 
 const CATEGORY_TYPES: Record<IndicatorCategory, string[]> = {
-  technical: ["macd", "rsi", "atr", "ema", "sma", "bb", "slope", "cci", "adx", "stochastic", "sar", "donchian", "rangetrend", "renko", "streak", "roc", "candle"],
-  ml:        ["ml_inference"],
-  economic:  ["macro_series"],
+  technical:    ["macd", "rsi", "atr", "ema", "sma", "bb", "slope", "cci", "adx", "stochastic", "sar", "donchian", "rangetrend", "renko", "streak", "roc", "candle"],
+  ml:           ["ml_inference"],
+  economic:     ["macro_series"],
+  post_process: ["rolling"],
 };
 
 type ParamSpec = { key: string; label: string; inputType: "number" | "text" | "column"; default: number | string; step?: number };
@@ -167,7 +178,8 @@ function defaultParams(type: string): Record<string, string | number> {
     const methodParams = RANGETREND_METHOD_PARAMS["bband"];
     return { method: "bband", ...Object.fromEntries(methodParams.map((s) => [s.key, s.default])) };
   }
-  if (type === "streak") return { left: "close", op: ">", right: "open" };
+  if (type === "streak")  return { left: "close", op: ">", right: "open" };
+  if (type === "rolling") return { function: "sum", column: "close", window: 2 };
   return Object.fromEntries((INDICATOR_PARAMS[type] ?? []).map((s) => [s.key, s.default]));
 }
 
@@ -247,7 +259,7 @@ function deriveColumnMeta(indicators: IndicatorDef[]): ColMeta[] {
           e(`${ind.id}_direction`, "Current brick direction", [{ label: "Long (+1)", value: 1 }, { label: "Short (−1)", value: -1 }]),
           e(`${ind.id}_flip`,      "Brick flip this bar",     [{ label: "No flip (0)", value: 0 }, { label: "Up flip (+1)", value: 1 }, { label: "Down flip (−1)", value: -1 }]),
           f(`${ind.id}_momentum`,  "Forward-filled Renko diff used to match legacy consecutive-brick MACDRenko thresholds"),
-          f(`${ind.id}_bricksize`, `Brick size in price units (${ind.params.brick_size > 0 ? "fixed" : "ATR-based"})`),
+          f(`${ind.id}_pos`,       `Continuous brick position: (price − last ref) / brick size (${Number(ind.params.brick_size) > 0 ? "fixed" : "ATR-based"})`),
         ); break;
       case "rangetrend":
         if (!ind.params.method || ind.params.method === "bband") {
@@ -273,6 +285,16 @@ function deriveColumnMeta(indicators: IndicatorDef[]): ColMeta[] {
         }
         break;
       }
+      case "rolling": {
+        const FN_DESC: Record<string, string> = {
+          sum: "sum", mean: "average", std: "std dev", min: "min", max: "max",
+          diff: "diff", pct_change: "% change",
+        };
+        const fn = String(ind.params.function ?? "sum");
+        const col = String(ind.params.column ?? "close");
+        const win = ind.params.window ?? 2;
+        derived.push(f(ind.id, `${FN_DESC[fn] ?? fn} of ${col} over ${win} bars`)); break;
+      }
       case "ml_inference":
         derived.push(f(String(ind.params.output_col ?? ind.id), `ML model #${ind.params.model_id ?? "?"} output score`)); break;
       default:
@@ -297,20 +319,22 @@ function indicatorSummary(ind: IndicatorDef): string {
 // Condition helpers
 // ---------------------------------------------------------------------------
 
-type CondType = "comparison" | "streak" | "ml" | "llm" | "regime" | "group_ref";
+type CondType = "comparison" | "streak" | "rolling" | "ml" | "llm" | "regime" | "group_ref";
 
 function condType(c: Condition): CondType {
   const t = (c as any).type;
-  if (t === "ml_signal")  return "ml";
-  if (t === "llm_signal") return "llm";
-  if (t === "streak")     return "streak";
-  if (t === "regime")     return "regime";
-  if (t === "group_ref")  return "group_ref";
+  if (t === "ml_signal")              return "ml";
+  if (t === "llm_signal")             return "llm";
+  if (t === "streak")                 return "streak";
+  if (t === "rolling" || t === "window_sum") return "rolling";
+  if (t === "regime")                 return "regime";
+  if (t === "group_ref")              return "group_ref";
   return "comparison";
 }
 
 const defaultComparison = (): ComparisonCondition => ({ left: "close", op: ">", right: "open" });
 const defaultStreak = (): StreakCondition => ({ type: "streak", left: "close", op: ">", right: "open", min_streak: 3 });
+const defaultRolling = (): RollingCondition => ({ type: "rolling", function: "sum", column: "close", window: 2, op: ">=", right: 0 });
 const defaultGroupRef = (groups: GroupDef[]): GroupRefCondition => ({ type: "group_ref", group_id: groups[0]?.id ?? "" });
 const defaultMl = (): MlCondition => ({ type: "ml_signal", model_id: 1, direction: "buy", step: 1, min_confidence: 0.0 });
 const defaultLlm = (): LlmCondition => ({ type: "llm_signal", direction: "buy", lookback: 10, model: "gemini-2.0-flash", columns: ["close", "volume"], cache: true });
@@ -536,8 +560,48 @@ function IndicatorExpandedEditor({
         );
       })()}
 
+      {/* Post Process — Rolling */}
+      {ind.type === "rolling" && (() => {
+        const fn  = String(ind.params.function ?? "sum");
+        const col = String(ind.params.column ?? "close");
+        const win = Number(ind.params.window ?? 2);
+        // Only columns from indicators listed before this one are valid sources.
+        const colOpts = deriveColumns(allIndicators.slice(0, index)).map((c) => ({ value: c, label: c }));
+        const fnOpts = [
+          { value: "sum",        label: "sum" },
+          { value: "mean",       label: "mean" },
+          { value: "std",        label: "std" },
+          { value: "min",        label: "min" },
+          { value: "max",        label: "max" },
+          { value: "diff",       label: "diff" },
+          { value: "pct_change", label: "pct_change" },
+        ];
+        const FN_DESC: Record<string, string> = {
+          sum:        `Sum of the last ${win} ${col} values`,
+          mean:       `Average of the last ${win} ${col} values`,
+          std:        `Std deviation of the last ${win} ${col} values`,
+          min:        `Lowest value among the last ${win} ${col} bars`,
+          max:        `Highest value among the last ${win} ${col} bars`,
+          diff:       `${col}[now] − ${col}[${win} bar${win === 1 ? "" : "s"} ago]`,
+          pct_change: `(${col}[now] − ${col}[${win} bar${win === 1 ? "" : "s"} ago]) / ${col}[${win} bar${win === 1 ? "" : "s"} ago]`,
+        };
+        return (
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Sel value={fn} onChange={(v) => onChange({ ...ind, params: { ...ind.params, function: v } })} options={fnOpts} />
+              <span className="text-xs text-gray-500">(</span>
+              <Sel value={col} onChange={(v) => onChange({ ...ind, params: { ...ind.params, column: v } })} options={colOpts} />
+              <span className="text-xs text-gray-500">,</span>
+              <NumIn value={win} step={1} min={1} onChange={(v) => onChange({ ...ind, params: { ...ind.params, window: Math.max(1, Math.round(v)) } })} className="w-16" />
+              <span className="text-xs text-gray-500">)</span>
+            </div>
+            <div className="text-[11px] text-gray-400 pl-1">{FN_DESC[fn] ?? fn} → column <code className="text-sky-400">{ind.id}</code></div>
+          </div>
+        );
+      })()}
+
       {/* Params for all other indicator types */}
-      {ind.type !== "rangetrend" && ind.type !== "streak" && paramSpecs.length > 0 && (
+      {ind.type !== "rangetrend" && ind.type !== "streak" && ind.type !== "rolling" && paramSpecs.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {paramSpecs.map((spec) => (
             <label key={spec.key} className="flex items-center gap-1">
@@ -701,16 +765,18 @@ function ConditionRow({
           if (newT === "ml")           onChange(defaultMl());
           else if (newT === "llm")     onChange(defaultLlm());
           else if (newT === "regime")  onChange(defaultRegime());
-          else if (newT === "streak")  onChange(defaultStreak());
-          else if (newT === "group_ref") onChange(defaultGroupRef(groups));
-          else                         onChange(defaultComparison());
+          else if (newT === "streak")     onChange(defaultStreak());
+          else if (newT === "rolling")    onChange(defaultRolling());
+          else if (newT === "group_ref")  onChange(defaultGroupRef(groups));
+          else                            onChange(defaultComparison());
         }} options={[
-          { value: "comparison", label: "Compare" },
-          { value: "streak",     label: "Streak" },
-          { value: "group_ref",  label: "Group" },
-          { value: "regime",     label: "Regime" },
-          { value: "ml",         label: "ML Signal" },
-          { value: "llm",        label: "LLM Signal" },
+          { value: "comparison",  label: "Compare" },
+          { value: "streak",      label: "Streak" },
+          { value: "rolling",     label: "Rolling" },
+          { value: "group_ref",   label: "Group" },
+          { value: "regime",      label: "Regime" },
+          { value: "ml",          label: "ML Signal" },
+          { value: "llm",         label: "LLM Signal" },
         ]} />
 
         {t === "comparison" && (() => {
@@ -794,6 +860,31 @@ function ConditionRow({
           );
         })()}
 
+        {t === "rolling" && (() => {
+          const s = cond as RollingCondition;
+          const fnOpts = [
+            { value: "sum",        label: "sum" },
+            { value: "mean",       label: "mean" },
+            { value: "std",        label: "std" },
+            { value: "min",        label: "min" },
+            { value: "max",        label: "max" },
+            { value: "diff",       label: "diff" },
+            { value: "pct_change", label: "pct_change" },
+          ];
+          return (
+            <>
+              <Sel value={s.function} onChange={(v) => onChange({ ...s, function: v as RollingCondition["function"] })} options={fnOpts} />
+              <span className="text-xs text-gray-500">(</span>
+              <Sel value={s.column} onChange={(v) => onChange({ ...s, column: v })} options={colOpts} />
+              <span className="text-xs text-gray-500">,</span>
+              <NumIn value={s.window} step={1} min={1} onChange={(v) => onChange({ ...s, window: Math.max(1, Math.round(v)) })} className="w-14" />
+              <span className="text-xs text-gray-500">)</span>
+              <Sel value={s.op} onChange={(v) => onChange({ ...s, op: v })} options={OPS.map((o) => ({ value: o, label: o }))} />
+              <TxtIn value={String(s.right)} onChange={(v) => onChange({ ...s, right: Number(v) || 0 })} placeholder="value" className="w-24" />
+            </>
+          );
+        })()}
+
         {t === "ml" && (() => {
           const m = cond as MlCondition;
           return (
@@ -873,6 +964,24 @@ function ConditionRow({
                 onChange={(e) => onChange({ ...l, cache: e.target.checked })} className="accent-sky-500" />
               cache
             </label>
+          </div>
+        );
+      })()}
+
+      {t === "rolling" && (() => {
+        const s = cond as RollingCondition;
+        const desc: Record<RollingCondition["function"], string> = {
+          sum:        `Total of the last ${s.window} ${s.column} values`,
+          mean:       `Average of the last ${s.window} ${s.column} values`,
+          std:        `Std deviation of the last ${s.window} ${s.column} values`,
+          min:        `Lowest value among the last ${s.window} ${s.column} bars`,
+          max:        `Highest value among the last ${s.window} ${s.column} bars`,
+          diff:       `${s.column}[now] − ${s.column}[${s.window} bar${s.window === 1 ? "" : "s"} ago]`,
+          pct_change: `(${s.column}[now] − ${s.column}[${s.window} bar${s.window === 1 ? "" : "s"} ago]) / ${s.column}[${s.window} bar${s.window === 1 ? "" : "s"} ago]  (e.g. 0.05 = 5%)`,
+        };
+        return (
+          <div className="text-[11px] text-gray-400 pl-1 leading-tight">
+            {desc[s.function]}
           </div>
         );
       })()}
@@ -1043,6 +1152,10 @@ function conditionLabel(c: Condition): string {
     const s = c as StreakCondition;
     return `${s.left} ${s.op} ${s.right}  ≥ ${s.min_streak} bars`;
   }
+  if (t === "rolling") {
+    const s = c as RollingCondition;
+    return `${s.function}(${s.column}, ${s.window}) ${s.op} ${s.right}`;
+  }
   if (t === "group_ref") {
     const g = c as GroupRefCondition;
     return `→ group: ${g.group_id}`;
@@ -1089,14 +1202,16 @@ export function StrategyDefinitionView({ definition }: { definition: any }) {
   const hasShort = form.short_entry.enabled || form.short_exit.enabled;
 
   const INDICATOR_COLOR: Record<IndicatorCategory, string> = {
-    technical: "bg-sky-900 text-sky-300",
-    ml:        "bg-purple-900 text-purple-300",
-    economic:  "bg-amber-900 text-amber-300",
+    technical:    "bg-sky-900 text-sky-300",
+    ml:           "bg-purple-900 text-purple-300",
+    economic:     "bg-amber-900 text-amber-300",
+    post_process: "bg-teal-900 text-teal-300",
   };
   const INDICATOR_LABEL: Record<IndicatorCategory, string> = {
-    technical: "TA",
-    ml:        "ML",
-    economic:  "ECON",
+    technical:    "TA",
+    ml:           "ML",
+    economic:     "ECON",
+    post_process: "PP",
   };
 
   return (
@@ -1302,7 +1417,7 @@ export function StrategyEditor({ initialDefinition, onChange, strategyId, datase
     validateAbortRef.current = abort;
     try {
       const limitBars = validateLimitBars === "all" ? undefined : parseInt(validateLimitBars);
-      const res = await fetch(`/api/v1/strategies/${strategyId}/validate/stream`, {
+      const res = await apiFetch(`/api/v1/strategies/${strategyId}/validate/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

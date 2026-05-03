@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 import { LossChart } from "@/components/loss-chart";
 import { useSSE } from "@/hooks/use-sse";
 
@@ -55,7 +55,7 @@ export default function TrainingRunDetailPage() {
   async function handleStop() {
     setStopping(true);
     try {
-      await fetch(`/api/v1/training-runs/${runId}/stop`, { method: "POST" });
+      await apiFetch(`/api/v1/training-runs/${runId}/stop`, { method: "POST" });
       mutateStatus();
     } finally {
       setStopping(false);

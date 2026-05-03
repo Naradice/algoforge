@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CsvUploadForm, type ColMap, type UploadOptions } from "@/components/csv-upload-form";
+import { apiFetch } from "@/lib/fetcher";
 
 // ── Field definitions per datasource type ────────────────────────────────────
 
@@ -257,7 +258,7 @@ export default function NewDatasourcePage() {
     setTestPassed(false);
     setTestShowLinks(false);
     try {
-      const res = await fetch("/api/v1/datasources/web-report/test-fetch", {
+      const res = await apiFetch("/api/v1/datasources/web-report/test-fetch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, fetch_type, ext }),
@@ -339,7 +340,7 @@ export default function NewDatasourcePage() {
   }
 
   async function createDatasource(): Promise<number> {
-    const res = await fetch("/api/v1/datasources", {
+    const res = await apiFetch("/api/v1/datasources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, type, config: buildConfig() }),
@@ -384,7 +385,7 @@ export default function NewDatasourcePage() {
       if (colMap.volume)   form.append("volume_col",   colMap.volume);
       if (colMap.datetime) form.append("datetime_col", colMap.datetime);
       form.append("merge", String(options.merge));
-      const upRes = await fetch("/api/v1/datasets/upload", { method: "POST", body: form });
+      const upRes = await apiFetch("/api/v1/datasets/upload", { method: "POST", body: form });
       if (!upRes.ok) {
         const upBody = await upRes.json().catch(() => ({}));
         throw new Error(upBody.error?.message ?? upBody.detail ?? "File upload failed");

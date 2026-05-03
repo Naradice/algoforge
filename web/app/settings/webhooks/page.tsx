@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 
 interface Webhook {
   id: number;
@@ -46,7 +46,7 @@ export default function WebhooksPage() {
     }
     setSaving(true);
     try {
-      const res = await fetch("/api/v1/webhooks", {
+      const res = await apiFetch("/api/v1/webhooks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, events, secret }),
@@ -67,13 +67,13 @@ export default function WebhooksPage() {
   }
 
   async function handleDelete(id: number) {
-    await fetch(`/api/v1/webhooks/${id}`, { method: "DELETE" });
+    await apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" });
     mutate();
   }
 
   async function handleTest(id: number) {
     setTestResults((prev) => ({ ...prev, [id]: "Testing…" }));
-    const res = await fetch(`/api/v1/webhooks/${id}/test`, { method: "POST" });
+    const res = await apiFetch(`/api/v1/webhooks/${id}/test`, { method: "POST" });
     const body = await res.json().catch(() => ({}));
     const data = body.data ?? body;
     setTestResults((prev) => ({ ...prev, [id]: `HTTP ${data.status_code}` }));

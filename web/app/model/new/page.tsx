@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/fetcher";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -422,7 +423,7 @@ export default function NewModelPage() {
     setSaving(true);
     try {
       const archTpl = TEMPLATES.find((t) => t.id === activeArchId)!;
-      const res = await fetch("/api/v1/models", {
+      const res = await apiFetch("/api/v1/models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
