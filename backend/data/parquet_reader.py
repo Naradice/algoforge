@@ -82,6 +82,40 @@ def load_ddm_ticks_recent(path: Path, n_files: int = 20) -> pd.DataFrame:
     return df
 
 
+def load_ddm_ticks_windowed(
+    path: Path,
+    n_files: int = 20,
+    to_ts: float | None = None,
+) -> tuple[pd.DataFrame, bool]:
+    """Load the most-recent n_files fragments, optionally capped at to_ts.
+
+    Returns (df, has_more) where has_more=True means older fragments exist
+    beyond the loaded window.
+    """
+    if not path.exists():
+        return pd.DataFrame(columns=["price"]), False
+
+    if _is_partitioned(path):
+        all_fragments = _sorted_fragments(path)
+    else:
+        all_fragments = sorted(path.glob("batch_*.parquet"))
+
+    if not all_fragments:
+        return pd.DataFrame(columns=["price"]), False
+
+    has_more = len(all_fragments) > n_files
+    recent = all_fragments[-n_files:] if len(all_fragments) > n_files else all_fragments
+
+    df = pd.concat([pd.read_parquet(f) for f in recent]).sort_index()
+    df.index = pd.to_datetime(df.index, utc=True)
+
+    if to_ts is not None:
+        cutoff = pd.Timestamp(to_ts, unit="s", tz="UTC")
+        df = df[df.index <= cutoff]
+
+    return df, has_more
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

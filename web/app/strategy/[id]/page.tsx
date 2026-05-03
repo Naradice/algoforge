@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import useSWR, { mutate } from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
 import { StrategyEditor, StrategyDefinitionView } from "@/components/strategy-editor";
 import { StrategyChart } from "@/components/strategy-chart";
+import { EquityChart } from "@/components/equity-chart";
+import { InvestigationPanel } from "@/components/investigation-panel";
 
 // ---------------------------------------------------------------------------
 // Metrics panel — handles combined / IS / OOS split view
@@ -219,6 +221,15 @@ function ChatPanel({ strategyId, runId }: { strategyId: string; runId: number })
 // Main page
 // ---------------------------------------------------------------------------
 
+type ChartAccum = {
+  candles: any[];
+  indicators: Record<string, any>;
+  markers: any[];
+  events?: any[];
+  has_more: boolean;
+  bar_count: number;
+};
+
 export default function StrategyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
@@ -237,6 +248,8 @@ export default function StrategyDetailPage() {
   const [mode, setMode] = useState("backtest");
   const [datasetId, setDatasetId] = useState("");
   const [walkForwardRatio, setWalkForwardRatio] = useState(0);
+  const [windowSize, setWindowSize] = useState(0);
+  const [startingCapital, setStartingCapital] = useState(1.0);
   const [starting, setStarting] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -255,17 +268,23 @@ export default function StrategyDetailPage() {
     trailing_stop: boolean;
     trailing_atr_multiplier: number;
     trailing_clip_with_price: boolean;
+    trailing_only_in_profit: boolean;
   };
   const DEFAULT_RISK: RiskOverride = {
     risk_type: "fixed", position_size: 1.0, risk_pct: 0.01, atr_multiplier: 2.0,
     sl_pct: 0.02, tp_pct: 0.04, slippage_pct: 0.0005, commission_pct: 0.001,
     max_positions: 1, daily_loss_limit_pct: 0.0, cooldown_bars: 0,
     trailing_stop: false, trailing_atr_multiplier: 3.0, trailing_clip_with_price: false,
+    trailing_only_in_profit: true,
   };
   const [risk, setRisk] = useState<RiskOverride>(DEFAULT_RISK);
   const patchRisk = (p: Partial<RiskOverride>) => setRisk((r) => ({ ...r, ...p }));
 
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
+  const [overlaySlip, setOverlaySlip] = useState(0.0005);
+  const [overlayComm, setOverlayComm] = useState(0.001);
+  const [overlayResult, setOverlayResult] = useState<{ metrics: Record<string, number>; orig_metrics: Record<string, number>; orig_slip: number; orig_comm: number } | null>(null);
+  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data: runMetrics } = useSWR(
     selectedRun ? `/api/v1/strategies/${id}/runs/${selectedRun}/metrics` : null,
     fetcher,
@@ -279,13 +298,54 @@ export default function StrategyDetailPage() {
 
   const selectedRunObj = runs?.find((r: any) => r.id === selectedRun);
 
+  const { data: equityCurve } = useSWR(
+    selectedRun && selectedRunObj?.status === "completed"
+      ? `/api/v1/strategies/${id}/runs/${selectedRun}/equity`
+      : null,
+    fetcher
+  );
+
+  // Reset overlay when switching runs; seed sliders from original costs when result loads
+  useEffect(() => {
+    setOverlayResult(null);
+  }, [selectedRun]);
+
+  useEffect(() => {
+    if (overlayResult && overlayResult.orig_slip !== undefined) {
+      // Seed sliders to original costs on first load (only if user hasn't moved them yet)
+      setOverlaySlip((s) => (s === 0.0005 ? overlayResult.orig_slip : s));
+      setOverlayComm((c) => (c === 0.001  ? overlayResult.orig_comm : c));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayResult?.orig_slip]);
+
+  function fetchOverlay(runId: number, slip: number, comm: number) {
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    overlayTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/v1/strategies/${id}/runs/${runId}/cost-overlay`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slippage_pct: slip, commission_pct: comm }),
+        });
+        if (res.ok) {
+          const body = await res.json();
+          setOverlayResult(body.data);
+        }
+      } catch { /* non-fatal */ }
+    }, 300);
+  }
+
   // Chart time range — ISO date strings (datetime-local value), empty = full range
   const [chartFrom, setChartFrom] = useState("");
   const [chartTo, setChartTo] = useState("");
   const [appliedRange, setAppliedRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
   const [chartMode, setChartMode] = useState<"indicators" | "conditions">("indicators");
 
-  function buildChartUrl() {
+  const [chartAccumulated, setChartAccumulated] = useState<ChartAccum | null>(null);
+  const [chartLoadingOlder, setChartLoadingOlder] = useState(false);
+
+  const chartUrl = useMemo(() => {
     if (!selectedRun || selectedRunObj?.status !== "completed") return null;
     const base = `/api/v1/strategies/${id}/runs/${selectedRun}/chart-data`;
     const params = new URLSearchParams();
@@ -293,13 +353,67 @@ export default function StrategyDetailPage() {
     if (appliedRange.to)   params.set("to_ts",   String(Math.floor(new Date(appliedRange.to).getTime()   / 1000)));
     const qs = params.toString();
     return qs ? `${base}?${qs}` : base;
-  }
+  }, [id, selectedRun, selectedRunObj?.status, appliedRange]);
 
-  const { data: chartData, isLoading: chartLoading } = useSWR(
-    buildChartUrl(),
+  const { data: freshChartData, isLoading: chartLoading } = useSWR(
+    chartUrl,
     fetcher,
     { revalidateOnFocus: false },
   );
+
+  useEffect(() => { setChartAccumulated(null); }, [chartUrl]);
+  useEffect(() => { if (freshChartData) setChartAccumulated(freshChartData); }, [freshChartData]);
+
+  async function loadOlderBarsInline() {
+    if (!chartAccumulated?.candles.length || chartLoadingOlder || !selectedRun) return;
+    const earliestTs = Math.min(...chartAccumulated.candles.map((c: any) => c.time));
+    const base = `/api/v1/strategies/${id}/runs/${selectedRun}/chart-data`;
+    setChartLoadingOlder(true);
+    try {
+      const res = await apiFetch(`${base}?to_ts=${earliestTs - 1}&limit=2000`);
+      if (!res.ok) return;
+      const body = await res.json();
+      const older: ChartAccum = body.data ?? body;
+      setChartAccumulated((prev) => {
+        if (!prev) return older;
+        const seenTimes = new Set(prev.candles.map((c: any) => c.time));
+        const newCandles = [
+          ...(older.candles ?? []).filter((c: any) => !seenTimes.has(c.time)),
+          ...prev.candles,
+        ];
+        const mergedIndicators: Record<string, any> = { ...prev.indicators };
+        for (const [key, series] of Object.entries(older.indicators ?? {})) {
+          if (mergedIndicators[key]) {
+            const existTimes = new Set(mergedIndicators[key].data?.map((p: any) => p.time));
+            mergedIndicators[key] = {
+              ...mergedIndicators[key],
+              data: [
+                ...((series as any).data ?? []).filter((p: any) => !existTimes.has(p.time)),
+                ...(mergedIndicators[key].data ?? []),
+              ],
+            };
+          } else {
+            mergedIndicators[key] = series;
+          }
+        }
+        const seenMarkers = new Set(prev.markers?.map((m: any) => `${m.time}:${m.color}:${m.shape}`));
+        const mergedMarkers = [
+          ...(older.markers ?? []).filter((m: any) => !seenMarkers.has(`${m.time}:${m.color}:${m.shape}`)),
+          ...(prev.markers ?? []),
+        ].sort((a: any, b: any) => a.time - b.time);
+        return {
+          ...prev,
+          candles: newCandles,
+          indicators: mergedIndicators,
+          markers: mergedMarkers,
+          has_more: older.has_more ?? false,
+          bar_count: newCandles.length,
+        };
+      });
+    } finally {
+      setChartLoadingOlder(false);
+    }
+  }
 
   const [stopping, setStopping] = useState<number | null>(null);
   const [deletingRun, setDeletingRun] = useState<number | null>(null);
@@ -379,7 +493,7 @@ export default function StrategyDetailPage() {
     setValidateMarkers([]); setValidateCounts({});
     try {
       const limitBars = validateLimitBars === "all" ? undefined : parseInt(validateLimitBars);
-      const res = await fetch(`/api/v1/strategies/${id}/validate/stream`, {
+      const res = await apiFetch(`/api/v1/strategies/${id}/validate/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dataset_id: parseInt(validateDatasetId), definition: buildFilteredDef(), ...(limitBars ? { limit_bars: limitBars } : {}) }),
@@ -416,7 +530,7 @@ export default function StrategyDetailPage() {
     setDefError(null);
     setSavingDef(true);
     try {
-      const res = await fetch(`/api/v1/strategies/${id}`, {
+      const res = await apiFetch(`/api/v1/strategies/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ definition: editedDefRef.current }),
@@ -443,13 +557,15 @@ export default function StrategyDetailPage() {
     }
     setStarting(true);
     try {
-      const res = await fetch(`/api/v1/strategies/${id}/runs`, {
+      const res = await apiFetch(`/api/v1/strategies/${id}/runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode,
           dataset_id: datasetId ? parseInt(datasetId) : null,
           walk_forward_ratio: walkForwardRatio > 0 ? walkForwardRatio / 100 : null,
+          window_size: windowSize > 0 ? windowSize : null,
+          starting_capital: startingCapital !== 1.0 ? startingCapital : null,
           risk_override: risk,
         }),
       });
@@ -469,7 +585,7 @@ export default function StrategyDetailPage() {
   async function copyStrategy() {
     setCopying(true);
     try {
-      const res = await fetch(`/api/v1/strategies/${id}/copy`, { method: "POST" });
+      const res = await apiFetch(`/api/v1/strategies/${id}/copy`, { method: "POST" });
       if (!res.ok) { toast("Failed to copy strategy", "error"); return; }
       const body = await res.json();
       toast("Strategy copied", "success");
@@ -483,7 +599,7 @@ export default function StrategyDetailPage() {
     if (!confirm(`Delete "${strategy.name}" and all its runs? This cannot be undone.`)) return;
     setDeletingStrategy(true);
     try {
-      const res = await fetch(`/api/v1/strategies/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/v1/strategies/${id}`, { method: "DELETE" });
       if (!res.ok) {
         toast("Failed to delete strategy", "error");
         return;
@@ -499,7 +615,7 @@ export default function StrategyDetailPage() {
     if (!confirm("Delete this run and all its results? This cannot be undone.")) return;
     setDeletingRun(runId);
     try {
-      const res = await fetch(`/api/v1/strategies/${id}/runs/${runId}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/v1/strategies/${id}/runs/${runId}`, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         toast(body.detail ?? "Failed to delete run", "error");
@@ -516,7 +632,7 @@ export default function StrategyDetailPage() {
   async function stopRun(runId: number) {
     setStopping(runId);
     try {
-      await fetch(`/api/v1/strategies/${id}/runs/${runId}/stop`, { method: "POST" });
+      await apiFetch(`/api/v1/strategies/${id}/runs/${runId}/stop`, { method: "POST" });
       toast("Stop requested", "info");
       mutate(`/api/v1/strategies/${id}/runs`);
     } finally {
@@ -799,6 +915,38 @@ export default function StrategyDetailPage() {
                     0 = off. Splits data chronologically; metrics reported separately for each half.
                   </p>
                 </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-400">
+                    Rolling indicator window —{" "}
+                    <span className="text-white font-mono">
+                      {windowSize === 0 ? "disabled (full history)" : `${windowSize} bars`}
+                    </span>
+                  </label>
+                  <input
+                    type="number" min={0} step={10} value={windowSize}
+                    onChange={(e) => setWindowSize(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none"
+                  />
+                  <p className="mt-0.5 text-xs text-gray-600">
+                    0 = off. Set to 100+ for Renko strategies — recomputes indicators on a rolling window to match live MT5 behaviour (slower).
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-400">
+                    Starting capital —{" "}
+                    <span className="text-white font-mono">
+                      {startingCapital === 1.0 ? "1.0 (normalised)" : startingCapital.toLocaleString()}
+                    </span>
+                  </label>
+                  <input
+                    type="number" min={1} step={1000} value={startingCapital}
+                    onChange={(e) => setStartingCapital(Math.max(1, parseFloat(e.target.value) || 1.0))}
+                    className="w-28 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none"
+                  />
+                  <p className="mt-0.5 text-xs text-gray-600">
+                    1.0 = normalised %. Set to actual capital (e.g. 1000000 JPY) to compare PnL with trade_strategy.
+                  </p>
+                </div>
               </>
             )}
             {/* Risk */}
@@ -885,6 +1033,12 @@ export default function StrategyDetailPage() {
                     <input type="checkbox" checked={risk.trailing_clip_with_price} onChange={(e) => patchRisk({ trailing_clip_with_price: e.target.checked })}
                       className="rounded border border-gray-700 bg-gray-800" />
                     <span className="text-xs text-gray-600">Floor stop at entry price (breakeven)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-xs text-gray-500">Only in profit</span>
+                    <input type="checkbox" checked={risk.trailing_only_in_profit} onChange={(e) => patchRisk({ trailing_only_in_profit: e.target.checked })}
+                      className="rounded border border-gray-700 bg-gray-800" />
+                    <span className="text-xs text-gray-600">Only move stop when position is profitable (matches trade_strategy)</span>
                   </div>
                 </>
               )}
@@ -986,6 +1140,15 @@ export default function StrategyDetailPage() {
         )}
       </section>
 
+      {/* AI Investigation */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-gray-400">AI Investigation</h2>
+          <p className="text-xs text-gray-600">Automatically sweeps risk parameters and reports findings</p>
+        </div>
+        <InvestigationPanel strategyId={id} datasets={datasets ?? []} />
+      </section>
+
       {/* Run detail panel */}
       {selectedRun && (
         <section className="space-y-4">
@@ -1039,26 +1202,38 @@ export default function StrategyDetailPage() {
                     Reset
                   </button>
                 )}
-                {chartData && (
-                  <span className="text-xs text-gray-600 ml-auto">
-                    {chartData.candles?.length ?? 0} bars
-                  </span>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                  {chartAccumulated?.has_more && (
+                    <button
+                      onClick={loadOlderBarsInline}
+                      disabled={chartLoadingOlder}
+                      className="text-xs text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                    >
+                      {chartLoadingOlder ? "Loading…" : "← Load older"}
+                    </button>
+                  )}
+                  {chartAccumulated && (
+                    <span className="text-xs text-gray-600">
+                      {chartAccumulated.bar_count ?? chartAccumulated.candles?.length ?? 0} bars
+                      {chartAccumulated.has_more && <span className="text-gray-700"> · more available</span>}
+                    </span>
+                  )}
+                </div>
               </div>
               {chartLoading && (
                 <div className="flex items-center justify-center h-16 text-gray-500 text-sm">Loading chart…</div>
               )}
-              {chartData && (
+              {chartAccumulated && (
                 <StrategyChart
-                  candles={chartData.candles ?? []}
+                  candles={chartAccumulated.candles ?? []}
                   indicators={Object.fromEntries(
-                    Object.entries(chartData.indicators ?? {}).filter(([, s]: [string, any]) =>
+                    Object.entries(chartAccumulated.indicators ?? {}).filter(([, s]: [string, any]) =>
                       chartMode === "conditions"
                         ? true
                         : !(s.group?.startsWith("cond:") || s.line_style === "dashed" || s.line_style === "step")
                     )
                   )}
-                  markers={chartData.markers ?? []}
+                  markers={chartAccumulated.markers ?? []}
                 />
               )}
             </div>
@@ -1066,6 +1241,69 @@ export default function StrategyDetailPage() {
 
           {runMetrics && Object.keys(runMetrics).length > 0 && (
             <MetricsPanel metrics={runMetrics} />
+          )}
+
+          {equityCurve && equityCurve.length > 0 && (
+            <div className="rounded-lg border border-gray-800 p-3">
+              <p className="text-xs font-medium text-gray-400 mb-2">Equity Curve</p>
+              <EquityChart data={equityCurve} />
+            </div>
+          )}
+
+          {/* Cost Sensitivity Analysis */}
+          {selectedRun && selectedRunObj?.status === "completed" && (
+            <div className="rounded-lg border border-gray-800 p-3 space-y-3">
+              <p className="text-xs font-medium text-gray-400">Cost Sensitivity</p>
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-24">Slippage /side</span>
+                  <input
+                    type="number" step={0.0001} min={0} value={overlaySlip}
+                    onChange={(e) => { const v = parseFloat(e.target.value) || 0; setOverlaySlip(v); fetchOverlay(selectedRun, v, overlayComm); }}
+                    className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none"
+                  />
+                  <span className="text-xs text-gray-600">{(overlaySlip * 100).toFixed(3)}%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-24">Commission</span>
+                  <input
+                    type="number" step={0.0001} min={0} value={overlayComm}
+                    onChange={(e) => { const v = parseFloat(e.target.value) || 0; setOverlayComm(v); fetchOverlay(selectedRun, overlaySlip, v); }}
+                    className="w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none"
+                  />
+                  <span className="text-xs text-gray-600">{(overlayComm * 100).toFixed(3)}%</span>
+                </div>
+                {!overlayResult && (
+                  <button
+                    onClick={() => fetchOverlay(selectedRun, overlaySlip, overlayComm)}
+                    className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white"
+                  >
+                    Calculate
+                  </button>
+                )}
+              </div>
+              {overlayResult && (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(["total_pnl", "win_rate", "profit_factor", "total_trades"] as const).map((k) => {
+                    const orig = overlayResult.orig_metrics[k] ?? 0;
+                    const adj  = overlayResult.metrics[k] ?? 0;
+                    const diff = adj - orig;
+                    const diffColor = diff > 0 ? "text-green-400" : diff < 0 ? "text-red-400" : "text-gray-500";
+                    return (
+                      <div key={k} className="rounded bg-gray-900 px-3 py-2">
+                        <p className="text-xs text-gray-500">{k.replace(/_/g, " ")}</p>
+                        <p className="text-sm font-mono text-white">{fmtMetric(k, adj)}</p>
+                        {diff !== 0 && (
+                          <p className={`text-xs font-mono ${diffColor}`}>
+                            {diff > 0 ? "+" : ""}{fmtMetric(k, diff)}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           {runTrades && runTrades.length > 0 && (

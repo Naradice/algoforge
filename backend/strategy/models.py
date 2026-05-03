@@ -47,6 +47,8 @@ class StrategyRun(Base):
     broker_client: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     walk_forward_ratio: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     risk_override: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    window_size: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    starting_capital: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     from_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     to_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -164,6 +166,8 @@ class StrategyRunCreate(BaseModel):
     broker_client: str | None = None
     walk_forward_ratio: float | None = None  # 0.7 → 70% in-sample, 30% OOS
     risk_override: dict | None = None
+    window_size: int | None = None  # None/0 = full history; N = rolling N-bar window
+    starting_capital: float | None = None  # None/1.0 = normalised; N = scale PnL to this capital
     from_ts: datetime | None = None
     to_ts: datetime | None = None
 
@@ -181,6 +185,8 @@ class StrategyRunRead(BaseModel):
     broker_client: str | None
     walk_forward_ratio: float | None
     risk_override: dict | None
+    window_size: int | None
+    starting_capital: float | None
     from_ts: datetime | None
     to_ts: datetime | None
     started_at: datetime | None

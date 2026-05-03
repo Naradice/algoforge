@@ -17,6 +17,8 @@ STRATEGY_NOT_FOUND = "STRATEGY_NOT_FOUND"
 STRATEGY_RUN_NOT_FOUND = "STRATEGY_RUN_NOT_FOUND"
 STRATEGY_RUN_ACTIVE = "STRATEGY_RUN_ACTIVE"
 
+_INITIAL_CHART_BARS = 2_000  # default bars returned per chart-data request
+
 
 class StrategyService:
     async def list_strategies(self, db: AsyncSession, status: str | None = None, offset: int = 0, limit: int = 20) -> tuple[list[Strategy], int]:
@@ -64,6 +66,8 @@ class StrategyService:
             broker_client=body.broker_client,
             walk_forward_ratio=body.walk_forward_ratio,
             risk_override=body.risk_override,
+            window_size=body.window_size,
+            starting_capital=body.starting_capital,
             from_ts=body.from_ts,
             to_ts=body.to_ts,
         )
@@ -157,17 +161,37 @@ class StrategyService:
         run_id: int,
         from_ts: int | None = None,
         to_ts: int | None = None,
+        limit: int = _INITIAL_CHART_BARS,
     ) -> dict:
         """Return OHLC candles + indicator series + trade markers + economic events.
 
-        from_ts / to_ts (Unix seconds) restrict the window; when set and the
-        resulting slice fits within _MAX_CHART_BARS, bars are returned at the
-        original dataset resolution with no resampling.
+        from_ts / to_ts (Unix seconds) restrict the time window.
+        limit controls how many bars are returned (default _INITIAL_CHART_BARS).
+        Response includes has_more/bar_count for incremental loading support.
         """
         import asyncio
         import functools
+        import logging
 
-        run = await self.get_run(db, strategy_id, run_id)
+        _log = logging.getLogger("strategy.chart_data")
+
+        # Load only the columns needed — skip equity_curve (can be 40+ MB of Python
+        # objects for long backtests) since we only need dataset_id / strategy_id here.
+        from sqlalchemy import select as _sa_select
+        from sqlalchemy.orm import load_only as _load_only
+        _run_result = await db.execute(
+            _sa_select(StrategyRun)
+            .options(_load_only(
+                StrategyRun.id,
+                StrategyRun.strategy_id,
+                StrategyRun.dataset_id,
+            ))
+            .where(StrategyRun.id == run_id)
+        )
+        run = _run_result.scalar_one_or_none()
+        if run is None or run.strategy_id != strategy_id:
+            raise HTTPException(status_code=404, detail=STRATEGY_RUN_NOT_FOUND)
+
         strategy = await self.get_strategy(db, run.strategy_id)
 
         # Need dataset artifact path
@@ -182,18 +206,30 @@ class StrategyService:
 
         indicator_specs: list = (strategy.definition or {}).get("indicators", [])
 
-        # Build candle + indicator data in a thread (CPU-bound I/O)
-        loop = asyncio.get_event_loop()
+        # Build candle + indicator data in a thread (CPU-bound I/O).
+        # Use get_running_loop() — get_event_loop() is deprecated in Python 3.12.
+        loop = asyncio.get_running_loop()
         if artifact_path:
-            base = await loop.run_in_executor(
-                None,
-                functools.partial(
-                    _build_chart_base, artifact_path, indicator_specs, from_ts, to_ts,
-                    definition=strategy.definition or {},
-                ),
-            )
+            try:
+                base = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        functools.partial(
+                            _build_chart_base, artifact_path, indicator_specs, from_ts, to_ts,
+                            limit=limit,
+                            definition=strategy.definition or {},
+                        ),
+                    ),
+                    timeout=120,
+                )
+            except asyncio.TimeoutError:
+                _log.error("chart-data timed out after 120s for run %s", run_id)
+                raise HTTPException(status_code=504, detail="Chart data took too long to build")
+            except Exception as exc:
+                _log.exception("chart-data failed for run %s: %s", run_id, exc)
+                raise HTTPException(status_code=500, detail=f"Chart data error: {exc}")
         else:
-            base = {"candles": [], "indicators": {}}
+            base = {"candles": [], "indicators": {}, "has_more": False, "bar_count": 0}
 
         # Derive the OHLC time window from the candles themselves
         candle_times: list[int] = [c["time"] for c in base["candles"]]
@@ -335,7 +371,7 @@ class StrategyService:
         artifact_path = ds_rec.artifact_path
         indicator_specs = definition.get("indicators", [])
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # Build candles + indicator series
         base = await loop.run_in_executor(
@@ -345,9 +381,11 @@ class StrategyService:
 
         # Run backtest synchronously to get trades
         from strategy.engine.backtest import run_backtest
+        _win_size = int(definition.get("window_size", 0))
+        _sc = float(definition.get("starting_capital", 1.0))
         trades_raw, _, _ = await loop.run_in_executor(
             None,
-            functools.partial(run_backtest, definition, artifact_path),
+            functools.partial(run_backtest, definition, artifact_path, window_size=_win_size, starting_capital=_sc),
         )
 
         candle_times: list[int] = [c["time"] for c in base["candles"]]
@@ -458,7 +496,7 @@ class StrategyService:
         indicator_specs = definition.get("indicators", [])
         groups = definition.get("groups", {})
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # Build candles + indicators (limited to last limit_bars rows)
         base = await loop.run_in_executor(
@@ -649,16 +687,13 @@ _MULTI_COL_SPECS: dict[str, list[tuple[str, str]]] = {
     "adx":        [("", "line"), ("_plus_di", "line"), ("_minus_di", "line")],
     "stochastic": [("_k", "line"), ("_d", "line")],
     "donchian":   [("_upper", "line"), ("_lower", "line"), ("_mid", "line")],
-    "renko":      [("_direction", "line"), ("_flip", "line")],
+    "renko":      [("_direction", "line"), ("_flip", "line"), ("_momentum", "line"), ("_pos", "line")],
     "candle":     [
         ("_bull_engulf", "line"), ("_bear_engulf", "line"),
         ("_bull_pin", "line"), ("_bear_pin", "line"),
         ("_bull_outside", "line"), ("_bear_outside", "line"),
     ],
 }
-
-_MAX_CHART_BARS = 100_000  # max candles/indicator points sent to the frontend
-
 
 def _resample_ohlcv(df, step: int):
     """Aggregate rows in chunks of `step`, preserving proper OHLC semantics."""
@@ -910,14 +945,18 @@ def _build_chart_base(
     from_ts: int | None = None,
     to_ts: int | None = None,
     limit_bars: int | None = None,
+    limit: int = _INITIAL_CHART_BARS,
     definition: dict | None = None,
 ) -> dict:
-    """Load parquet, resample if needed, apply indicators, return candles + series.
+    """Load parquet, apply indicators, return candles + series.
 
-    When from_ts / to_ts are supplied the dataset is sliced to that window first.
-    If the slice fits within _MAX_CHART_BARS, bars are returned at original
-    resolution. Otherwise they are aggregated so MACD/RSI are consistent with
-    the displayed candle timeframe.
+    limit_bars: hard cap used by the validate panel (overrides limit).
+    limit: windowed cap for chart-data requests (default _INITIAL_CHART_BARS).
+
+    Warmup bars are loaded before the window and trimmed after indicator
+    computation so every returned bar has valid indicator values.
+
+    Returns dict with keys: candles, indicators, has_more, bar_count.
     """
     import os
     from pathlib import Path
@@ -925,15 +964,17 @@ def _build_chart_base(
     import pandas as pd
 
     from strategy.engine.backtest import _load_df
-    from strategy.engine.indicators import apply_indicators
+    from strategy.engine.indicators import apply_indicators, estimate_warmup_bars
 
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
     df = _load_df(store / artifact_path)
 
-    # Slice to requested time window before resampling
-    # Convert index to Unix seconds regardless of datetime64 sub-unit (us/ns)
+    # Filter by upper time bound first so we work on the relevant subset.
     if from_ts is not None or to_ts is not None:
-        unix = df.index.astype("datetime64[s]").astype("int64")
+        try:
+            unix = df.index.asi8 // 1_000_000_000
+        except Exception:
+            unix = df.index.astype("datetime64[s]").astype("int64")
         mask = pd.Series(True, index=df.index)
         if from_ts is not None:
             mask = mask & (unix >= from_ts)
@@ -942,15 +983,24 @@ def _build_chart_base(
         df = df.loc[mask]
 
     if df.empty:
-        return {"candles": [], "indicators": {}}
+        return {"candles": [], "indicators": {}, "has_more": False, "bar_count": 0}
 
-    # Caller-supplied limit (e.g. validate panel) takes precedence, then the global cap.
-    cap = limit_bars if limit_bars else _MAX_CHART_BARS
-    if len(df) > cap:
-        df = df.iloc[-cap:]
+    # Caller-supplied limit_bars (validate panel) takes precedence over windowed limit.
+    cap = limit_bars if limit_bars else limit
+
+    # Load extra warmup bars so indicators are valid at the first returned bar.
+    warmup = estimate_warmup_bars(indicator_specs) if indicator_specs else 0
+    total_needed = cap + warmup
+    has_more = len(df) > total_needed
+    if len(df) > total_needed:
+        df = df.iloc[-total_needed:]
 
     if indicator_specs:
         df = apply_indicators(df, indicator_specs)
+
+    # Trim warmup prefix — the remaining rows all have valid indicator values.
+    if len(df) > cap:
+        df = df.iloc[-cap:]
 
     # Build candle list — skip rows with invalid prices
     import math as _math
@@ -1006,7 +1056,12 @@ def _build_chart_base(
         except Exception:
             pass
 
-    return {"candles": candles, "indicators": indicators}
+    return {
+        "candles": candles,
+        "indicators": indicators,
+        "has_more": has_more,
+        "bar_count": len(candles),
+    }
 
 
 def _load_economic_events(artifact_path: str, from_unix: int, to_unix: int) -> list[dict]:

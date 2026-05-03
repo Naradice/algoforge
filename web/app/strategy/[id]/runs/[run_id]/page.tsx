@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher } from "@/lib/fetcher";
 import { EquityChart } from "@/components/equity-chart";
 import { MetricsGrid } from "@/components/metrics-grid";
 import { StrategyChart } from "@/components/strategy-chart";
@@ -29,6 +29,16 @@ interface RunEvent {
   [key: string]: unknown;
 }
 
+// Declared outside the component so the type is available before any hooks run
+type ChartAccum = {
+  candles: any[];
+  indicators: Record<string, any>;
+  markers: any[];
+  events?: any[];
+  has_more: boolean;
+  bar_count: number;
+};
+
 export default function RunDetailPage() {
   const params = useParams<{ id: string; run_id: string }>();
   const router = useRouter();
@@ -53,16 +63,10 @@ export default function RunDetailPage() {
   const [chartTo, setChartTo] = useState("");
   const [appliedRange, setAppliedRange] = useState({ from: "", to: "" });
   const [chartMode, setChartMode] = useState<"indicators" | "conditions">("indicators");
+  const [accumulated, setAccumulated] = useState<ChartAccum | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
-  function chartDataUrl() {
-    const base = `/api/v1/strategies/${strategyId}/runs/${runId}/chart-data`;
-    const p = new URLSearchParams();
-    if (appliedRange.from) p.set("from_ts", String(Math.floor(new Date(appliedRange.from).getTime() / 1000)));
-    if (appliedRange.to)   p.set("to_ts",   String(Math.floor(new Date(appliedRange.to).getTime()   / 1000)));
-    const qs = p.toString();
-    return qs ? `${base}?${qs}` : base;
-  }
-
+  // SWR hooks — run must be declared before chartUrl because it appears in the deps array
   const { data: strategy } = useSWR(strategyUrl, fetcher);
   const { data: run, mutate: mutateRun } = useSWR(runUrl, fetcher, {
     refreshInterval: (data) => (data?.status === "running" || data?.status === "pending") ? 3000 : 0,
@@ -73,11 +77,79 @@ export default function RunDetailPage() {
   const { data: equityData } = useSWR(equityUrl, fetcher);
   const { data: trades } = useSWR(tradesUrl, fetcher);
   const { data: chatHistory, mutate: mutateChat } = useSWR(chatUrl, fetcher);
-  const { data: chartData, isLoading: chartLoading } = useSWR(
-    run?.status === "completed" ? chartDataUrl() : null,
+
+  // chartUrl depends on run.status — must come after the run useSWR
+  const chartUrl = useMemo(() => {
+    if (run?.status !== "completed") return null;
+    const base = `/api/v1/strategies/${strategyId}/runs/${runId}/chart-data`;
+    const p = new URLSearchParams();
+    if (appliedRange.from) p.set("from_ts", String(Math.floor(new Date(appliedRange.from).getTime() / 1000)));
+    if (appliedRange.to)   p.set("to_ts",   String(Math.floor(new Date(appliedRange.to).getTime()   / 1000)));
+    const qs = p.toString();
+    return qs ? `${base}?${qs}` : base;
+  }, [strategyId, runId, run?.status, appliedRange]);
+
+  const { data: freshChartData, isLoading: chartLoading } = useSWR(
+    chartUrl,
     fetcher,
     { revalidateOnFocus: false },
   );
+
+  // Reset accumulated state when the chart URL changes (different range / run)
+  useEffect(() => { setAccumulated(null); }, [chartUrl]);
+  // Seed accumulator from SWR's initial fetch
+  useEffect(() => { if (freshChartData) setAccumulated(freshChartData); }, [freshChartData]);
+
+  async function loadOlderBars() {
+    if (!accumulated?.candles.length || loadingOlder) return;
+    const earliestTs = Math.min(...accumulated.candles.map((c: any) => c.time));
+    const base = `/api/v1/strategies/${strategyId}/runs/${runId}/chart-data`;
+    setLoadingOlder(true);
+    try {
+      const res = await apiFetch(`${base}?to_ts=${earliestTs - 1}&limit=2000`);
+      if (!res.ok) return;
+      const body = await res.json();
+      const older: ChartAccum = body.data ?? body;
+      setAccumulated((prev) => {
+        if (!prev) return older;
+        const seenTimes = new Set(prev.candles.map((c: any) => c.time));
+        const newCandles = [
+          ...(older.candles ?? []).filter((c: any) => !seenTimes.has(c.time)),
+          ...prev.candles,
+        ];
+        const mergedIndicators: Record<string, any> = { ...prev.indicators };
+        for (const [key, series] of Object.entries(older.indicators ?? {})) {
+          if (mergedIndicators[key]) {
+            const existTimes = new Set(mergedIndicators[key].data?.map((p: any) => p.time));
+            mergedIndicators[key] = {
+              ...mergedIndicators[key],
+              data: [
+                ...((series as any).data ?? []).filter((p: any) => !existTimes.has(p.time)),
+                ...(mergedIndicators[key].data ?? []),
+              ],
+            };
+          } else {
+            mergedIndicators[key] = series;
+          }
+        }
+        const seenMarkers = new Set(prev.markers?.map((m: any) => `${m.time}:${m.color}:${m.shape}`));
+        const mergedMarkers = [
+          ...(older.markers ?? []).filter((m: any) => !seenMarkers.has(`${m.time}:${m.color}:${m.shape}`)),
+          ...(prev.markers ?? []),
+        ].sort((a: any, b: any) => a.time - b.time);
+        return {
+          ...prev,
+          candles: newCandles,
+          indicators: mergedIndicators,
+          markers: mergedMarkers,
+          has_more: older.has_more ?? false,
+          bar_count: newCandles.length,
+        };
+      });
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
 
   const onSSEEvent = useCallback((data: unknown) => {
     setEvents((prev) => [data as RunEvent, ...prev].slice(0, 200));
@@ -91,7 +163,7 @@ export default function RunDetailPage() {
   async function handleStop() {
     setStopping(true);
     try {
-      await fetch(`/api/v1/strategies/${strategyId}/runs/${runId}/stop`, { method: "POST" });
+      await apiFetch(`/api/v1/strategies/${strategyId}/runs/${runId}/stop`, { method: "POST" });
       mutateRun();
     } finally {
       setStopping(false);
@@ -109,7 +181,7 @@ export default function RunDetailPage() {
     const msg = chatInput;
     setChatInput("");
     try {
-      await fetch(chatUrl, {
+      await apiFetch(chatUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: msg }),
@@ -228,24 +300,38 @@ export default function RunDetailPage() {
                 Reset
               </button>
             )}
-            {chartData && (
-              <span className="text-xs text-gray-600 ml-auto">{chartData.candles?.length ?? 0} bars</span>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {accumulated?.has_more && (
+                <button
+                  onClick={loadOlderBars}
+                  disabled={loadingOlder}
+                  className="text-xs text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                >
+                  {loadingOlder ? "Loading…" : "← Load older"}
+                </button>
+              )}
+              {accumulated && (
+                <span className="text-xs text-gray-600">
+                  {accumulated.bar_count ?? accumulated.candles?.length ?? 0} bars
+                  {accumulated.has_more && <span className="text-gray-700"> · more available</span>}
+                </span>
+              )}
+            </div>
           </div>
           {chartLoading && (
             <div className="flex items-center justify-center h-16 text-gray-500 text-sm">Loading chart…</div>
           )}
-          {chartData && (
+          {accumulated && (
             <StrategyChart
-              candles={chartData.candles ?? []}
+              candles={accumulated.candles ?? []}
               indicators={Object.fromEntries(
-                Object.entries(chartData.indicators ?? {}).filter(([, s]: [string, any]) =>
+                Object.entries(accumulated.indicators ?? {}).filter(([, s]: [string, any]) =>
                   chartMode === "conditions"
                     ? true
                     : !(s.group?.startsWith("cond:") || s.line_style === "dashed" || s.line_style === "step")
                 )
               )}
-              markers={chartData.markers ?? []}
+              markers={accumulated.markers ?? []}
             />
           )}
         </div>

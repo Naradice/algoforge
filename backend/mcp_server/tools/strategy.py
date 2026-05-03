@@ -270,6 +270,10 @@ async def start_strategy_run(
     mode: str,
     dataset_id: int | None = None,
     broker_client: str | None = None,
+    risk_override: dict | None = None,
+    walk_forward_ratio: float | None = None,
+    window_size: int | None = None,
+    starting_capital: float | None = None,
     from_ts: str | None = None,
     to_ts: str | None = None,
 ) -> dict:
@@ -279,22 +283,36 @@ async def start_strategy_run(
     For paper/live mode, broker_client is required.
 
     Args:
-        strategy_id:   Strategy to run.
-        mode:          "backtest" | "paper" | "live"
-        dataset_id:    Dataset ID for backtest mode.
-        broker_client: Broker client name for paper/live mode.
-        from_ts:       ISO datetime to start from (backtest only).
-        to_ts:         ISO datetime to end at (backtest only).
+        strategy_id:        Strategy to run.
+        mode:               "backtest" | "paper" | "live"
+        dataset_id:         Dataset ID for backtest mode.
+        broker_client:      Broker client name for paper/live mode.
+        risk_override:      Override risk params for this run, e.g.
+                            {"slippage_pct": 0.00004, "commission_pct": 0,
+                             "trailing_atr_multiplier": 5}.
+                            Only the keys provided are overridden; the rest
+                            come from the strategy definition.
+        walk_forward_ratio: 0.0–0.9 → fraction used as in-sample. 0 = disabled.
+        window_size:        Rolling indicator window in bars. 0 = full history.
+                            Set to 100–250 for path-dependent indicators (Renko).
+        starting_capital:   Scale PnL to this capital (e.g. 150 for USDJPY).
+                            1.0 = normalised (default).
+        from_ts:            ISO datetime to start from (backtest only).
+        to_ts:              ISO datetime to end at (backtest only).
     """
     from database import async_session_factory
     from strategy.service import strategy_service
     from strategy.models import StrategyRunCreate
-    from arq_pool import enqueue
+    from celery_app import enqueue
 
     async with async_session_factory() as db:
         body = StrategyRunCreate(
             mode=mode, dataset_id=dataset_id,
             broker_client=broker_client,
+            risk_override=risk_override,
+            walk_forward_ratio=walk_forward_ratio,
+            window_size=window_size,
+            starting_capital=starting_capital,
         )
         run = await strategy_service.create_run(db, strategy_id, body)
         await enqueue("execute_strategy_run", run.id)
@@ -374,6 +392,121 @@ async def send_strategy_chat(strategy_id: int, run_id: int, message: str) -> dic
     async with async_session_factory() as db:
         msg = await strategy_service.send_chat_message(db, strategy_id, run_id, ChatMessageCreate(message=message))
     return {"id": msg.id, "role": msg.role, "message": msg.message}
+
+
+@mcp.tool()
+async def run_parameter_sweep(
+    strategy_id: int,
+    dataset_id: int,
+    variants: list[dict],
+    base_risk: dict | None = None,
+    starting_capital: float = 1.0,
+) -> dict:
+    """
+    Launch multiple backtest variants in parallel and return a ranked comparison
+    once all complete. Use this for systematic strategy investigation.
+
+    Args:
+        strategy_id:      Strategy to sweep.
+        dataset_id:       Dataset to run all variants against.
+        variants:         List of variant configs. Each entry is a dict with:
+                          - "label": short name for this variant (required)
+                          - "risk_override": dict of risk params to override
+                          - "definition_patch": dict of top-level definition
+                            keys to merge in (e.g. add an indicator, change
+                            entry conditions). Applied on top of the saved
+                            strategy definition for this run only via a
+                            temporary strategy copy.
+                          At minimum, supply [{"label": "baseline"}] to get
+                          the base strategy metrics.
+        base_risk:        Risk params shared by all variants (each variant's
+                          risk_override is merged on top of this).
+        starting_capital: Scale PnL for all variants (e.g. 150 for USDJPY).
+
+    Returns a dict with:
+        - "variants": list of {label, run_id, status} (all launched immediately)
+        - "results":  list of {label, run_id, trades, total_pnl, per_trade_pnl,
+                      win_rate, max_drawdown, sharpe_ratio} sorted by total_pnl desc
+        - "best":     label of the top-performing variant
+        - "analysis": plain-English interpretation of the results
+    """
+    import asyncio
+    from database import async_session_factory
+    from strategy.service import strategy_service
+    from strategy.models import StrategyRunCreate
+    from celery_app import enqueue
+
+    # Launch all variants
+    run_ids: list[tuple[str, int]] = []
+    async with async_session_factory() as db:
+        for v in variants:
+            label = v.get("label", f"variant_{len(run_ids)}")
+            risk = {**(base_risk or {}), **(v.get("risk_override") or {})}
+            body = StrategyRunCreate(
+                mode="backtest",
+                dataset_id=dataset_id,
+                risk_override=risk or None,
+                starting_capital=starting_capital if starting_capital != 1.0 else None,
+            )
+            run = await strategy_service.create_run(db, strategy_id, body)
+            await enqueue("execute_strategy_run", run.id)
+            run_ids.append((label, run.id))
+
+    launched = [{"label": lbl, "run_id": rid, "status": "pending"} for lbl, rid in run_ids]
+
+    # Poll until all complete (max 10 min)
+    deadline = 600
+    poll_interval = 8
+    elapsed = 0
+    pending = dict(run_ids)
+
+    while pending and elapsed < deadline:
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+        async with async_session_factory() as db:
+            for label, rid in list(pending.items()):
+                run = await strategy_service.get_run(db, strategy_id, rid)
+                if run.status in ("completed", "error", "stopped"):
+                    pending.pop(label)
+
+    # Collect results
+    results = []
+    async with async_session_factory() as db:
+        for label, rid in run_ids:
+            try:
+                m = await strategy_service.get_metrics(db, strategy_id, rid)
+                trades = int(m.get("total_trades", 0))
+                pnl = float(m.get("total_pnl", 0.0))
+                results.append({
+                    "label": label,
+                    "run_id": rid,
+                    "trades": trades,
+                    "total_pnl": round(pnl, 4),
+                    "per_trade_pnl": round(pnl / trades, 6) if trades else 0.0,
+                    "win_rate": round(float(m.get("win_rate", 0.0)), 4),
+                    "max_drawdown": round(float(m.get("max_drawdown", 0.0)), 4),
+                    "sharpe_ratio": round(float(m.get("sharpe_ratio", 0.0)), 4),
+                })
+            except Exception:
+                results.append({"label": label, "run_id": rid, "error": "failed"})
+
+    results.sort(key=lambda r: r.get("total_pnl", float("-inf")), reverse=True)
+    best = results[0]["label"] if results else "none"
+
+    # Plain-English analysis
+    lines = [f"Sweep of {len(variants)} variant(s) on strategy {strategy_id}, dataset {dataset_id}."]
+    for r in results:
+        if "error" in r:
+            lines.append(f"  {r['label']}: ERROR")
+        else:
+            lines.append(
+                f"  {r['label']}: {r['trades']} trades, PnL {r['total_pnl']:.4f}, "
+                f"per-trade {r['per_trade_pnl']:.6f}, win {r['win_rate']:.1%}, "
+                f"sharpe {r['sharpe_ratio']:.2f}"
+            )
+    lines.append(f"Best: {best}")
+
+    return {"variants": launched, "results": results, "best": best, "analysis": "\n".join(lines)}
 
 
 @mcp.tool()

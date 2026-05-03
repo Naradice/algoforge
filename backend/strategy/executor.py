@@ -133,9 +133,11 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
     import contextlib
     import functools
     wf_ratio = run.walk_forward_ratio or 0.0
+    win_size = run.window_size or 0
+    start_cap = run.starting_capital or 1.0
     _watcher = asyncio.create_task(_progress_watcher())
     try:
-        raw_trades, metrics, equity_curve = await asyncio.get_event_loop().run_in_executor(
+        raw_trades, metrics, equity_curve = await asyncio.get_running_loop().run_in_executor(
             None,
             functools.partial(
                 run_backtest,
@@ -144,6 +146,8 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
                 on_progress=_on_progress,
                 model_cache=model_cache,
                 walk_forward_ratio=wf_ratio,
+                window_size=win_size,
+                starting_capital=start_cap,
             ),
         )
     except Exception as e:

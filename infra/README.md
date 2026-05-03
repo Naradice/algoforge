@@ -81,6 +81,8 @@ command: >
   sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
 ```
 
+In `docker-compose.dev.yml`, the backend still uses `uvicorn --reload`, but generated `artifacts/` paths are excluded from file watching so data collection and backtests do not trigger reload crashes on Docker Desktop / Windows.
+
 Service dependencies are handled via health checks:
 - `backend` and `ml_worker` wait for postgres and redis to be healthy before starting
 - `web` waits for `backend` to start

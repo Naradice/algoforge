@@ -71,8 +71,14 @@ class StrategyRepository:
         run_id: int,
         offset: int = 0,
         limit: int = 100,
+        from_dt=None,  # datetime | None — inclusive lower bound on opened_at
+        to_dt=None,    # datetime | None — inclusive upper bound on opened_at
     ) -> tuple[list[Trade], int]:
         base = select(Trade).where(Trade.run_id == run_id)
+        if from_dt is not None:
+            base = base.where(Trade.opened_at >= from_dt)
+        if to_dt is not None:
+            base = base.where(Trade.opened_at <= to_dt)
         total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
         items = (await db.execute(
             base.order_by(Trade.opened_at).offset(offset).limit(limit)

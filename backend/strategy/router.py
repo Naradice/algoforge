@@ -76,7 +76,7 @@ async def condition_stats(body: ConditionStatsRequest, db: AsyncSession = Depend
             "combined_pct": round(combined / total * 100, 1) if total else 0.0,
         }
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     stats = await loop.run_in_executor(None, functools.partial(compute))
     return DataResponse(data=stats)
 
@@ -269,14 +269,16 @@ async def get_chart_data(
     run_id: int,
     from_ts: int | None = None,
     to_ts: int | None = None,
+    limit: int = 2_000,
     db: AsyncSession = Depends(get_db),
 ):
     """Return OHLC candles + indicator series + trade markers for the run chart.
 
-    Optional from_ts / to_ts (Unix seconds) restrict the time window and allow
-    fetching a short range at the original bar resolution instead of resampled.
+    Optional from_ts / to_ts (Unix seconds) restrict the time window.
+    limit controls how many bars are returned (default 2000).
+    Response includes has_more=true when older data exists before the window.
     """
-    data = await strategy_service.get_chart_data(db, strategy_id, run_id, from_ts=from_ts, to_ts=to_ts)
+    data = await strategy_service.get_chart_data(db, strategy_id, run_id, from_ts=from_ts, to_ts=to_ts, limit=limit)
     return DataResponse(data=data)
 
 
@@ -287,6 +289,58 @@ async def get_trade_detail(
 ):
     detail = await strategy_service.get_trade_detail(db, strategy_id, run_id, trade_id)
     return DataResponse(data=detail)
+
+
+class CostOverlayRequest(BaseModel):
+    slippage_pct: float = 0.0
+    commission_pct: float = 0.0
+
+
+@router.post("/{strategy_id}/runs/{run_id}/cost-overlay")
+async def cost_overlay(
+    strategy_id: int,
+    run_id: int,
+    body: CostOverlayRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Recompute run metrics with different cost assumptions — no re-run needed.
+
+    Returns adjusted metrics plus the original costs used in the run so the
+    frontend can initialise sliders to the correct starting values.
+    """
+    from strategy.engine.backtest import _metrics_for
+
+    run = await strategy_service.get_run(db, strategy_id, run_id)
+    strategy = await strategy_service.get_strategy(db, strategy_id)
+
+    risk = {**((strategy.definition or {}).get("risk", {}))}
+    if run.risk_override:
+        risk.update(run.risk_override)
+    orig_slip = float(risk.get("slippage_pct", 0.0005))
+    orig_comm = float(risk.get("commission_pct", 0.001))
+
+    trades, _ = await strategy_service.get_trades(db, strategy_id, run_id, limit=100_000)
+    if not trades:
+        return DataResponse(data={
+            "metrics": {}, "orig_metrics": {},
+            "orig_slip": orig_slip, "orig_comm": orig_comm,
+        })
+
+    # Approximate cost delta: treat slippage as a round-trip cost applied once
+    # per trade (entry + exit, same direction), commission once per trade.
+    adjusted, orig_dicts = [], []
+    for t in trades:
+        vol = float(t.volume or 1.0)
+        delta = ((orig_comm - body.commission_pct) + 2.0 * (orig_slip - body.slippage_pct)) * vol
+        adjusted.append({"profit": float(t.profit or 0.0) + delta})
+        orig_dicts.append({"profit": float(t.profit or 0.0)})
+
+    return DataResponse(data={
+        "metrics": _metrics_for(adjusted),
+        "orig_metrics": _metrics_for(orig_dicts),
+        "orig_slip": orig_slip,
+        "orig_comm": orig_comm,
+    })
 
 
 @router.get("/{strategy_id}/runs/{run_id}/events")
@@ -310,3 +364,22 @@ async def list_versions(strategy_id: int, db: AsyncSession = Depends(get_db)):
     versions = await strategy_service.list_versions(db, strategy_id)
     from strategy.models import StrategyVersionRead
     return DataResponse(data=[StrategyVersionRead.model_validate(v) for v in versions])
+
+
+@router.post("/{strategy_id}/investigate")
+async def investigate_strategy(strategy_id: int, body: dict):
+    """Stream an AI-driven investigation of the strategy as SSE events.
+
+    Body: { "dataset_id": <int> }
+    Events: start | thinking | tool_call | tool_result | done | error
+    """
+    dataset_id = body.get("dataset_id")
+    if not dataset_id:
+        raise HTTPException(status_code=422, detail="dataset_id is required")
+    from strategy.investigation import stream_investigation
+    gen = stream_investigation(strategy_id, int(dataset_id))
+    return StreamingResponse(
+        gen,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

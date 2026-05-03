@@ -36,6 +36,25 @@ Regime condition — requires a `rangetrend` indicator in the same strategy:
         bull   →  {id}_trend  >  threshold   (uptrend)
         bear   →  {id}_trend  < -threshold   (downtrend)
 
+Rolling condition — applies a rolling aggregation to a column then compares the result:
+    {
+        "type": "rolling",
+        "function": "sum",   # sum | mean | std | min | max | diff | pct_change
+        "column": "renko_momentum",
+        "window": 2,
+        "op": ">=",
+        "right": 2
+    }
+
+    function semantics:
+        sum        →  column.rolling(window).sum()
+        mean       →  column.rolling(window).mean()
+        std        →  column.rolling(window).std()
+        min        →  column.rolling(window).min()
+        max        →  column.rolling(window).max()
+        diff       →  column - column.shift(window)
+        pct_change →  column.pct_change(window)  (fractional, e.g. 0.05 = 5%)
+
 ML signal condition:
     {
         "type": "ml_signal",
@@ -115,6 +134,31 @@ def _eval_one(
             raise KeyError(f"Condition group '{group_id}' not found in definition.")
         return evaluate_conditions(row, group_def, context=context)
 
+    if ctype in ("rolling", "window_sum"):  # window_sum kept for back-compat
+        df_upto = context.get("df_upto") if context else None
+        if df_upto is None or len(df_upto) == 0:
+            return False
+        col = cond.get("column", cond.get("left", "close"))
+        fn = cond.get("function", "sum")
+        window = int(cond.get("window", 2))
+        op = cond.get("op", ">=")
+        right = float(cond.get("right", 0))
+        if col not in df_upto.columns or len(df_upto) < window:
+            return False
+        s = df_upto[col].iloc[-window:]
+        if fn == "sum":        val = float(s.sum())
+        elif fn == "mean":     val = float(s.mean())
+        elif fn == "std":      val = float(s.std())
+        elif fn == "min":      val = float(s.min())
+        elif fn == "max":      val = float(s.max())
+        elif fn == "diff":     val = float(df_upto[col].iloc[-1] - df_upto[col].iloc[-window - 1]) if len(df_upto) > window else float("nan")
+        elif fn == "pct_change":
+            base = float(df_upto[col].iloc[-window - 1]) if len(df_upto) > window else float("nan")
+            val = (float(df_upto[col].iloc[-1]) - base) / base if base and base != 0 else float("nan")
+        else:
+            return False
+        return False if (val != val) else _compare(val, op, right)
+
     if ctype == "regime":
         return _eval_regime(row, cond)
 
@@ -170,6 +214,10 @@ def _eval_regime(row: pd.Series, cond: dict) -> bool:
         return val > threshold if mode == "bull" else val < -threshold
 
     raise ValueError(f"Unknown regime mode: {mode!r}. Use 'range', 'trend', 'bull', or 'bear'.")
+
+
+def _compare(a: float, op: str, b: float) -> bool:
+    return {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b, "==": a == b, "!=": a != b}.get(op, False)
 
 
 def _eval_comparison(row: pd.Series, cond: dict) -> bool:
@@ -232,6 +280,29 @@ def eval_condition_series(df: pd.DataFrame, cond: dict) -> "pd.Series | None":
         groups = (bool_s != bool_s.shift()).cumsum()
         streak_s = bool_s.groupby(groups).cumcount() + 1
         return streak_s.where(bool_s, 0) >= min_streak
+
+    if ctype in ("rolling", "window_sum"):
+        col = cond.get("column", cond.get("left", "close"))
+        fn = cond.get("function", "sum")
+        window = int(cond.get("window", 2))
+        op = cond.get("op", ">=")
+        right = float(cond.get("right", 0))
+        if col not in df.columns:
+            return pd.Series(False, index=df.index)
+        s = df[col]
+        r = s.rolling(window, min_periods=window)
+        if fn == "sum":          rolled = r.sum()
+        elif fn == "mean":       rolled = r.mean()
+        elif fn == "std":        rolled = r.std()
+        elif fn == "min":        rolled = r.min()
+        elif fn == "max":        rolled = r.max()
+        elif fn == "diff":       rolled = s.diff(window)
+        elif fn == "pct_change": rolled = s.pct_change(window)
+        else:
+            return pd.Series(False, index=df.index)
+        ops = {">": rolled > right, "<": rolled < right, ">=": rolled >= right,
+               "<=": rolled <= right, "==": rolled == right, "!=": rolled != right}
+        return ops.get(op, pd.Series(False, index=df.index)).fillna(False)
 
     if ctype == "regime":
         indicator = cond.get("indicator", "rt")

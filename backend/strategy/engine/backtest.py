@@ -29,9 +29,10 @@ Definition format (new)
     "max_positions":       1,            # max simultaneous open trades
     "daily_loss_limit_pct":    0.0,      # 0 = disabled; circuit breaker
     "cooldown_bars":           0,        # bars to skip after a loss
-    "trailing_stop":           false,    # ATR-based trailing stop (requires atr indicator)
-    "trailing_atr_multiplier": 3.0,      # distance from close in ATR multiples
-    "trailing_clip_with_price": false,   # floor stop at entry price (breakeven guarantee)
+    "trailing_stop":            false,    # ATR-based trailing stop (requires atr indicator)
+    "trailing_atr_multiplier":  3.0,     # distance from close in ATR multiples
+    "trailing_clip_with_price": false,   # clip stop to entry price (breakeven floor)
+    "trailing_only_in_profit":  true,    # only move stop when position is profitable (matches trade_strategy default)
   }
 }
 
@@ -94,11 +95,16 @@ def run_backtest(
     stop_event=None,  # threading.Event — set to abort early
     model_cache: dict | None = None,
     walk_forward_ratio: float = 0.0,
+    window_size: int = 0,
+    starting_capital: float = 1.0,
 ) -> tuple[list[dict], dict, list[dict]]:
     """
     Load the dataset parquet and run a bar-by-bar simulation.
 
     walk_forward_ratio: fraction of bars used as in-sample (0 = disabled).
+    window_size: rolling indicator window in bars (0 = full history). Use N > 0
+        for path-dependent indicators like Renko to match live trading behaviour;
+        indicators are recomputed on the last N bars at each step (slower).
     Returns (trades, summary_metrics, equity_curve).
     """
     from strategy.engine.llm_condition import clear_cache as _clear_llm_cache
@@ -138,12 +144,13 @@ def run_backtest(
     trading_halted_date: date | None = None
     day_loss: dict[date, float] = {}
 
-    # Pre-compute indicators on the full dataset once (O(n) instead of O(n²)).
-    # Standard backward-looking indicators give the same value at bar i regardless
-    # of whether computed on the full series or only on data up to bar i.
-    # Skip pre-computation when n <= warmup_bars: the whole dataset is warmup,
-    # so conditions are never evaluated and indicator columns are never needed.
-    if indicator_specs and n > warmup_bars:
+    # Rolling-window mode: recompute indicators on the last window_size bars at each
+    # step. Required for path-dependent indicators (e.g. Renko) to match live
+    # behaviour. Full-history mode (window_size=0): precompute once — O(n) vs O(n×w).
+    effective_warmup = max(warmup_bars, window_size) if window_size > 0 else warmup_bars
+    if window_size > 0:
+        df_with_indicators = None  # computed per-bar below
+    elif indicator_specs and n > effective_warmup:
         df_with_indicators = apply_indicators(raw_df, indicator_specs)
     else:
         df_with_indicators = raw_df
@@ -157,7 +164,7 @@ def run_backtest(
         bar_dt = _row_dt(ts)
         bar_date = bar_dt.date()
 
-        if (i + 1) < warmup_bars:
+        if (i + 1) < effective_warmup:
             equity_curve.append({
                 "timestamp": bar_dt.isoformat(),
                 "equity": round(equity, 6),
@@ -168,8 +175,16 @@ def run_backtest(
                 on_progress(100.0 * i / n)
             continue
 
-        row = df_with_indicators.iloc[i]
-        df_upto = df_with_indicators.iloc[: i + 1]
+        if window_size > 0:
+            start = max(0, i - window_size + 1)
+            slice_df = raw_df.iloc[start : i + 1]
+            if indicator_specs:
+                slice_df = apply_indicators(slice_df, indicator_specs)
+            row = slice_df.iloc[-1]
+            df_upto = slice_df
+        else:
+            row = df_with_indicators.iloc[i]
+            df_upto = df_with_indicators.iloc[: i + 1]
         close = float(row["close"])
         high  = float(row["high"])  if "high"  in row.index else close
         low   = float(row["low"])   if "low"   in row.index else close
@@ -247,15 +262,20 @@ def run_backtest(
         # ── Trailing stop update ─────────────────────────────────────────
         # Runs AFTER SL/TP check: the new stop level takes effect from the
         # next bar onward, matching trade_strategy's TrailingStopByATR behaviour.
+        # trailing_only_in_profit=True (default): stop is only moved when the
+        # position is currently profitable, matching TrailingStopByATR's
+        # "close > entry_price" guard in trade_strategy.
         if rp.trailing_stop and atr is not None:
             trail_dist = rp.trailing_atr_multiplier * atr
-            if pos_long and close > pos_long.entry_price:
+            long_in_profit = (not rp.trailing_only_in_profit) or (close > pos_long.entry_price) if pos_long else False
+            short_in_profit = (not rp.trailing_only_in_profit) or (close < pos_short.entry_price) if pos_short else False
+            if pos_long and long_in_profit:
                 new_sl = close - trail_dist
                 if rp.trailing_clip_with_price and new_sl < pos_long.entry_price:
                     new_sl = pos_long.entry_price
                 if pos_long.sl_price is None or new_sl > pos_long.sl_price:
                     pos_long.sl_price = new_sl
-            if pos_short and close < pos_short.entry_price:
+            if pos_short and short_in_profit:
                 new_sl = close + trail_dist
                 if rp.trailing_clip_with_price and new_sl > pos_short.entry_price:
                     new_sl = pos_short.entry_price
@@ -370,6 +390,16 @@ def run_backtest(
         p["drawdown"] = round(float(drawdowns[j]), 6)
 
     metrics = _compute_metrics(trades, equity_curve, raw_df, split_idx)
+
+    if starting_capital != 1.0:
+        sc = starting_capital
+        for t in trades:
+            t["profit"] = round(t["profit"] * sc, 6)
+        for p in equity_curve:
+            p["equity"] = round(p["equity"] * sc, 4)
+            p["drawdown"] = round(p["drawdown"] * sc, 4)
+        metrics = _compute_metrics(trades, equity_curve, raw_df, split_idx)
+
     return trades, metrics, equity_curve
 # ---------------------------------------------------------------------------
 # Helpers
@@ -381,6 +411,58 @@ def _record_day_loss(day_loss: dict[date, float], d: date, pnl: float) -> None:
 
 
 _MAX_TICK_FILES = 100
+
+
+def _load_df_windowed(
+    path: Path,
+    n_bars: int,
+    to_ts: float | None = None,
+    warmup_bars: int = 0,
+) -> tuple[pd.DataFrame, bool]:
+    """Load the last (n_bars + warmup_bars) OHLC bars, optionally capped at to_ts.
+
+    Returns (df, has_more). df includes warmup rows at the start so callers can
+    apply indicators and then trim the warmup prefix before returning to clients.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset artifact not found: {path}")
+
+    total_needed = n_bars + warmup_bars
+
+    if path.is_dir():
+        from data.parquet_reader import load_ddm_ticks_windowed
+        n_files = max(20, total_needed // 300 + 10)
+        tick_df, file_has_more = load_ddm_ticks_windowed(path, n_files=n_files, to_ts=to_ts)
+        if tick_df.empty:
+            empty = pd.DataFrame(columns=["open", "high", "low", "close"])
+            return empty, False
+        ohlc = tick_df["price"].resample("1min").ohlc()
+        ohlc.columns = ["open", "high", "low", "close"]
+        ohlc["volume"] = tick_df["price"].resample("1min").count()
+        df = ohlc.dropna().sort_index()
+        df.columns = [c.lower() for c in df.columns]
+        has_more = file_has_more or len(df) > total_needed
+    else:
+        df = pd.read_parquet(path)
+        df.columns = [c.lower() for c in df.columns]
+        if "close" not in df.columns:
+            raise ValueError("Dataset missing required column: 'close'")
+        df = df.sort_index()
+
+        if to_ts is not None:
+            try:
+                unix = df.index.asi8 // 1_000_000_000
+            except Exception:
+                unix = df.index.astype("datetime64[s]").astype("int64")
+            df = df[unix <= int(to_ts)]
+
+        has_more = len(df) > total_needed
+
+    if len(df) > total_needed:
+        df = df.iloc[-total_needed:]
+
+    return df, has_more
+
 
 def _load_df(path: Path) -> pd.DataFrame:
     if not path.exists():
@@ -482,4 +564,17 @@ def _compute_metrics(
     oos_m = {f"oos_{k}": v for k, v in _metrics_for(oos_trades).items()}
 
     combined = _metrics_for(trades)
+
+    # Overfitting score: OOS PnL / IS PnL. 1.0 = perfect generalisation, < 0 = OOS losing.
+    # Capped at [-2, 2] to keep it displayable.
+    is_pnl  = is_m.get("is_total_pnl",  0.0)
+    oos_pnl = oos_m.get("oos_total_pnl", 0.0)
+    if abs(is_pnl) > 1e-9:
+        oos_consistency = round(max(-2.0, min(2.0, oos_pnl / is_pnl)), 4)
+    elif oos_pnl >= 0:
+        oos_consistency = 1.0
+    else:
+        oos_consistency = -1.0
+    combined["oos_consistency"] = oos_consistency
+
     return {**combined, **is_m, **oos_m}

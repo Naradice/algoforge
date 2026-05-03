@@ -33,6 +33,7 @@ class RiskParams:
     trailing_stop: bool = False
     trailing_atr_multiplier: float = 3.0
     trailing_clip_with_price: bool = False
+    trailing_only_in_profit: bool = True
 
     @classmethod
     def from_dict(cls, data: dict) -> "RiskParams":
@@ -51,6 +52,7 @@ class RiskParams:
             trailing_stop=bool(data.get("trailing_stop", False)),
             trailing_atr_multiplier=float(data.get("trailing_atr_multiplier", 3.0)),
             trailing_clip_with_price=bool(data.get("trailing_clip_with_price", False)),
+            trailing_only_in_profit=bool(data.get("trailing_only_in_profit", True)),
         )
 
 

@@ -24,6 +24,8 @@ in AlgoForge strategy definitions so existing saved strategies keep working:
                   {id}_pos (continuous brick position: (price - last_ref) / brick_size, same as finance_client renko_BrickSize)
     streak      → {id}  integer count of consecutive bars where left op right is true (default id: streak)
     roc         → {id}                                  (default id: roc)
+    rolling     → {id}  rolling aggregate (sum/mean/std/min/max/diff/pct_change) of an existing column
+    derived     → {id}  result of an arbitrary pandas expression evaluated against the DataFrame
     candle      → {id}_bull_engulf, {id}_bear_engulf,  (default id: candle)
                   {id}_bull_pin, {id}_bear_pin,
                   {id}_bull_outside, {id}_bear_outside
@@ -101,6 +103,10 @@ def _estimate_one_warmup(spec: dict) -> int:
         return int(params.get("period", 10))
     if itype in ("sar", "candle"):
         return 2
+    if itype == "rolling":
+        return int(params.get("window", 2))
+    if itype == "derived":
+        return 1
     return 1
 
 
@@ -352,6 +358,34 @@ def _apply_one(df: pd.DataFrame, itype: str, iid: str, params: dict) -> pd.DataF
         # Vectorised consecutive-True counter: group by run boundaries, cumsum within each run
         groups = (cond != cond.shift()).cumsum()
         df[iid] = cond.astype(int).groupby(groups).cumsum()
+
+    elif itype == "rolling":
+        src = str(params.get("column", "close"))
+        fn = str(params.get("function", "sum"))
+        window = int(params.get("window", 2))
+        if src not in df.columns:
+            raise ValueError(f"Rolling indicator '{iid}': source column '{src}' not found. "
+                             f"Make sure the source indicator is listed before this one.")
+        s = df[src]
+        if fn == "sum":          df[iid] = s.rolling(window).sum()
+        elif fn == "mean":       df[iid] = s.rolling(window).mean()
+        elif fn == "std":        df[iid] = s.rolling(window).std()
+        elif fn == "min":        df[iid] = s.rolling(window).min()
+        elif fn == "max":        df[iid] = s.rolling(window).max()
+        elif fn == "diff":       df[iid] = s.diff(window)
+        elif fn == "pct_change": df[iid] = s.pct_change(window)
+        else:
+            raise ValueError(f"Rolling indicator '{iid}': unknown function {fn!r}. "
+                             f"Use sum, mean, std, min, max, diff, or pct_change.")
+
+    elif itype == "derived":
+        expr = str(params.get("expr", "close"))
+        namespace = {c: df[c] for c in df.columns}
+        try:
+            result = eval(expr, {"__builtins__": {}}, namespace)  # noqa: S307
+            df[iid] = result
+        except Exception as exc:
+            raise ValueError(f"Derived indicator '{iid}': expression error — {exc}") from exc
 
     elif itype == "roc":
         period = int(params.get("period", 10))

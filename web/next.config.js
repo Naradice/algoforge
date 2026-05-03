@@ -1,4 +1,8 @@
 /** @type {import('next').NextConfig} */
+const watchpackPollingEnabled = ["1", "true", "yes"].includes(
+  String(process.env.WATCHPACK_POLLING || "").toLowerCase()
+);
+
 const nextConfig = {
   output: "standalone",
 
@@ -13,14 +17,17 @@ const nextConfig = {
 
   webpack(config, { dev }) {
     if (dev) {
-      // When WATCHPACK_POLLING is enabled (Docker + Windows volume mounts),
-      // watchpack recursively scans every directory on each poll cycle.
-      // Excluding node_modules and .next prevents ENOMEM on memory-constrained hosts.
+      // Keep large generated/vendor trees out of the dev watcher. Polling is opt-in
+      // because recursive scans over Docker Desktop bind mounts can exhaust memory.
       config.watchOptions = {
         ...config.watchOptions,
         ignored: ["**/.git/**", "**/node_modules/**", "**/.next/**"],
-        poll: parseInt(process.env.WATCHPACK_POLLING_INTERVAL || "2000", 10),
-        aggregateTimeout: 300,
+        ...(watchpackPollingEnabled
+          ? {
+              poll: parseInt(process.env.WATCHPACK_POLLING_INTERVAL || "15000", 10),
+              aggregateTimeout: 300,
+            }
+          : {}),
       };
     }
     return config;

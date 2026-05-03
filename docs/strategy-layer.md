@@ -52,7 +52,11 @@ Strategy
   "risk": {
     "sl_pct": 0.02,
     "tp_pct": 0.04,
-    "position_size": 1.0
+    "position_size": 1.0,
+    "trailing_stop": true,
+    "trailing_atr_multiplier": 3.0,
+    "trailing_clip_with_price": false,
+    "trailing_only_in_profit": true
   }
 }
 ```
@@ -74,6 +78,7 @@ The `id` becomes the column name referenced in conditions.
 | `sma` | `<id>` | `period` |
 | `bb` | `<id>_upper`, `<id>_middle`, `<id>_lower` | `period`, `std_dev` |
 | `slope` | `<id>` | `period`, `column` |
+| `renko` | `<id>_direction`, `<id>_flip`, `<id>_momentum` | `atr_window`, `brick_size` |
 
 All indicators also have access to the base OHLCV columns: `open`, `high`, `low`, `close`, `volume`.
 
