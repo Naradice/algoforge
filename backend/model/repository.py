@@ -79,6 +79,15 @@ class ModelRepository:
         result = await db.execute(select(TrainingRun).where(TrainingRun.id == run_id))
         return result.scalar_one_or_none()
 
+    async def get_latest_validation_for_run(self, db: AsyncSession, training_run_id: int) -> ModelValidation | None:
+        result = await db.execute(
+            select(ModelValidation)
+            .where(ModelValidation.training_run_id == training_run_id)
+            .order_by(ModelValidation.computed_at.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
+
     async def get_epoch_metrics(self, db: AsyncSession, training_run_id: int) -> list:
         from model.models import TrainingRunMetric
         result = await db.execute(

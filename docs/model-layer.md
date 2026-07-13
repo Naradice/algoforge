@@ -137,6 +137,14 @@ POST /training-runs/search
 
 Creates one `TrainingRun` per combination and enqueues all. Compare results via `GET /training-runs/compare?run_ids=1,2,3,4`.
 
+Each entry in the compare response also includes `architecture`, `model_name`, `num_params`
+(trainable parameter count, recorded once the model is built at the start of training — `null`
+for `rl_agent` runs, which train outside this worker) and `validation` (the latest
+`ModelValidation.metrics` for that run, or `null` if none has been run yet). The `/model/compare`
+page uses these fields, joined client-side with `GET /datasets/{id}/characteristics` per run's
+`dataset_id`, to plot training-data characteristics (Hurst, periodicity strength, entropy, regime
+changes, etc. — see `docs/data-layer.md`) against model size and performance across runs.
+
 ---
 
 ## Using a Model in a Strategy

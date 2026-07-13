@@ -48,6 +48,7 @@ class TrainingRun(Base):
     best_epoch: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     val_loss: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     eta_seconds: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    num_params: Mapped[int | None] = mapped_column(sa.BigInteger, nullable=True)
     stop_requested: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="false")
     artifact_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -143,6 +144,7 @@ class TrainingRunRead(BaseModel):
     best_epoch: int | None
     val_loss: float | None
     eta_seconds: int | None
+    num_params: int | None
     artifact_path: str | None
     started_at: datetime | None
     ended_at: datetime | None

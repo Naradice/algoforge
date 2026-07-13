@@ -203,6 +203,12 @@ Five additional registered analyses (UI tab "Structure") characterize deeper tim
 | | `bds_statistic` / `bds_pvalue` / `nonlinear` | BDS test for nonlinear dependence | p < 0.05: dependence remains after removing linear structure — series is nonlinear |
 | `regime_changes` | `n_changepoints`, `changepoints`, `avg_segment_length` | PELT changepoint detection (L2 cost, BIC-style penalty) on returns | More changepoints / shorter segments: frequent regime shifts |
 
+The `/data/compare` page (`?ids=1,2,...`) overlays these on a "Structure" tab across multiple
+datasets, fetching `GET /datasets/{id}/characteristics` per dataset — alongside its existing
+"endogenous"/"exogenous" comparison tabs. The
+`/model/compare` page also joins these per-dataset metrics against model size and training
+performance across runs — see `docs/model-layer.md`.
+
 ---
 
 ## Adding a New Datasource Type

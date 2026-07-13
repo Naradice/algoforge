@@ -4,7 +4,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from fastapi import HTTPException
 
 from model.service import ModelService
-from model.models import MLModel, TrainingRun, MLModelUpdate
+from model.models import MLModel, TrainingRun, ModelValidation, MLModelUpdate
 
 
 PATCH = "model.service.model_repo"
@@ -191,9 +191,11 @@ class TestCompareTrainingRuns:
         svc = ModelService()
         run = MagicMock(spec=TrainingRun, id=1, model_id=1, dataset_id=2,
                         hyperparams={}, status="completed", best_epoch=10,
-                        val_loss=0.1, artifact_path="/path")
+                        val_loss=0.1, num_params=None, artifact_path="/path")
         with patch(PATCH) as repo:
             repo.get_training_run_by_id = AsyncMock(return_value=run)
+            repo.get_by_id = AsyncMock(return_value=None)
+            repo.get_latest_validation_for_run = AsyncMock(return_value=None)
 
             result = await svc.compare_training_runs(AsyncMock(), [1])
 
@@ -216,7 +218,7 @@ class TestCompareTrainingRuns:
         svc = ModelService()
         run = MagicMock(spec=TrainingRun, id=1, model_id=1, dataset_id=1,
                         hyperparams={}, status="completed", best_epoch=5,
-                        val_loss=0.2, artifact_path=None)
+                        val_loss=0.2, num_params=None, artifact_path=None)
 
         def side_effect(db, run_id):
             if run_id == 1:
@@ -225,9 +227,47 @@ class TestCompareTrainingRuns:
 
         with patch(PATCH) as repo:
             repo.get_training_run_by_id = AsyncMock(side_effect=side_effect)
+            repo.get_by_id = AsyncMock(return_value=None)
+            repo.get_latest_validation_for_run = AsyncMock(return_value=None)
 
             result = await svc.compare_training_runs(AsyncMock(), [1, 999])
 
         assert result[0]["run_id"] == 1
         assert "error" not in result[0]
         assert result[1]["error"] == "not found"
+
+    @pytest.mark.asyncio
+    async def test_includes_model_size_and_architecture_when_model_resolves(self):
+        svc = ModelService()
+        run = MagicMock(spec=TrainingRun, id=1, model_id=7, dataset_id=2,
+                        hyperparams={}, status="completed", best_epoch=10,
+                        val_loss=0.1, num_params=184320, artifact_path="/path")
+        model = MagicMock(spec=MLModel, id=7, architecture="lstm")
+        model.name = "my-lstm"
+        with patch(PATCH) as repo:
+            repo.get_training_run_by_id = AsyncMock(return_value=run)
+            repo.get_by_id = AsyncMock(return_value=model)
+            repo.get_latest_validation_for_run = AsyncMock(return_value=None)
+
+            result = await svc.compare_training_runs(AsyncMock(), [1])
+
+        assert result[0]["num_params"] == 184320
+        assert result[0]["architecture"] == "lstm"
+        assert result[0]["model_name"] == "my-lstm"
+        assert result[0]["validation"] is None
+
+    @pytest.mark.asyncio
+    async def test_includes_latest_validation_metrics_when_present(self):
+        svc = ModelService()
+        run = MagicMock(spec=TrainingRun, id=1, model_id=7, dataset_id=2,
+                        hyperparams={}, status="completed", best_epoch=10,
+                        val_loss=0.1, num_params=None, artifact_path="/path")
+        validation = MagicMock(spec=ModelValidation, metrics={"directional_accuracy": 0.55, "sharpe_proxy": 1.2})
+        with patch(PATCH) as repo:
+            repo.get_training_run_by_id = AsyncMock(return_value=run)
+            repo.get_by_id = AsyncMock(return_value=None)
+            repo.get_latest_validation_for_run = AsyncMock(return_value=validation)
+
+            result = await svc.compare_training_runs(AsyncMock(), [1])
+
+        assert result[0]["validation"] == {"directional_accuracy": 0.55, "sharpe_proxy": 1.2}

@@ -581,6 +581,11 @@ async def _train_model(training_run_id: int) -> dict:
                 await db.commit()
             return {"error": str(e)}
 
+        num_params = sum(p.numel() for p in model.parameters())
+        async with factory() as db:
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(num_params=num_params))
+            await db.commit()
+
         train_fn, eval_fn = get_trainer_fns(architecture)
         optimizer = torch.optim.Adam(model.parameters(), lr=hp.get("lr", 0.001))
         criterion = None if architecture in ("timegan", "vae") else torch.nn.MSELoss()

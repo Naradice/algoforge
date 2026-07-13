@@ -33,7 +33,7 @@ This roadmap is organized by the three platform layers plus cross-cutting concer
 - [x] Empty state on the models list
 
 ### Next
-- [ ] Model comparison page wired to live data — `web/app/model/compare/page.tsx` exists but needs API integration
+- [x] Model comparison page wired to live data — now also joins model size (`num_params`) and validation performance metrics against training-data characteristics (Hurst, periodicity, entropy, regime changes, ...) in a "Data × Model Analysis" scatter plot
 - [ ] Validation job UI — trigger `POST /models/{id}/validations` from the model detail page and show results
 - [ ] Sharpe proxy and directional accuracy displayed on the model card (currently only shown in raw JSON)
 - [ ] Architecture selection guidance — tooltip explaining when to use LSTM vs Transformer vs RL agent

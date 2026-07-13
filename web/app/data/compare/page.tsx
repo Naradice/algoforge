@@ -7,6 +7,8 @@ import { apiFetch, fetcher } from "@/lib/fetcher";
 import {
   ScatterChart,
   Scatter,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -357,6 +359,129 @@ function CompareLongLagAcf({ entries }: { entries: CompareEntry[] }) {
   );
 }
 
+function StructureStatsTable({ entries }: { entries: CompareEntry[] }) {
+  const ready = entries.filter((e) => e.metrics?.long_range_dependence && !e.metrics.long_range_dependence.error);
+  if (ready.length === 0) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: { label: string; get: (m: Record<string, any>) => any; fmt: (v: any) => string }[] = [
+    { label: "Hurst", get: (m) => m.long_range_dependence?.hurst, fmt: (v) => (v == null || isNaN(v)) ? "—" : v.toFixed(4) },
+    { label: "Behavior", get: (m) => m.long_range_dependence?.interpretation, fmt: (v) => v ?? "—" },
+    { label: "Memory length", get: (m) => m.long_range_dependence?.memory_length, fmt: (v) => v != null ? String(v) : "—" },
+    { label: "ADF p-value", get: (m) => m.long_range_dependence?.adf_pvalue, fmt: (v) => v != null ? v.toExponential(2) : "—" },
+    { label: "Periodicity strength", get: (m) => m.spectral_periodicity?.periodicity_strength, fmt: (v) => v != null ? v.toFixed(2) : "—" },
+    { label: "Spectral entropy", get: (m) => m.spectral_periodicity?.spectral_entropy, fmt: (v) => (v == null || isNaN(v)) ? "—" : v.toFixed(3) },
+    { label: "Dominant period", get: (m) => m.spectral_periodicity?.dominant_period, fmt: (v) => v != null ? `${v.toFixed(1)} bars` : "—" },
+    { label: "Wavelet flatness", get: (m) => m.multiscale_wavelet?.flatness_score, fmt: (v) => (v == null || isNaN(v)) ? "—" : v.toFixed(3) },
+    { label: "Permutation entropy", get: (m) => m.complexity_nonlinearity?.permutation_entropy, fmt: (v) => (v == null || isNaN(v)) ? "—" : v.toFixed(3) },
+    { label: "Sample entropy", get: (m) => m.complexity_nonlinearity?.sample_entropy, fmt: (v) => (v == null || isNaN(v)) ? "—" : v.toFixed(3) },
+    { label: "Nonlinear (BDS)?", get: (m) => m.complexity_nonlinearity?.nonlinear, fmt: (v) => v === null || v === undefined ? "—" : v ? "Yes" : "No" },
+    { label: "Changepoints", get: (m) => m.regime_changes?.n_changepoints, fmt: (v) => v != null ? String(v) : "—" },
+    { label: "Avg segment length", get: (m) => m.regime_changes?.avg_segment_length, fmt: (v) => v != null ? v.toFixed(1) : "—" },
+  ];
+
+  return (
+    <Section title="Structure Summary">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="border-b border-gray-800">
+              <th className="py-2 px-3 text-left text-gray-500 font-medium">Metric</th>
+              {ready.map((e) => (
+                <th key={e.id} className="py-2 px-3 text-right font-semibold" style={{ color: e.color }}>{e.name}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ label, get, fmt }) => (
+              <tr key={label} className="border-b border-gray-800/50">
+                <td className="py-1.5 px-3 text-gray-400">{label}</td>
+                {ready.map((e) => (
+                  <td key={e.id} className="py-1.5 px-3 text-right text-gray-200 font-mono">
+                    {fmt(get(e.metrics!))}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+function CompareLongRangeAcf({ entries }: { entries: CompareEntry[] }) {
+  const ready = entries.filter((e) => e.metrics?.long_range_dependence && !e.metrics.long_range_dependence.error);
+  if (ready.length === 0) return null;
+
+  const series = ready.map((e) => {
+    const m = e.metrics!.long_range_dependence;
+    return { name: e.name, color: e.color, data: m.acf_values.map((v: number, lag: number) => ({ x: lag, y: v })) };
+  });
+
+  return (
+    <Section title="Long-Range ACF (returns)">
+      <p className="text-xs text-gray-600">Autocorrelation of returns up to ~200 lags. Slower decay = more long-range dependence.</p>
+      <MultiLine series={series} xLabel="Lag" yLabel="ACF"
+        yTickFormatter={(v) => v.toFixed(3)} yZeroRef />
+    </Section>
+  );
+}
+
+function CompareSpectralPsd({ entries }: { entries: CompareEntry[] }) {
+  const ready = entries.filter((e) => e.metrics?.spectral_periodicity && !e.metrics.spectral_periodicity.error);
+  if (ready.length === 0) return null;
+
+  const series = ready.map((e) => {
+    const m = e.metrics!.spectral_periodicity;
+    const data = m.frequencies
+      .map((f: number, j: number) => (m.psd[j] > 0 ? { x: f, y: Math.log10(m.psd[j]) } : null))
+      .filter((d: unknown): d is { x: number; y: number } => d !== null);
+    return { name: e.name, color: e.color, data };
+  });
+
+  return (
+    <Section title="Spectral Periodicity — Power Spectrum (Welch)">
+      <p className="text-xs text-gray-600">Welch PSD of returns (log power). Sharp peaks = strong periodic components — compare against the periodicity strength and dominant period above.</p>
+      <MultiLine series={series} xLabel="Frequency (cycles/bar)" yLabel="log Power"
+        yTickFormatter={(v) => `10^${v.toFixed(0)}`} />
+    </Section>
+  );
+}
+
+function CompareWaveletEnergy({ entries }: { entries: CompareEntry[] }) {
+  const ready = entries.filter((e) => e.metrics?.multiscale_wavelet && !e.metrics.multiscale_wavelet.error);
+  if (ready.length === 0) return null;
+
+  return (
+    <Section title="Multiscale Structure — Wavelet Energy by Scale">
+      <p className="text-xs text-gray-600">Energy fraction per wavelet decomposition scale (coarsest → finest). A flat distribution means short-, medium-, and long-term fluctuations coexist; concentrated means one scale dominates.</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {ready.map((e) => {
+          const m = e.metrics!.multiscale_wavelet;
+          const data = m.labels.map((label: string, j: number) => ({ label, energy: m.energy_fraction[j] * 100 }));
+          return (
+            <div key={e.id}>
+              <p className="text-xs font-medium mb-1" style={{ color: e.color }}>
+                {e.name} <span className="text-gray-500">(flatness {isNaN(m.flatness_score) ? "—" : m.flatness_score.toFixed(3)})</span>
+              </p>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={data} margin={{ top: 4, right: 8, bottom: 20, left: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#6b7280" }} />
+                  <YAxis tick={{ fontSize: 9, fill: "#6b7280" }} width={36} tickFormatter={(v: number) => `${v}%`} />
+                  <Tooltip {...CHART_STYLE} formatter={(v: number) => `${v.toFixed(1)}%`} />
+                  <Bar dataKey="energy" name="Energy" fill={e.color} radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
 // ── Dataset picker modal ──────────────────────────────────────────────────────
 
 function DatasetPicker({
@@ -426,7 +551,7 @@ function CompareContent() {
   const ids = (searchParams.get("ids") ?? "").split(",").map(Number).filter((n) => n > 0);
 
   const [showPicker, setShowPicker] = useState(false);
-  const [charsTab, setCharsTab] = useState<"endogenous" | "exogenous">("endogenous");
+  const [charsTab, setCharsTab] = useState<"endogenous" | "exogenous" | "structure">("endogenous");
 
   // Fetch dataset names and characteristics for all IDs in parallel
   const { data: datasetsData } = useSWR(
@@ -511,7 +636,7 @@ function CompareContent() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-800">
-        {(["endogenous", "exogenous"] as const).map((t) => (
+        {(["endogenous", "exogenous", "structure"] as const).map((t) => (
           <button key={t} onClick={() => setCharsTab(t)}
             className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors capitalize ${
               charsTab === t ? "border-brand-500 text-brand-500" : "border-transparent text-gray-400 hover:text-white"
@@ -538,6 +663,15 @@ function CompareContent() {
           <CompareJumpTail entries={entries} />
           <CompareCdf entries={entries} />
           <CompareLongLagAcf entries={entries} />
+        </div>
+      )}
+
+      {charsTab === "structure" && (
+        <div className="space-y-4">
+          <StructureStatsTable entries={entries} />
+          <CompareLongRangeAcf entries={entries} />
+          <CompareSpectralPsd entries={entries} />
+          <CompareWaveletEnergy entries={entries} />
         </div>
       )}
 

@@ -83,15 +83,21 @@ class ModelService:
         for rid in run_ids:
             try:
                 run = await self.get_training_run_by_id(db, rid)
+                model_rec = await model_repo.get_by_id(db, run.model_id)
+                validation = await model_repo.get_latest_validation_for_run(db, run.id)
                 result.append({
                     "run_id": run.id,
                     "model_id": run.model_id,
+                    "model_name": model_rec.name if model_rec else None,
+                    "architecture": model_rec.architecture if model_rec else None,
                     "dataset_id": run.dataset_id,
                     "hyperparams": run.hyperparams,
                     "status": run.status,
                     "best_epoch": run.best_epoch,
                     "val_loss": run.val_loss,
+                    "num_params": run.num_params,
                     "artifact_path": run.artifact_path,
+                    "validation": validation.metrics if validation else None,
                 })
             except HTTPException:
                 result.append({"run_id": rid, "error": "not found"})
