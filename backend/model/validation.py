@@ -157,6 +157,7 @@ def run_validation(
         normalize=hp.get("normalize", "returns"),
         val_split=hp.get("val_split", 0.2),
         device=device,
+        preprocessing=hp.get("preprocessing"),
     )
 
     if architecture == "timegan":

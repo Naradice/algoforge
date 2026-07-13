@@ -1,11 +1,32 @@
 "use client";
 
-import useSWR from "swr";
-import { fetcher } from "@/lib/fetcher";
+import { useState } from "react";
+import useSWR, { mutate } from "swr";
+import { fetcher, apiFetch } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
+import { useToast } from "@/lib/toast";
 
 export default function ModelListPage() {
   const { data: models, isLoading } = useSWR("/api/v1/models", fetcher);
+  const { toast } = useToast();
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  async function deleteModel(id: number, name: string) {
+    if (!confirm(`Delete model "${name}"? This will remove all training runs and cannot be undone.`)) return;
+    setDeletingId(id);
+    try {
+      const res = await apiFetch(`/api/v1/models/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast(body.error?.message ?? body.detail ?? `Error ${res.status}`, "error");
+        return;
+      }
+      toast(`Model "${name}" deleted`, "success");
+      mutate("/api/v1/models");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="space-y-8 max-w-5xl">
@@ -50,9 +71,18 @@ export default function ModelListPage() {
                   <td><StatusBadge status={m.status} /></td>
                   <td className="text-gray-400">{new Date(m.created_at).toLocaleDateString()}</td>
                   <td className="pr-5 text-right">
-                    <a href={`/model/${m.id}`} className="text-xs text-brand-400 hover:text-brand-300 font-medium">
-                      Open →
-                    </a>
+                    <div className="flex items-center justify-end gap-3">
+                      <a href={`/model/${m.id}`} className="text-xs text-brand-400 hover:text-brand-300 font-medium">
+                        Open →
+                      </a>
+                      <button
+                        onClick={() => deleteModel(m.id, m.name)}
+                        disabled={deletingId === m.id}
+                        className="text-xs text-gray-500 hover:text-red-400 disabled:opacity-50"
+                      >
+                        {deletingId === m.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

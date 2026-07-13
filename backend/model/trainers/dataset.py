@@ -8,6 +8,8 @@ where tensors are [batch, seq_len, features].
 Normalisation modes:
     "returns"  — log returns of each feature column (stationary, recommended)
     "minmax"   — min-max scale each column to [0, 1]
+    "zscore"   — standardize to zero mean and unit variance
+    "robust"   — scale by median and IQR (robust to outliers)
     "none"     — raw values
 """
 
@@ -36,6 +38,7 @@ class OHLCWindowDataset:
         normalize: str = "returns",
         val_split: float = 0.2,
         device: str = "cpu",
+        preprocessing: dict | None = None,
     ) -> None:
         store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
         full_path = store / artifact_path
@@ -53,6 +56,12 @@ class OHLCWindowDataset:
 
         df.columns = [c.lower() for c in df.columns]
         df = df.sort_index().dropna()
+
+        # Apply indicators and clustering before row cap so indicators have full history
+        if preprocessing:
+            from model.trainers.preprocessing import apply_preprocessing
+            df = apply_preprocessing(df, preprocessing)
+
         if len(df) > self._MAX_OHLC_ROWS:
             df = df.iloc[-self._MAX_OHLC_ROWS:]
 
@@ -72,6 +81,17 @@ class OHLCWindowDataset:
             mn, mx = data.min(axis=0), data.max(axis=0)
             rng = np.where(mx - mn == 0, 1.0, mx - mn)
             data = (data - mn) / rng
+        elif normalize == "zscore":
+            mu = data.mean(axis=0)
+            sigma = data.std(axis=0)
+            sigma = np.where(sigma == 0, 1.0, sigma)
+            data = (data - mu) / sigma
+        elif normalize == "robust":
+            median = np.median(data, axis=0)
+            q25 = np.percentile(data, 25, axis=0)
+            q75 = np.percentile(data, 75, axis=0)
+            iqr = np.where(q75 - q25 == 0, 1.0, q75 - q25)
+            data = (data - median) / iqr
 
         # Store normalisation params for inverse transform at inference
         self._normalize = normalize

@@ -514,7 +514,7 @@ def train_model(training_run_id: int) -> dict:
 async def _train_model(training_run_id: int) -> dict:
     import torch
     from sqlalchemy import select, update
-    from model.models import MLModel, TrainingRun, TrainingCheckpoint
+    from model.models import MLModel, TrainingRun, TrainingCheckpoint, TrainingRunMetric
     from model.architectures import build_model, TRAINING_DEFAULTS
     from model.trainers import get_trainer_fns, OHLCWindowDataset
 
@@ -552,7 +552,6 @@ async def _train_model(training_run_id: int) -> dict:
             await db.commit()
 
         try:
-            model = build_model(architecture, model_config, device=device)
             dataset = OHLCWindowDataset(
                 dataset_artifact,
                 obs_len=hp.get("obs_len", 60),
@@ -561,7 +560,19 @@ async def _train_model(training_run_id: int) -> dict:
                 normalize=hp.get("normalize", "returns"),
                 val_split=hp.get("val_split", 0.2),
                 device=device,
+                preprocessing=hp.get("preprocessing"),
             )
+            # Override input_dim/output_dim from actual dataset so the model layer sizes
+            # always match the number of selected feature columns. Also sync obs_len/pred_len
+            # so architectures that bake those into layer sizes (nbeats, lstm) stay consistent.
+            effective_config = {
+                **model_config,
+                "input_dim": dataset.n_features,
+                "output_dim": dataset.n_features,
+                "obs_len": hp.get("obs_len", 60),
+                "pred_len": hp.get("pred_len", 10),
+            }
+            model = build_model(architecture, effective_config, device=device)
         except Exception as e:
             async with factory() as db:
                 await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
@@ -620,6 +631,13 @@ async def _train_model(training_run_id: int) -> dict:
                     epoch=epoch,
                     metrics={"train_loss": train_loss, "val_loss": val_loss},
                     artifact_path=str(ckpt_path.relative_to(store)),
+                ))
+                db.add(TrainingRunMetric(
+                    training_run_id=training_run_id,
+                    epoch=epoch,
+                    train_loss=train_loss,
+                    val_loss=val_loss,
+                    lr=optimizer.param_groups[0].get("lr"),
                 ))
                 await db.commit()
 

@@ -31,12 +31,9 @@ type ModelTemplate = {
 // ---------------------------------------------------------------------------
 
 const LSTM_FIELDS: ConfigField[] = [
-  { key: "input_size",    label: "Input Size",    type: "integer", default: 1 },
-  { key: "hidden_size",   label: "Hidden Size",   type: "integer", default: 128 },
-  { key: "num_layers",    label: "Num Layers",    type: "integer", default: 2 },
-  { key: "output_size",   label: "Output Size",   type: "integer", default: 1 },
-  { key: "dropout",       label: "Dropout",       type: "number",  default: 0.1 },
-  { key: "bidirectional", label: "Bidirectional", type: "boolean", default: false },
+  { key: "hidden_dim",  label: "Hidden Dim",  type: "integer", default: 128 },
+  { key: "num_layers",  label: "Num Layers",  type: "integer", default: 2 },
+  { key: "dropout",     label: "Dropout",     type: "number",  default: 0.1 },
 ];
 
 const TRANSFORMER_FIELDS: ConfigField[] = [
@@ -46,8 +43,6 @@ const TRANSFORMER_FIELDS: ConfigField[] = [
   { key: "num_decoder_layers", label: "Decoder Layers",   type: "integer", default: 2 },
   { key: "dim_feedforward",    label: "Feedforward Dim",  type: "integer", default: 256 },
   { key: "dropout",            label: "Dropout",          type: "number",  default: 0.1 },
-  { key: "input_size",         label: "Input Size",       type: "integer", default: 1 },
-  { key: "output_size",        label: "Output Size",      type: "integer", default: 1 },
 ];
 
 const RL_FIELDS: ConfigField[] = [
@@ -88,7 +83,7 @@ const TEMPLATES: ModelTemplate[] = [
     name: "LSTM Predictor",
     description: "LSTM autoencoder/predictor suited for short-term price movement forecasting.",
     tags: ["forecasting", "sequential"],
-    config: { input_size: 1, hidden_size: 128, num_layers: 2, output_size: 1, dropout: 0.1, bidirectional: false },
+    config: { hidden_dim: 128, num_layers: 2, dropout: 0.1 },
     fields: LSTM_FIELDS,
   },
   {
@@ -97,7 +92,7 @@ const TEMPLATES: ModelTemplate[] = [
     name: "Bidirectional LSTM",
     description: "Reads the sequence both forward and backward for richer pattern extraction. Best for feature generation, not live inference.",
     tags: ["forecasting", "sequential", "feature-extraction"],
-    config: { input_size: 1, hidden_size: 256, num_layers: 2, output_size: 1, dropout: 0.2, bidirectional: true },
+    config: { hidden_dim: 256, num_layers: 2, dropout: 0.2 },
     fields: LSTM_FIELDS,
   },
   {
@@ -106,7 +101,7 @@ const TEMPLATES: ModelTemplate[] = [
     name: "Deep LSTM Stack",
     description: "Four LSTM layers with higher dropout to capture long-range market regime patterns.",
     tags: ["forecasting", "sequential", "deep"],
-    config: { input_size: 1, hidden_size: 64, num_layers: 4, output_size: 1, dropout: 0.3, bidirectional: false },
+    config: { hidden_dim: 64, num_layers: 4, dropout: 0.3 },
     fields: LSTM_FIELDS,
   },
   {
@@ -115,7 +110,7 @@ const TEMPLATES: ModelTemplate[] = [
     name: "Lightweight LSTM",
     description: "Single-layer, small hidden size — fast training and inference when data or compute is limited.",
     tags: ["forecasting", "sequential", "fast"],
-    config: { input_size: 1, hidden_size: 32, num_layers: 1, output_size: 1, dropout: 0.0, bidirectional: false },
+    config: { hidden_dim: 32, num_layers: 1, dropout: 0.0 },
     fields: LSTM_FIELDS,
   },
 
@@ -126,7 +121,7 @@ const TEMPLATES: ModelTemplate[] = [
     name: "Seq2Seq Transformer",
     description: "Transformer encoder-decoder for multi-step sequence prediction with attention.",
     tags: ["forecasting", "transformer", "multi-step"],
-    config: { d_model: 64, nhead: 4, num_encoder_layers: 2, num_decoder_layers: 2, dim_feedforward: 256, dropout: 0.1, input_size: 1, output_size: 1 },
+    config: { d_model: 64, nhead: 4, num_encoder_layers: 2, num_decoder_layers: 2, dim_feedforward: 256, dropout: 0.1 },
     fields: TRANSFORMER_FIELDS,
   },
   {
@@ -135,7 +130,7 @@ const TEMPLATES: ModelTemplate[] = [
     name: "Large Transformer",
     description: "High-capacity model for multi-feature or multi-asset inputs requiring more expressive representations.",
     tags: ["forecasting", "transformer", "multi-step", "high-capacity"],
-    config: { d_model: 128, nhead: 8, num_encoder_layers: 4, num_decoder_layers: 4, dim_feedforward: 512, dropout: 0.1, input_size: 1, output_size: 1 },
+    config: { d_model: 128, nhead: 8, num_encoder_layers: 4, num_decoder_layers: 4, dim_feedforward: 512, dropout: 0.1 },
     fields: TRANSFORMER_FIELDS,
   },
   {
@@ -144,7 +139,7 @@ const TEMPLATES: ModelTemplate[] = [
     name: "Tiny Transformer",
     description: "Minimal footprint — fast training, low-latency inference. Good baseline to compare against before scaling up.",
     tags: ["forecasting", "transformer", "fast"],
-    config: { d_model: 32, nhead: 2, num_encoder_layers: 1, num_decoder_layers: 1, dim_feedforward: 128, dropout: 0.1, input_size: 1, output_size: 1 },
+    config: { d_model: 32, nhead: 2, num_encoder_layers: 1, num_decoder_layers: 1, dim_feedforward: 128, dropout: 0.1 },
     fields: TRANSFORMER_FIELDS,
   },
 
@@ -155,7 +150,7 @@ const TEMPLATES: ModelTemplate[] = [
     name: "CNN + LSTM Hybrid",
     description: "1-D CNN extracts local chart patterns (supports, resistances, candle clusters); LSTM captures the resulting temporal sequence.",
     tags: ["forecasting", "hybrid", "pattern-detection"],
-    config: { cnn_filters: 64, kernel_size: 3, cnn_layers: 2, lstm_hidden: 128, lstm_layers: 1, dropout: 0.2, input_size: 1, output_size: 1 },
+    config: { cnn_filters: 64, kernel_size: 3, cnn_layers: 2, lstm_hidden: 128, lstm_layers: 1, dropout: 0.2 },
     fields: [
       { key: "cnn_filters",  label: "CNN Filters",   type: "integer", default: 64 },
       { key: "kernel_size",  label: "Kernel Size",   type: "integer", default: 3 },
@@ -163,8 +158,6 @@ const TEMPLATES: ModelTemplate[] = [
       { key: "lstm_hidden",  label: "LSTM Hidden",   type: "integer", default: 128 },
       { key: "lstm_layers",  label: "LSTM Layers",   type: "integer", default: 1 },
       { key: "dropout",      label: "Dropout",       type: "number",  default: 0.2 },
-      { key: "input_size",   label: "Input Size",    type: "integer", default: 1 },
-      { key: "output_size",  label: "Output Size",   type: "integer", default: 1 },
     ],
   },
 
@@ -175,14 +168,12 @@ const TEMPLATES: ModelTemplate[] = [
     name: "Temporal Conv Network",
     description: "Dilated causal convolutions with residual connections. Parallelizable — trains faster than LSTM with comparable accuracy on many financial series.",
     tags: ["forecasting", "convolutional", "fast"],
-    config: { num_channels: 64, num_levels: 4, kernel_size: 3, dropout: 0.2, input_size: 1, output_size: 1 },
+    config: { num_channels: 64, num_levels: 4, kernel_size: 3, dropout: 0.2 },
     fields: [
       { key: "num_channels", label: "Channels",      type: "integer", default: 64 },
       { key: "num_levels",   label: "Num Levels",    type: "integer", default: 4 },
       { key: "kernel_size",  label: "Kernel Size",   type: "integer", default: 3 },
       { key: "dropout",      label: "Dropout",       type: "number",  default: 0.2 },
-      { key: "input_size",   label: "Input Size",    type: "integer", default: 1 },
-      { key: "output_size",  label: "Output Size",   type: "integer", default: 1 },
     ],
   },
 
@@ -193,15 +184,13 @@ const TEMPLATES: ModelTemplate[] = [
     name: "Seq-VAE",
     description: "Encodes market history into a probabilistic latent space. Useful for regime detection, anomaly scoring, and uncertainty-aware forecasting.",
     tags: ["generative", "anomaly-detection", "probabilistic"],
-    config: { latent_dim: 32, encoder_hidden: 128, decoder_hidden: 128, encoder_layers: 2, dropout: 0.1, input_size: 1, output_size: 1 },
+    config: { latent_dim: 32, encoder_hidden: 128, decoder_hidden: 128, encoder_layers: 2, dropout: 0.1 },
     fields: [
       { key: "latent_dim",     label: "Latent Dim",      type: "integer", default: 32 },
       { key: "encoder_hidden", label: "Encoder Hidden",  type: "integer", default: 128 },
       { key: "decoder_hidden", label: "Decoder Hidden",  type: "integer", default: 128 },
       { key: "encoder_layers", label: "Encoder Layers",  type: "integer", default: 2 },
       { key: "dropout",        label: "Dropout",         type: "number",  default: 0.1 },
-      { key: "input_size",     label: "Input Size",      type: "integer", default: 1 },
-      { key: "output_size",    label: "Output Size",     type: "integer", default: 1 },
     ],
   },
 
@@ -212,14 +201,11 @@ const TEMPLATES: ModelTemplate[] = [
     name: "N-BEATS",
     description: "Pure MLP forecaster with backcast residual connections. No recurrence, no attention — fast training and interpretable trend/seasonality decomposition.",
     tags: ["forecasting", "interpretable", "MLP"],
-    config: { hidden_units: 256, nb_blocks: 3, theta_dim: 64, obs_len: 60, input_size: 1, output_size: 1 },
+    config: { hidden_units: 256, nb_blocks: 3, theta_dim: 64 },
     fields: [
       { key: "hidden_units", label: "Hidden Units",  type: "integer", default: 256 },
       { key: "nb_blocks",    label: "Num Blocks",    type: "integer", default: 3 },
       { key: "theta_dim",    label: "Theta Dim",     type: "integer", default: 64 },
-      { key: "obs_len",      label: "Obs Window",    type: "integer", default: 60 },
-      { key: "input_size",   label: "Input Size",    type: "integer", default: 1 },
-      { key: "output_size",  label: "Output Size",   type: "integer", default: 1 },
     ],
   },
 
