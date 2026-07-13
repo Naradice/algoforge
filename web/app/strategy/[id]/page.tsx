@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import useSWR, { mutate } from "swr";
-import { apiFetch, fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher, fetcherWithMeta } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
 import { StrategyEditor, StrategyDefinitionView } from "@/components/strategy-editor";
@@ -238,11 +238,15 @@ export default function StrategyDetailPage() {
     fetcher
   );
   const { data: runs } = useSWR(`/api/v1/strategies/${id}/runs`, fetcher, {
-    refreshInterval: 3000,
+    refreshInterval: (data) =>
+      data?.some((r: any) => ["pending", "running"].includes(r.status)) ? 3000 : 0,
   });
   const { data: datasets } = useSWR("/api/v1/datasets", fetcher);
-  const { data: versions } = useSWR(`/api/v1/strategies/${id}/versions`, fetcher);
   const [showVersions, setShowVersions] = useState(false);
+  const { data: versions } = useSWR(
+    showVersions ? `/api/v1/strategies/${id}/versions` : null,
+    fetcher
+  );
 
   const [showRunForm, setShowRunForm] = useState(false);
   const [mode, setMode] = useState("backtest");
@@ -281,22 +285,42 @@ export default function StrategyDetailPage() {
   const patchRisk = (p: Partial<RiskOverride>) => setRisk((r) => ({ ...r, ...p }));
 
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
+  const [tradesPage, setTradesPage] = useState(1);
+  const [tradesPageSize, setTradesPageSize] = useState(50);
+  const [tradesDirection, setTradesDirection] = useState("");
+  const [tradesPhase, setTradesPhase] = useState("");
+  const [tradesExitReason, setTradesExitReason] = useState("");
+  const [tradesProfitable, setTradesProfitable] = useState("");
   const [overlaySlip, setOverlaySlip] = useState(0.0005);
   const [overlayComm, setOverlayComm] = useState(0.001);
   const [overlayResult, setOverlayResult] = useState<{ metrics: Record<string, number>; orig_metrics: Record<string, number>; orig_slip: number; orig_comm: number } | null>(null);
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const selectedRunObj = runs?.find((r: any) => r.id === selectedRun);
+  const selectedRunActive = selectedRunObj?.status === "running";
+
   const { data: runMetrics } = useSWR(
     selectedRun ? `/api/v1/strategies/${id}/runs/${selectedRun}/metrics` : null,
     fetcher,
-    { refreshInterval: 5000 }
+    { refreshInterval: selectedRunActive ? 5000 : 0 }
   );
-  const { data: runTrades } = useSWR(
-    selectedRun ? `/api/v1/strategies/${id}/runs/${selectedRun}/trades` : null,
-    fetcher,
-    { refreshInterval: 5000 }
-  );
+  const tradesUrl = useMemo(() => {
+    if (!selectedRun) return null;
+    const p = new URLSearchParams({ page: String(tradesPage), page_size: String(tradesPageSize) });
+    if (tradesDirection) p.set("direction", tradesDirection);
+    if (tradesPhase) p.set("phase", tradesPhase);
+    if (tradesExitReason) p.set("exit_reason", tradesExitReason);
+    if (tradesProfitable) p.set("profitable", tradesProfitable);
+    return `/api/v1/strategies/${id}/runs/${selectedRun}/trades?${p}`;
+  }, [selectedRun, id, tradesPage, tradesPageSize, tradesDirection, tradesPhase, tradesExitReason, tradesProfitable]);
 
-  const selectedRunObj = runs?.find((r: any) => r.id === selectedRun);
+  const { data: runTradesResp } = useSWR(
+    tradesUrl,
+    fetcherWithMeta,
+    { refreshInterval: selectedRunActive ? 5000 : 0 }
+  );
+  const runTrades = runTradesResp?.data as any[] | undefined;
+  const tradesTotalCount = (runTradesResp?.meta?.total ?? 0) as number;
 
   const { data: equityCurve } = useSWR(
     selectedRun && selectedRunObj?.status === "completed"
@@ -305,9 +329,16 @@ export default function StrategyDetailPage() {
     fetcher
   );
 
-  // Reset overlay when switching runs; seed sliders from original costs when result loads
+  // Reset overlay, chart, and trade filters when switching runs
   useEffect(() => {
     setOverlayResult(null);
+    setShowChart(false);
+    setChartAccumulated(null);
+    setTradesPage(1);
+    setTradesDirection("");
+    setTradesPhase("");
+    setTradesExitReason("");
+    setTradesProfitable("");
   }, [selectedRun]);
 
   useEffect(() => {
@@ -344,9 +375,10 @@ export default function StrategyDetailPage() {
 
   const [chartAccumulated, setChartAccumulated] = useState<ChartAccum | null>(null);
   const [chartLoadingOlder, setChartLoadingOlder] = useState(false);
+  const [showChart, setShowChart] = useState(false);
 
   const chartUrl = useMemo(() => {
-    if (!selectedRun || selectedRunObj?.status !== "completed") return null;
+    if (!selectedRun || selectedRunObj?.status !== "completed" || !showChart) return null;
     const base = `/api/v1/strategies/${id}/runs/${selectedRun}/chart-data`;
     const params = new URLSearchParams();
     if (appliedRange.from) params.set("from_ts", String(Math.floor(new Date(appliedRange.from).getTime() / 1000)));
@@ -686,14 +718,18 @@ export default function StrategyDetailPage() {
       <section>
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-medium uppercase tracking-wide text-gray-400">Definition</h2>
-          {versions && versions.length > 0 && (
-            <button
-              onClick={() => setShowVersions(!showVersions)}
-              className="text-xs text-gray-400 hover:text-white"
-            >
-              {showVersions ? "Hide" : `Version history (${versions.length})`}
-            </button>
-          )}
+          <button
+            onClick={() => setShowVersions(!showVersions)}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            {showVersions
+              ? "Hide"
+              : versions
+              ? versions.length > 0
+                ? `Version history (${versions.length})`
+                : "No versions"
+              : "Version history"}
+          </button>
         </div>
         {!editingDef && (
           <>
@@ -1161,69 +1197,87 @@ export default function StrategyDetailPage() {
             <div className="space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-xs font-medium text-gray-400">Price Chart</h3>
-                <span className="text-gray-600 text-xs">|</span>
-                <div className="flex rounded border border-gray-700 overflow-hidden text-xs">
-                  {(["indicators", "conditions"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setChartMode(mode)}
-                      className={`px-2 py-0.5 capitalize ${chartMode === mode ? "bg-brand-500 text-white" : "bg-gray-900 text-gray-400 hover:text-gray-200"}`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-                <span className="text-gray-600 text-xs">|</span>
-                <span className="text-xs text-gray-500">Range:</span>
-                <input
-                  type="datetime-local"
-                  value={chartFrom}
-                  onChange={(e) => setChartFrom(e.target.value)}
-                  className="rounded border border-gray-700 bg-gray-900 px-2 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                />
-                <span className="text-gray-600 text-xs">→</span>
-                <input
-                  type="datetime-local"
-                  value={chartTo}
-                  onChange={(e) => setChartTo(e.target.value)}
-                  className="rounded border border-gray-700 bg-gray-900 px-2 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                />
-                <button
-                  onClick={() => setAppliedRange({ from: chartFrom, to: chartTo })}
-                  className="rounded bg-brand-500 px-2 py-0.5 text-xs text-white hover:bg-sky-400"
-                >
-                  Apply
-                </button>
-                {(appliedRange.from || appliedRange.to) && (
+                {!showChart && (
                   <button
-                    onClick={() => { setChartFrom(""); setChartTo(""); setAppliedRange({ from: "", to: "" }); }}
-                    className="text-xs text-gray-500 hover:text-gray-300"
+                    onClick={() => setShowChart(true)}
+                    className="text-xs text-sky-400 hover:text-sky-300"
                   >
-                    Reset
+                    Load chart →
                   </button>
                 )}
-                <div className="ml-auto flex items-center gap-2">
-                  {chartAccumulated?.has_more && (
+                {showChart && (
+                  <button
+                    onClick={() => { setShowChart(false); setChartAccumulated(null); }}
+                    className="text-xs text-gray-500 hover:text-gray-300"
+                  >
+                    Hide
+                  </button>
+                )}
+                {showChart && (<>
+                  <span className="text-gray-600 text-xs">|</span>
+                  <div className="flex rounded border border-gray-700 overflow-hidden text-xs">
+                    {(["indicators", "conditions"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setChartMode(mode)}
+                        className={`px-2 py-0.5 capitalize ${chartMode === mode ? "bg-brand-500 text-white" : "bg-gray-900 text-gray-400 hover:text-gray-200"}`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-gray-600 text-xs">|</span>
+                  <span className="text-xs text-gray-500">Range:</span>
+                  <input
+                    type="datetime-local"
+                    value={chartFrom}
+                    onChange={(e) => setChartFrom(e.target.value)}
+                    className="rounded border border-gray-700 bg-gray-900 px-2 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <span className="text-gray-600 text-xs">→</span>
+                  <input
+                    type="datetime-local"
+                    value={chartTo}
+                    onChange={(e) => setChartTo(e.target.value)}
+                    className="rounded border border-gray-700 bg-gray-900 px-2 py-0.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <button
+                    onClick={() => setAppliedRange({ from: chartFrom, to: chartTo })}
+                    className="rounded bg-brand-500 px-2 py-0.5 text-xs text-white hover:bg-sky-400"
+                  >
+                    Apply
+                  </button>
+                  {(appliedRange.from || appliedRange.to) && (
                     <button
-                      onClick={loadOlderBarsInline}
-                      disabled={chartLoadingOlder}
-                      className="text-xs text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                      onClick={() => { setChartFrom(""); setChartTo(""); setAppliedRange({ from: "", to: "" }); }}
+                      className="text-xs text-gray-500 hover:text-gray-300"
                     >
-                      {chartLoadingOlder ? "Loading…" : "← Load older"}
+                      Reset
                     </button>
                   )}
-                  {chartAccumulated && (
-                    <span className="text-xs text-gray-600">
-                      {chartAccumulated.bar_count ?? chartAccumulated.candles?.length ?? 0} bars
-                      {chartAccumulated.has_more && <span className="text-gray-700"> · more available</span>}
-                    </span>
-                  )}
-                </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    {chartAccumulated?.has_more && (
+                      <button
+                        onClick={loadOlderBarsInline}
+                        disabled={chartLoadingOlder}
+                        className="text-xs text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                      >
+                        {chartLoadingOlder ? "Loading…" : "← Load older"}
+                      </button>
+                    )}
+                    {chartAccumulated && (
+                      <span className="text-xs text-gray-600">
+                        {chartAccumulated.bar_count ?? chartAccumulated.candles?.length ?? 0} bars
+                        {chartAccumulated.has_more && <span className="text-gray-700"> · more available</span>}
+                      </span>
+                    )}
+                  </div>
+                </>)}
               </div>
-              {chartLoading && (
+              {showChart && chartLoading && (
                 <div className="flex items-center justify-center h-16 text-gray-500 text-sm">Loading chart…</div>
               )}
-              {chartAccumulated && (
+              {showChart && chartAccumulated && (
                 <StrategyChart
                   candles={chartAccumulated.candles ?? []}
                   indicators={Object.fromEntries(
@@ -1306,9 +1360,84 @@ export default function StrategyDetailPage() {
             </div>
           )}
 
-          {runTrades && runTrades.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-xs text-gray-500">Trades ({runTrades.length})</h3>
+          {tradesTotalCount > 0 || (runTrades && runTrades.length > 0) ? (
+            <div className="space-y-2">
+              {/* Filter bar */}
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-xs text-gray-500 shrink-0">
+                  Trades ({tradesTotalCount.toLocaleString()} total)
+                </h3>
+                <select
+                  value={tradesDirection}
+                  onChange={(e) => { setTradesDirection(e.target.value); setTradesPage(1); }}
+                  className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+                >
+                  <option value="">All directions</option>
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+                </select>
+                <select
+                  value={tradesPhase}
+                  onChange={(e) => { setTradesPhase(e.target.value); setTradesPage(1); }}
+                  className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+                >
+                  <option value="">All phases</option>
+                  <option value="is">IS</option>
+                  <option value="oos">OOS</option>
+                </select>
+                <select
+                  value={tradesExitReason}
+                  onChange={(e) => { setTradesExitReason(e.target.value); setTradesPage(1); }}
+                  className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+                >
+                  <option value="">All exit reasons</option>
+                  <option value="signal">Signal</option>
+                  <option value="sl">Stop-loss</option>
+                  <option value="tp">Take-profit</option>
+                  <option value="end_of_data">End of data</option>
+                  <option value="trailing_stop">Trailing stop</option>
+                </select>
+                <select
+                  value={tradesProfitable}
+                  onChange={(e) => { setTradesProfitable(e.target.value); setTradesPage(1); }}
+                  className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+                >
+                  <option value="">All results</option>
+                  <option value="true">Winners only</option>
+                  <option value="false">Losers only</option>
+                </select>
+                <div className="ml-auto flex items-center gap-2">
+                  <select
+                    value={tradesPageSize}
+                    onChange={(e) => { setTradesPageSize(Number(e.target.value)); setTradesPage(1); }}
+                    className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+                  >
+                    <option value={20}>20 / page</option>
+                    <option value={50}>50 / page</option>
+                    <option value={100}>100 / page</option>
+                    <option value={500}>500 / page</option>
+                  </select>
+                  <button
+                    onClick={() => setTradesPage((p) => Math.max(1, p - 1))}
+                    disabled={tradesPage === 1}
+                    className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white disabled:opacity-40"
+                  >
+                    ←
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    {tradesPage} / {Math.max(1, Math.ceil(tradesTotalCount / tradesPageSize))}
+                  </span>
+                  <button
+                    onClick={() => setTradesPage((p) => p + 1)}
+                    disabled={tradesPage >= Math.ceil(tradesTotalCount / tradesPageSize)}
+                    className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white disabled:opacity-40"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+
+              {/* Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
@@ -1328,7 +1457,7 @@ export default function StrategyDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {runTrades.map((t: any, i: number) => (
+                    {(runTrades ?? []).map((t: any, i: number) => (
                       <tr
                         key={i}
                         className={`border-b border-gray-800/40 ${
@@ -1363,7 +1492,7 @@ export default function StrategyDetailPage() {
                 </table>
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Chat panel */}
           <ChatPanel strategyId={id} runId={selectedRun} />

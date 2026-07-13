@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
-import { apiFetch, fetcher } from "@/lib/fetcher";
+import { apiFetch, fetcher, fetcherWithMeta } from "@/lib/fetcher";
 import { EquityChart } from "@/components/equity-chart";
 import { MetricsGrid } from "@/components/metrics-grid";
 import { StrategyChart } from "@/components/strategy-chart";
@@ -52,12 +52,27 @@ export default function RunDetailPage() {
   const [stopping, setStopping] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
+  const [tradesPage, setTradesPage] = useState(1);
+  const [tradesPageSize, setTradesPageSize] = useState(50);
+  const [tradesDirection, setTradesDirection] = useState("");
+  const [tradesPhase, setTradesPhase] = useState("");
+  const [tradesExitReason, setTradesExitReason] = useState("");
+  const [tradesProfitable, setTradesProfitable] = useState("");
+
   const strategyUrl = `/api/v1/strategies/${strategyId}`;
   const runUrl = `/api/v1/strategies/${strategyId}/runs/${runId}`;
   const metricsUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/metrics`;
   const equityUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/equity`;
-  const tradesUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/trades`;
   const chatUrl = `/api/v1/strategies/${strategyId}/runs/${runId}/chat`;
+
+  const tradesUrl = useMemo(() => {
+    const p = new URLSearchParams({ page: String(tradesPage), page_size: String(tradesPageSize) });
+    if (tradesDirection) p.set("direction", tradesDirection);
+    if (tradesPhase) p.set("phase", tradesPhase);
+    if (tradesExitReason) p.set("exit_reason", tradesExitReason);
+    if (tradesProfitable) p.set("profitable", tradesProfitable);
+    return `/api/v1/strategies/${strategyId}/runs/${runId}/trades?${p}`;
+  }, [strategyId, runId, tradesPage, tradesPageSize, tradesDirection, tradesPhase, tradesExitReason, tradesProfitable]);
 
   const [chartFrom, setChartFrom] = useState("");
   const [chartTo, setChartTo] = useState("");
@@ -75,7 +90,11 @@ export default function RunDetailPage() {
     refreshInterval: run?.status === "completed" ? 0 : 5000,
   });
   const { data: equityData } = useSWR(equityUrl, fetcher);
-  const { data: trades } = useSWR(tradesUrl, fetcher);
+  const { data: tradesResp } = useSWR(tradesUrl, fetcherWithMeta, {
+    refreshInterval: (data) => ((data as any)?.meta?.total === 0 ? 5000 : 0),
+  });
+  const trades = tradesResp?.data as Trade[] | undefined;
+  const tradesTotalCount = (tradesResp?.meta?.total ?? 0) as number;
   const { data: chatHistory, mutate: mutateChat } = useSWR(chatUrl, fetcher);
 
   // chartUrl depends on run.status — must come after the run useSWR
@@ -357,7 +376,7 @@ export default function RunDetailPage() {
               }`}
             >
               {tab}
-              {tab === "trades" && trades ? ` (${trades.length})` : ""}
+              {tab === "trades" && tradesTotalCount > 0 ? ` (${tradesTotalCount.toLocaleString()})` : ""}
               {tab === "events" && events.length > 0 ? ` (${events.length})` : ""}
             </button>
           ))}
@@ -365,7 +384,79 @@ export default function RunDetailPage() {
 
         {/* Trades Tab */}
         {activeTab === "trades" && (
-          <div className="mt-4">
+          <div className="mt-4 space-y-3">
+            {/* Filter + pagination bar */}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={tradesDirection}
+                onChange={(e) => { setTradesDirection(e.target.value); setTradesPage(1); }}
+                className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+              >
+                <option value="">All directions</option>
+                <option value="buy">Buy</option>
+                <option value="sell">Sell</option>
+              </select>
+              <select
+                value={tradesPhase}
+                onChange={(e) => { setTradesPhase(e.target.value); setTradesPage(1); }}
+                className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+              >
+                <option value="">All phases</option>
+                <option value="is">IS</option>
+                <option value="oos">OOS</option>
+              </select>
+              <select
+                value={tradesExitReason}
+                onChange={(e) => { setTradesExitReason(e.target.value); setTradesPage(1); }}
+                className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+              >
+                <option value="">All exit reasons</option>
+                <option value="signal">Signal</option>
+                <option value="sl">Stop-loss</option>
+                <option value="tp">Take-profit</option>
+                <option value="end_of_data">End of data</option>
+                <option value="trailing_stop">Trailing stop</option>
+              </select>
+              <select
+                value={tradesProfitable}
+                onChange={(e) => { setTradesProfitable(e.target.value); setTradesPage(1); }}
+                className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+              >
+                <option value="">All results</option>
+                <option value="true">Winners only</option>
+                <option value="false">Losers only</option>
+              </select>
+              <div className="ml-auto flex items-center gap-2">
+                <select
+                  value={tradesPageSize}
+                  onChange={(e) => { setTradesPageSize(Number(e.target.value)); setTradesPage(1); }}
+                  className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white focus:outline-none"
+                >
+                  <option value={20}>20 / page</option>
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                  <option value={500}>500 / page</option>
+                </select>
+                <button
+                  onClick={() => setTradesPage((p) => Math.max(1, p - 1))}
+                  disabled={tradesPage === 1}
+                  className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white disabled:opacity-40"
+                >
+                  ←
+                </button>
+                <span className="text-xs text-gray-500">
+                  {tradesPage} / {Math.max(1, Math.ceil(tradesTotalCount / tradesPageSize))}
+                </span>
+                <button
+                  onClick={() => setTradesPage((p) => p + 1)}
+                  disabled={tradesPage >= Math.ceil(tradesTotalCount / tradesPageSize)}
+                  className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white disabled:opacity-40"
+                >
+                  →
+                </button>
+              </div>
+            </div>
+
             {!trades || trades.length === 0 ? (
               <p className="text-gray-500 text-sm">No trades yet</p>
             ) : (
@@ -387,9 +478,9 @@ export default function RunDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(trades as Trade[]).map((t) => (
+                    {trades.map((t, i) => (
                       <tr key={t.id} className="border-t border-gray-800 hover:bg-gray-800/40">
-                        <td className="py-2 pr-3 text-gray-500 text-xs">{t.id}</td>
+                        <td className="py-2 pr-3 text-gray-500 text-xs">{(tradesPage - 1) * tradesPageSize + i + 1}</td>
                         <td className={`py-2 pr-3 font-medium ${t.direction === "buy" ? "text-green-400" : "text-red-400"}`}>
                           {t.direction === "buy" ? "▲" : "▼"} {t.direction}
                         </td>

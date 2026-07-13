@@ -76,9 +76,25 @@ class StrategyService:
         await self.get_run(db, strategy_id, run_id)
         return await strategy_repo.get_metrics(db, run_id)
 
-    async def get_trades(self, db: AsyncSession, strategy_id: int, run_id: int, offset: int = 0, limit: int = 100) -> tuple[list, int]:
+    async def get_trades(
+        self,
+        db: AsyncSession,
+        strategy_id: int,
+        run_id: int,
+        offset: int = 0,
+        limit: int = 100,
+        direction: str | None = None,
+        phase: str | None = None,
+        symbol: str | None = None,
+        exit_reason: str | None = None,
+        profitable: bool | None = None,
+    ) -> tuple[list, int]:
         await self.get_run(db, strategy_id, run_id)
-        return await strategy_repo.get_trades(db, run_id, offset=offset, limit=limit)
+        return await strategy_repo.get_trades(
+            db, run_id, offset=offset, limit=limit,
+            direction=direction, phase=phase, symbol=symbol,
+            exit_reason=exit_reason, profitable=profitable,
+        )
 
     async def get_chat_history(self, db: AsyncSession, strategy_id: int, run_id: int) -> list:
         await self.get_run(db, strategy_id, run_id)
@@ -175,6 +191,13 @@ class StrategyService:
 
         _log = logging.getLogger("strategy.chart_data")
 
+        # Fast path: return cached result for completed runs (immutable output)
+        _cache_key = f"chart:{run_id}:{from_ts}:{to_ts}:{limit}"
+        loop = asyncio.get_running_loop()
+        _cached = await loop.run_in_executor(None, functools.partial(_chart_cache_get, _cache_key))
+        if _cached is not None:
+            return _cached
+
         # Load only the columns needed — skip equity_curve (can be 40+ MB of Python
         # objects for long backtests) since we only need dataset_id / strategy_id here.
         from sqlalchemy import select as _sa_select
@@ -207,8 +230,6 @@ class StrategyService:
         indicator_specs: list = (strategy.definition or {}).get("indicators", [])
 
         # Build candle + indicator data in a thread (CPU-bound I/O).
-        # Use get_running_loop() — get_event_loop() is deprecated in Python 3.12.
-        loop = asyncio.get_running_loop()
         if artifact_path:
             try:
                 base = await asyncio.wait_for(
@@ -341,6 +362,8 @@ class StrategyService:
 
         events.sort(key=lambda e: e["time"])
         base["events"] = events
+
+        await loop.run_in_executor(None, functools.partial(_chart_cache_set, _cache_key, base))
         return base
 
     async def validate_strategy(
@@ -581,6 +604,57 @@ class StrategyService:
 
 
 strategy_service = StrategyService()
+
+
+# ---------------------------------------------------------------------------
+# Chart data Redis cache
+# ---------------------------------------------------------------------------
+
+import json as _json
+import os as _os
+from typing import Any as _Any
+
+_CHART_CACHE_TTL = 3600  # 1 hour — completed runs are immutable
+_chart_redis_client: _Any = None
+
+
+def _get_chart_redis() -> _Any | None:
+    if _os.getenv("ALGOFORGE_NO_REDIS") == "1":
+        return None
+    global _chart_redis_client
+    if _chart_redis_client is None:
+        try:
+            import redis as _redis
+            _chart_redis_client = _redis.from_url(
+                _os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+                decode_responses=False,
+            )
+        except Exception:
+            pass
+    return _chart_redis_client
+
+
+def _chart_cache_get(key: str) -> dict | None:
+    r = _get_chart_redis()
+    if r is None:
+        return None
+    try:
+        raw = r.get(key)
+        if raw:
+            return _json.loads(raw)
+    except Exception:
+        pass
+    return None
+
+
+def _chart_cache_set(key: str, value: dict) -> None:
+    r = _get_chart_redis()
+    if r is None:
+        return
+    try:
+        r.setex(key, _CHART_CACHE_TTL, _json.dumps(value))
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

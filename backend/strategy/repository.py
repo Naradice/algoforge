@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from strategy.models import Strategy, StrategyRun, StrategyRunCreate, Trade, RunMetric, StrategyRunChat, StrategyEvent
 
@@ -49,7 +50,11 @@ class StrategyRepository:
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[StrategyRun], int]:
-        q = select(StrategyRun).where(StrategyRun.strategy_id == strategy_id)
+        q = (
+            select(StrategyRun)
+            .options(defer(StrategyRun.equity_curve))
+            .where(StrategyRun.strategy_id == strategy_id)
+        )
         total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
         items = (await db.execute(q.order_by(StrategyRun.created_at.desc()).offset(offset).limit(limit))).scalars().all()
         return list(items), total
@@ -71,14 +76,31 @@ class StrategyRepository:
         run_id: int,
         offset: int = 0,
         limit: int = 100,
-        from_dt=None,  # datetime | None — inclusive lower bound on opened_at
-        to_dt=None,    # datetime | None — inclusive upper bound on opened_at
+        from_dt=None,       # datetime | None — inclusive lower bound on opened_at
+        to_dt=None,         # datetime | None — inclusive upper bound on opened_at
+        direction: str | None = None,   # "buy" | "sell"
+        phase: str | None = None,       # "is" | "oos"
+        symbol: str | None = None,      # exact match
+        exit_reason: str | None = None, # exact match
+        profitable: bool | None = None, # True = winners only, False = losers only
     ) -> tuple[list[Trade], int]:
         base = select(Trade).where(Trade.run_id == run_id)
         if from_dt is not None:
             base = base.where(Trade.opened_at >= from_dt)
         if to_dt is not None:
             base = base.where(Trade.opened_at <= to_dt)
+        if direction is not None:
+            base = base.where(Trade.direction == direction)
+        if phase is not None:
+            base = base.where(Trade.phase == phase)
+        if symbol is not None:
+            base = base.where(Trade.symbol == symbol)
+        if exit_reason is not None:
+            base = base.where(Trade.exit_reason == exit_reason)
+        if profitable is True:
+            base = base.where(Trade.profit > 0)
+        elif profitable is False:
+            base = base.where(Trade.profit <= 0)
         total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
         items = (await db.execute(
             base.order_by(Trade.opened_at).offset(offset).limit(limit)

@@ -7,7 +7,7 @@ import functools
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -186,12 +186,22 @@ async def get_run_trades(
     strategy_id: int,
     run_id: int,
     pagination: Pagination = Depends(),
+    direction: str | None = Query(None, description="Filter by direction: buy or sell"),
+    phase: str | None = Query(None, description="Filter by walk-forward phase: is or oos"),
+    symbol: str | None = Query(None, description="Filter by exact symbol"),
+    exit_reason: str | None = Query(None, description="Filter by exit reason: signal, sl, tp, end_of_data"),
+    profitable: bool | None = Query(None, description="True = winners only, False = losers only"),
     db: AsyncSession = Depends(get_db),
 ):
     trades, total = await strategy_service.get_trades(
         db, strategy_id, run_id,
         offset=pagination.offset,
         limit=pagination.page_size,
+        direction=direction,
+        phase=phase,
+        symbol=symbol,
+        exit_reason=exit_reason,
+        profitable=profitable,
     )
     return DataResponse(data=trades, meta=Meta(total=total, page=pagination.page, page_size=pagination.page_size))
 
