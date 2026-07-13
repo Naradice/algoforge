@@ -8,7 +8,8 @@
 x-backend-dev: &backend-dev
   build:
     context: ../../
-    dockerfile: algoforge/infra/Dockerfile.backend-dev
+    dockerfile: algoforge/infra/Dockerfile.backend-dev-slim
+  image: algoforge-backend-slim:dev
   env_file: .env
   environment:
     DATABASE_URL: postgresql+asyncpg://algoforge:algoforge@postgres:5432/algoforge
@@ -18,7 +19,28 @@ x-backend-dev: &backend-dev
     # Leave unset to use local-only storage (default).
     # finance_client source is volume-mounted and takes precedence over the installed package,
     # so YAML config files and code changes are picked up without a rebuild.
-    PYTHONPATH: /finance_client_src
+    # PYTHONPATH: /finance_client_src  # disabled: P9 bind-mount over WSL2 causes import stalls
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  volumes:
+    - ../backend:/app
+    - ../../finance_client/src:/finance_client_src
+    - artifacts:/app/artifacts
+    - artifact_backup:/mnt/artifact_backup
+
+x-backend-dev-full: &backend-dev-full
+  build:
+    context: ../../
+    dockerfile: algoforge/infra/Dockerfile.backend-dev
+  image: algoforge-backend-collection:dev
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://algoforge:algoforge@postgres:5432/algoforge
+    REDIS_URL: redis://redis:6379/0
+    # PYTHONPATH: /finance_client_src  # disabled: P9 bind-mount over WSL2 causes import stalls
   depends_on:
     postgres:
       condition: service_healthy
@@ -38,6 +60,10 @@ services:
       POSTGRES_DB: algoforge
       POSTGRES_USER: algoforge
       POSTGRES_PASSWORD: algoforge
+      # Dev-only: skip fsync so the first-run WAL checkpoint doesn't time out on WSL2.
+      # Never use these in production.
+      POSTGRES_INITDB_ARGS: "--no-sync --set=fsync=off --set=synchronous_commit=off --set=full_page_writes=off"
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
     ports:
       - "5432:5432"
     volumes:
@@ -47,6 +73,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 300s
 
   redis:
     image: redis:7-alpine
@@ -62,6 +89,7 @@ services:
 
   backend:
     <<: *backend-dev
+    restart: on-failure:5
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -72,17 +100,16 @@ services:
     # On Docker Desktop, backtests and collection jobs update /app/artifacts while
     # uvicorn --reload is watching /app. Exclude generated artifacts so backend
     # hot reload only tracks source files and does not crash or restart mid-run.
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-             --reload-exclude 'artifacts/*'
-             --reload-exclude 'artifacts/**'"
+    command:
+      - sh
+      - -c
+      - "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude 'artifacts/*' --reload-exclude 'artifacts/**'"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 15s
+      start_period: 900s
 
   web:
     image: node:20-alpine
@@ -109,7 +136,8 @@ services:
     mem_limit: 2g
 
   celery-collection:
-    <<: *backend-dev
+    <<: *backend-dev-full
+    restart: on-failure:5
     depends_on:
       postgres:
         condition: service_healthy
@@ -129,6 +157,7 @@ services:
 
   celery-characteristics:
     <<: *backend-dev
+    restart: on-failure:5
     depends_on:
       postgres:
         condition: service_healthy
@@ -140,6 +169,7 @@ services:
 
   celery-training:
     <<: *backend-dev
+    restart: on-failure:5
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,6 +181,7 @@ services:
 
   celery-backtest:
     <<: *backend-dev
+    restart: on-failure:5
     depends_on:
       postgres:
         condition: service_healthy

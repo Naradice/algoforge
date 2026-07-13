@@ -46,6 +46,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 120s
     restart: unless-stopped
 
   redis:
@@ -78,7 +79,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 15s
+      start_period: 120s
 
   web:
     build:

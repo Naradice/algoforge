@@ -35,7 +35,7 @@ uvicorn main:app --reload --port 8000
 
 # Terminal 2 — collection worker (heavy disk I/O, 3 parallel processes)
 cd backend
-celery -A celery_worker worker -Q collection -c 3 --loglevel=info
+celery -A celery_worker worker -Q collection -c 1 --loglevel=info
 
 # Terminal 3 — characteristics worker (fast, high concurrency)
 cd backend
@@ -71,12 +71,27 @@ celery -A celery_worker worker -Q collection,characteristics,training,backtest -
 - API docs: http://localhost:8000/docs
 - MCP:      http://localhost:8000/mcp (SSE transport)
 
-### Full stack via Docker
+### Docker — development (no rebuild on code change)
 ```bash
 cd infra
 cp .env.example .env   # set GOOGLE_API_KEY at minimum
-docker compose up --build
+
+# First time or after requirements.txt / package.json changes:
+docker compose -f docker-compose.dev.yml build
+
+# Every subsequent start — code changes are picked up automatically:
+docker compose -f docker-compose.dev.yml up
 ```
+Backend uses `uvicorn --reload` and Next.js runs in dev mode.
+Code is volume-mounted; only dependency changes require a rebuild.
+
+### Docker — production (clean build)
+```bash
+cd infra
+docker compose build      # bakes all code into images
+docker compose up -d
+```
+Code-only change (no dep change): `docker compose build backend web && docker compose up -d`
 
 ---
 
@@ -87,6 +102,11 @@ docker compose up --build
 | `DATABASE_URL` | yes | `postgresql+asyncpg://algoforge:algoforge@localhost:5432/algoforge` |
 | `REDIS_URL` | yes | `redis://localhost:6379/0` |
 | `ARTIFACT_STORE_PATH` | no | Default `../artifacts` — where parquet/model files live |
+| `ARTIFACT_REMOTE_URL` | no | Write-through backup target. Supported schemes: `file:///mnt/nas/algoforge` (NAS/local, good for dev), `s3://bucket/prefix`, `gs://bucket/prefix`, `az://container/prefix`. Every parquet file and `_meta.json` is pushed immediately after the local write. Upload failures are logged but non-fatal. |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | if S3 | S3 credentials (or use an IAM role — no keys needed on EC2/ECS) |
+| `AWS_DEFAULT_REGION` | if S3 | Defaults to `us-east-1` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | if GCS | Path to service-account JSON (or use Workload Identity) |
+| `AZURE_STORAGE_CONNECTION_STRING` | if Azure | Azure Blob connection string |
 | `GOOGLE_API_KEY` | for LLM | Gemini key for `llm_signal` condition handler |
 | `ALGOFORGE_NO_REDIS` | dev | `1` to run without Redis |
 | `ALGOFORGE_NO_AUTH` | dev | `1` to skip API key checks |
@@ -220,6 +240,8 @@ To add a new script: create a `.bat` file in `scripts/`, add a row to this table
 
 ## Key architectural rules
 
+We should integrate existing projects, cyclic_downloader, stocknet, trade_strategy, stockcnet, trade_viewer and finance client under C:\Users\ksato\workspace\finance\ into one with following rules.
+
 1. **Three-layer separation** — Data, ML Model, and Strategy layers communicate only through the HTTP API and shared artifact paths. No direct Python imports across layer boundaries.
 
 2. **Response envelope** — All API responses use `{ "data": T, "meta": {...} }`. The frontend `fetcher` unwraps `.data`; use `fetcherWithMeta` when you need `meta.total` for pagination counts.
@@ -233,6 +255,8 @@ To add a new script: create a `.bat` file in `scripts/`, add a row to this table
 6. **Toast notifications** — Use the `useToast()` hook (from `@/lib/toast`) for user feedback on async operations. Every mutation that calls an API should show a success or error toast.
 
 7. **SWR polling** — Use `refreshInterval` smartly: poll fast while a job is active, slow (or zero) when idle. Pattern: `refreshInterval: (data) => data?.status === "running" ? 3000 : 0`.
+
+We shold proceed with /docs/roadmap.md.
 
 ---
 
