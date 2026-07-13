@@ -10,6 +10,7 @@ const OHLC_FIELDS: { key: string; label: string; required: boolean; aliases: str
   { key: "high",     label: "High",     required: false, aliases: ["high"] },
   { key: "low",      label: "Low",      required: false, aliases: ["low"] },
   { key: "volume",   label: "Volume",   required: false, aliases: ["volume", "vol"] },
+  { key: "spread",   label: "Spread",   required: false, aliases: ["spread"] },
   { key: "datetime", label: "Datetime", required: false, aliases: ["datetime", "date", "time", "timestamp"] },
 ];
 
@@ -21,6 +22,7 @@ export interface ColMap {
   high?: string;
   low?: string;
   volume?: string;
+  spread?: string;
   datetime?: string;
 }
 

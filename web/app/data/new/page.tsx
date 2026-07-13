@@ -383,6 +383,7 @@ export default function NewDatasourcePage() {
       if (colMap.high)     form.append("high_col",     colMap.high);
       if (colMap.low)      form.append("low_col",      colMap.low);
       if (colMap.volume)   form.append("volume_col",   colMap.volume);
+      if (colMap.spread)   form.append("spread_col",   colMap.spread);
       if (colMap.datetime) form.append("datetime_col", colMap.datetime);
       form.append("merge", String(options.merge));
       const upRes = await apiFetch("/api/v1/datasets/upload", { method: "POST", body: form });

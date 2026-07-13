@@ -304,6 +304,7 @@ async def upload_dataset(
     high_col: str | None = Form(None),
     low_col: str | None = Form(None),
     volume_col: str | None = Form(None),
+    spread_col: str | None = Form(None),
     datetime_col: str | None = Form(None),
     append_to: int | None = Form(None, description="Append into this existing dataset ID instead of creating a new one."),
     merge: bool = Form(True, description="Merge all files/CSVs into one dataset (True) or create one dataset per file (False)."),
@@ -320,7 +321,7 @@ async def upload_dataset(
     """
     col_map = {k: v for k, v in {
         "close": close_col, "open": open_col, "high": high_col,
-        "low": low_col, "volume": volume_col, "datetime": datetime_col,
+        "low": low_col, "volume": volume_col, "spread": spread_col, "datetime": datetime_col,
     }.items() if v}
     datasets = await data_service.create_dataset_from_upload(
         db, files,

@@ -35,6 +35,7 @@ _ALIASES: dict[str, list[str]] = {
     "high":     ["high"],
     "low":      ["low"],
     "volume":   ["volume", "vol"],
+    "spread":   ["spread"],
     "datetime": ["datetime", "date", "time", "timestamp"],
 }
 
@@ -81,12 +82,12 @@ def _parse_csv_bytes(contents: bytes, col_map: dict | None, filename: str) -> "p
     close_src = _resolve("close")
     if close_src is not None:
         rename: dict[str, str] = {}
-        for field in ("close", "open", "high", "low", "volume"):
+        for field in ("close", "open", "high", "low", "volume", "spread"):
             src = _resolve(field)
             if src and src not in rename:
                 rename[src] = field
         df = df.rename(columns=rename)
-        keep = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+        keep = [c for c in ["open", "high", "low", "close", "volume", "spread"] if c in df.columns]
         return df[keep]
 
     # ── Tick mode ────────────────────────────────────────────────────────────
