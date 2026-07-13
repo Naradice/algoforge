@@ -9,6 +9,8 @@ import { useToast } from "@/lib/toast";
 import {
   ScatterChart,
   Scatter,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -21,7 +23,7 @@ import {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Tab = "overview" | "preview" | "characteristics";
-type CharsTab = "endogenous" | "exogenous";
+type CharsTab = "endogenous" | "exogenous" | "structure";
 type SeasonalityView = "hour_day" | "hour_week" | "weekday_month" | "day_month" | "month_year";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,7 +33,14 @@ type FullMetrics = Record<string, any>;
 // Order matches the backend registry (fastest → slowest) so charts appear progressively.
 const ENDOGENOUS_KEYS = ["return_dist", "ccdf", "diffusion", "acf", "vol_clustering", "qq"] as const;
 const EXOGENOUS_KEYS = ["exogenous_jump_tail", "exogenous_cdf", "exogenous_rolling_mean", "exogenous_long_lag_acf", "exogenous_seasonality"] as const;
-const ALL_CHAR_KEYS = [...ENDOGENOUS_KEYS, ...EXOGENOUS_KEYS] as const;
+const STRUCTURE_KEYS = [
+  "long_range_dependence",
+  "spectral_periodicity",
+  "multiscale_wavelet",
+  "complexity_nonlinearity",
+  "regime_changes",
+] as const;
+const ALL_CHAR_KEYS = [...ENDOGENOUS_KEYS, ...EXOGENOUS_KEYS, ...STRUCTURE_KEYS] as const;
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 
@@ -671,6 +680,171 @@ function LongLagAcfSection({ m }: { m: FullMetrics }) {
   );
 }
 
+// ── Structure / complexity charts ──────────────────────────────────────────────
+
+function StatGrid({ stats }: { stats: { label: string; value: string }[] }) {
+  return (
+    <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+      {stats.map(({ label, value }) => (
+        <div key={label} className="rounded border border-gray-800 bg-gray-950 p-2">
+          <p className="text-xs text-gray-500 uppercase">{label}</p>
+          <p className="mt-0.5 text-sm font-bold text-white font-mono">{value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LongRangeDependenceSection({ m }: { m: FullMetrics }) {
+  const acfData = m.acf_values.map((v: number, lag: number) => ({ lag, acf: v }));
+  return (
+    <Section title="Long-Range Dependence — Hurst Exponent (DFA)">
+      <StatGrid stats={[
+        { label: "Hurst", value: isNaN(m.hurst) ? "—" : m.hurst.toFixed(3) },
+        { label: "Behavior", value: m.interpretation },
+        { label: "Memory length (lags)", value: String(m.memory_length) },
+        { label: "ADF stat", value: m.adf_statistic.toFixed(2) },
+        { label: "ADF p-value", value: m.adf_pvalue.toExponential(2) },
+      ]} />
+      <p className="text-xs text-gray-600">
+        Hurst &gt; 0.5: trending · &lt; 0.5: mean-reverting · = 0.5: random walk. Memory length is the first ACF lag
+        that drops inside the ±2/√n significance band (shaded) — an estimate of how far ahead past values matter.
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="lag" name="Lag" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "Lag", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="acf" name="ACF" tick={{ fontSize: 10, fill: "#6b7280" }} width={44} />
+          <ReferenceLine y={0} stroke="#374151" strokeDasharray="2 2" />
+          <ReferenceLine y={m.acf_significance_band} stroke="#4b5563" strokeDasharray="2 2" />
+          <ReferenceLine y={-m.acf_significance_band} stroke="#4b5563" strokeDasharray="2 2" />
+          <ReferenceLine x={m.memory_length} stroke="#f59e0b" strokeDasharray="4 2"
+            label={{ value: "memory length", position: "top", fill: "#f59e0b", fontSize: 10 }} />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => v.toFixed(4)} />
+          <Scatter name="ACF(r)" data={acfData} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.5 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function SpectralPeriodicitySection({ m }: { m: FullMetrics }) {
+  const psdData = m.frequencies
+    .map((f: number, j: number) => (m.psd[j] > 0 ? { f, y: Math.log10(m.psd[j]) } : null))
+    .filter((d: unknown): d is { f: number; y: number } => d !== null);
+  return (
+    <Section title="Spectral Periodicity — Power Spectrum (Welch)">
+      <StatGrid stats={[
+        { label: "Dominant period", value: m.dominant_period ? `${m.dominant_period.toFixed(1)} bars` : "—" },
+        { label: "Periodicity strength", value: m.periodicity_strength.toFixed(2) },
+        { label: "Spectral entropy", value: isNaN(m.spectral_entropy) ? "—" : m.spectral_entropy.toFixed(3) },
+        { label: "Low-freq energy", value: `${(m.band_energy.low * 100).toFixed(1)}%` },
+        { label: "Mid-freq energy", value: `${(m.band_energy.mid * 100).toFixed(1)}%` },
+        { label: "High-freq energy", value: `${(m.band_energy.high * 100).toFixed(1)}%` },
+      ]} />
+      <p className="text-xs text-gray-600">
+        Periodicity strength = peak power / mean power — high values mean a strong, clear cycle. Spectral entropy
+        near 0 = energy concentrated in a few frequencies; near 1 = spread evenly (noise-like).
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="f" name="Frequency" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "Frequency (cycles/bar)", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="y" name="Power" tick={{ fontSize: 10, fill: "#6b7280" }} width={56}
+            tickFormatter={(v: number) => `10^${v.toFixed(0)}`}
+            label={{ value: "log Power", angle: -90, position: "insideLeft", fill: "#6b7280", fontSize: 11 }} />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => Math.pow(10, v).toExponential(3)} />
+          <Scatter name="PSD" data={psdData} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1.2 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function MultiscaleWaveletSection({ m }: { m: FullMetrics }) {
+  const data = m.labels.map((label: string, j: number) => ({ label, energy: m.energy_fraction[j] * 100 }));
+  return (
+    <Section title="Multiscale Structure — Wavelet Energy by Scale">
+      <StatGrid stats={[
+        { label: "Wavelet", value: m.wavelet },
+        { label: "Levels", value: String(m.level) },
+        { label: "Flatness score", value: isNaN(m.flatness_score) ? "—" : m.flatness_score.toFixed(3) },
+      ]} />
+      <p className="text-xs text-gray-600">
+        Energy fraction per decomposition scale (coarsest → finest). Flatness near 1 means short-, medium-, and
+        long-term fluctuations all contribute — genuine multiscale structure. Near 0 means one scale dominates.
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} />
+          <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} width={44} tickFormatter={(v: number) => `${v}%`} />
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => `${v.toFixed(1)}%`} />
+          <Bar dataKey="energy" name="Energy" fill={COLOR} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
+function ComplexityNonlinearitySection({ m }: { m: FullMetrics }) {
+  return (
+    <Section title="Complexity — Entropy &amp; Nonlinearity">
+      <StatGrid stats={[
+        { label: "Permutation entropy", value: isNaN(m.permutation_entropy) ? "—" : m.permutation_entropy.toFixed(3) },
+        { label: "Sample entropy", value: isNaN(m.sample_entropy) ? "—" : m.sample_entropy.toFixed(3) },
+        { label: "BDS statistic", value: isNaN(m.bds_statistic) ? "—" : m.bds_statistic.toFixed(3) },
+        { label: "BDS p-value", value: isNaN(m.bds_pvalue) ? "—" : m.bds_pvalue.toExponential(2) },
+        { label: "Nonlinear?", value: m.nonlinear === null ? "—" : m.nonlinear ? "Yes" : "No" },
+      ]} />
+      <p className="text-xs text-gray-600">
+        Permutation/sample entropy near 1 (normalised) or high means low predictability. A BDS p-value below 0.05
+        means dependence remains after removing linear structure — the series has nonlinear dynamics a linear
+        model can&apos;t capture.
+        {m.downsampled && ` Computed on ${m.n_used.toLocaleString()} downsampled points for speed.`}
+      </p>
+    </Section>
+  );
+}
+
+function RegimeChangesSection({ m }: { m: FullMetrics }) {
+  const data = m.series_values.map((v: number, j: number) => ({ x: j, y: v }));
+  return (
+    <Section title="Regime Changes — Changepoint Detection (PELT)">
+      <StatGrid stats={[
+        { label: "Changepoints", value: String(m.n_changepoints) },
+        { label: "Segments", value: String(m.n_segments) },
+        { label: "Avg segment length", value: m.avg_segment_length ? m.avg_segment_length.toFixed(1) : "—" },
+      ]} />
+      <p className="text-xs text-gray-600">
+        Vertical markers show detected shifts in return mean/variance — how often the series moves between
+        statistical regimes.
+        {m.downsampled && ` Computed on ${m.n_used.toLocaleString()} downsampled points for speed.`}
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
+        <ScatterChart margin={{ top: 4, right: 16, bottom: 24, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis type="number" dataKey="x" name="Position" tick={{ fontSize: 10, fill: "#6b7280" }}
+            label={{ value: "Position (downsampled)", position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+          <YAxis type="number" dataKey="y" name="Return" tick={{ fontSize: 10, fill: "#6b7280" }} width={56}
+            tickFormatter={(v: number) => v.toExponential(1)} />
+          <ReferenceLine y={0} stroke="#374151" strokeDasharray="2 2" />
+          {m.changepoints_display.map((cp: number) => (
+            <ReferenceLine key={cp} x={cp} stroke="#f59e0b" strokeDasharray="4 2" />
+          ))}
+          <Tooltip {...CHART_STYLE} formatter={(v: number) => v.toExponential(4)} />
+          <Scatter name="Return" data={data} fill={COLOR}
+            line={{ stroke: COLOR, strokeWidth: 1 }} shape={NoShape} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Section>
+  );
+}
+
 // ── CharacteristicsPanel ──────────────────────────────────────────────────────
 
 function SkeletonSection({ title }: { title: string }) {
@@ -708,7 +882,7 @@ function CharacteristicsPanel({ metrics }: { metrics: Record<string, any> }) {
 
       {/* Sub-tabs */}
       <div className="flex gap-1 border-b border-gray-800">
-        {(["endogenous", "exogenous"] as CharsTab[]).map((t) => (
+        {(["endogenous", "exogenous", "structure"] as CharsTab[]).map((t) => (
           <button key={t} onClick={() => setCharsTab(t)}
             className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors capitalize ${
               charsTab === t ? "border-brand-500 text-brand-500" : "border-transparent text-gray-400 hover:text-white"
@@ -765,6 +939,26 @@ function CharacteristicsPanel({ metrics }: { metrics: Record<string, any> }) {
                 : (!exoAllDone && <SkeletonSection title="Long-lag ACF" />)}
             </>
           )}
+        </div>
+      )}
+
+      {charsTab === "structure" && (
+        <div className="space-y-4">
+          {m.long_range_dependence && !m.long_range_dependence.error
+            ? <LongRangeDependenceSection m={m.long_range_dependence} />
+            : <SkeletonSection title="Long-Range Dependence — Hurst Exponent (DFA)" />}
+          {m.spectral_periodicity && !m.spectral_periodicity.error
+            ? <SpectralPeriodicitySection m={m.spectral_periodicity} />
+            : <SkeletonSection title="Spectral Periodicity — Power Spectrum" />}
+          {m.multiscale_wavelet && !m.multiscale_wavelet.error
+            ? <MultiscaleWaveletSection m={m.multiscale_wavelet} />
+            : <SkeletonSection title="Multiscale Structure — Wavelet Energy" />}
+          {m.complexity_nonlinearity && !m.complexity_nonlinearity.error
+            ? <ComplexityNonlinearitySection m={m.complexity_nonlinearity} />
+            : <SkeletonSection title="Complexity — Entropy & Nonlinearity" />}
+          {m.regime_changes && !m.regime_changes.error
+            ? <RegimeChangesSection m={m.regime_changes} />
+            : <SkeletonSection title="Regime Changes — Changepoint Detection" />}
         </div>
       )}
     </div>

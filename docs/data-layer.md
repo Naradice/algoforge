@@ -183,9 +183,25 @@ Retrieve: `GET /datasets/{id}/characteristics`
 | `kurtosis` | Fat tails | > 3: more extreme moves than Gaussian |
 | `volatility` | Annualised std of returns | Baseline risk measure |
 | `skewness` | Return distribution asymmetry | Negative: more downside risk |
-| `adf_statistic` | Augmented Dickey-Fuller test | Low p-value: stationary |
 
-The `CHARACTERISTIC_REGISTRY` in `backend/data/characteristics.py` is extensible — add new analysis functions by decorating them with `@register_characteristic`.
+The `CHARACTERISTIC_REGISTRY` in `backend/data/characteristics.py` is extensible — add new analysis functions by decorating them with `@register`.
+
+### Structure / complexity analyses
+
+Five additional registered analyses (UI tab "Structure") characterize deeper time-series structure. All run on log-returns of the `close` column. Two new dependencies are required: `PyWavelets` and `ruptures` (both in `backend/requirements.txt`). For very large datasets (e.g. DDM tick data), the O(n²)-ish analyses (sample entropy, BDS test, changepoint detection) deterministically decimate the input to `MAX_ANALYSIS_N` (5000) points via stride sampling — the response includes `n_used`/`downsampled` so callers know when this happened.
+
+| Analysis key | Metric | Description | Interpretation |
+|--------------|--------|-------------|----------------|
+| `long_range_dependence` | `hurst` | Hurst exponent via detrended fluctuation analysis (DFA) — replaces the older crude estimator | > 0.5 trending, < 0.5 mean-reverting, ≈ 0.5 random walk (see `interpretation` label) |
+| | `memory_length` | First ACF lag that drops below the ±2/√n significance band | Larger = information further in the past still matters |
+| | `adf_statistic` / `adf_pvalue` | Augmented Dickey-Fuller stationarity test | Low p-value: stationary |
+| `spectral_periodicity` | `dominant_period` / `periodicity_strength` | Welch power spectral density: dominant cycle length and peak/mean power ratio | High strength = a clear, strong periodic component |
+| | `band_energy` | Fraction of spectral energy in low/mid/high frequency thirds | Shows whether short- or long-cycle behavior dominates |
+| | `spectral_entropy` | Shannon entropy of the normalized power spectrum, in [0, 1] | Near 0: energy concentrated in few frequencies; near 1: noise-like |
+| `multiscale_wavelet` | `energy_fraction`, `flatness_score` | `db4` wavelet decomposition energy per scale, and entropy of that energy distribution | Flatness near 1: short/medium/long-term fluctuations coexist; near 0: one scale dominates |
+| `complexity_nonlinearity` | `permutation_entropy`, `sample_entropy` | Ordinal-pattern and template-matching entropy of returns | Higher: less predictable / more complex |
+| | `bds_statistic` / `bds_pvalue` / `nonlinear` | BDS test for nonlinear dependence | p < 0.05: dependence remains after removing linear structure — series is nonlinear |
+| `regime_changes` | `n_changepoints`, `changepoints`, `avg_segment_length` | PELT changepoint detection (L2 cost, BIC-style penalty) on returns | More changepoints / shorter segments: frequent regime shifts |
 
 ---
 

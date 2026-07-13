@@ -18,14 +18,20 @@ Each registered function is run independently so results stream to the UI one at
 
 from __future__ import annotations
 
+import itertools
 from typing import Any, Callable, Iterator
 
 import numpy as np
 import pandas as pd
+import pywt
+import ruptures as rpt
+from scipy.signal import welch
 from scipy.stats import laplace, norm, probplot
 from scipy.stats import skew as _skew
 from scipy.stats import kurtosis as _kurtosis
 from statsmodels.tsa.stattools import acf as _acf
+from statsmodels.tsa.stattools import adfuller as _adfuller
+from statsmodels.tsa.stattools import bds as _bds
 
 AnalysisFn = Callable[[pd.DataFrame], dict[str, Any]]
 
@@ -37,6 +43,10 @@ LAGS_VOL = 100
 CCDF_POINTS = 200
 HIST_BINS = 100
 PERIODS = [1, 2, 5, 10, 20, 50, 100, 200]
+
+# Cap for O(n^2)-ish analyses (sample entropy, BDS test, changepoint detection) so they
+# stay fast on tick-level datasets. Deterministic stride decimation preserves temporal order.
+MAX_ANALYSIS_N = 5000
 
 
 def register(name: str) -> Callable[[AnalysisFn], AnalysisFn]:
@@ -64,15 +74,65 @@ def _ccdf(arr: np.ndarray) -> tuple[list, list]:
 
 
 def _hurst(arr: np.ndarray) -> float:
-    max_lag = min(50, len(arr) // 4)
-    if max_lag < 2:
+    """Hurst exponent via detrended fluctuation analysis (DFA).
+
+    Cumulative sum of the demeaned series is split into boxes of size `s`; each box is
+    linearly detrended and the RMS residual fluctuation F(s) is averaged. The slope of
+    log(F(s)) vs log(s) is the Hurst exponent. More robust to non-stationary drift than a
+    plain variance-scaling fit.
+    """
+    n = len(arr)
+    if n < 32:
         return float("nan")
-    lags = range(2, max_lag)
-    tau = [float(np.std(arr[lg:] - arr[:-lg])) for lg in lags]
-    if any(t <= 0 for t in tau):
+    profile = np.cumsum(arr - np.mean(arr))
+    max_box = n // 4
+    min_box = 4
+    if max_box <= min_box:
         return float("nan")
-    poly = np.polyfit(np.log(list(lags)), np.log(tau), 1)
+    box_sizes = np.unique(np.logspace(np.log10(min_box), np.log10(max_box), 8).astype(int))
+    box_sizes = box_sizes[box_sizes >= min_box]
+    if len(box_sizes) < 2:
+        return float("nan")
+
+    fluctuations = []
+    for s in box_sizes:
+        n_boxes = n // s
+        if n_boxes < 1:
+            continue
+        segments = profile[: n_boxes * s].reshape(n_boxes, s)
+        x = np.arange(s)
+        rms = []
+        for seg in segments:
+            coeffs = np.polyfit(x, seg, 1)
+            trend = np.polyval(coeffs, x)
+            rms.append(np.sqrt(np.mean((seg - trend) ** 2)))
+        fluctuations.append(np.mean(rms))
+
+    valid = [(s, f) for s, f in zip(box_sizes, fluctuations) if f > 0]
+    if len(valid) < 2:
+        return float("nan")
+    sizes, fs = zip(*valid)
+    poly = np.polyfit(np.log(sizes), np.log(fs), 1)
     return float(poly[0])
+
+
+def _hurst_label(h: float) -> str:
+    if np.isnan(h):
+        return "undetermined"
+    if h > 0.55:
+        return "trending"
+    if h < 0.45:
+        return "mean-reverting"
+    return "random walk"
+
+
+def _decimate(arr: np.ndarray, max_n: int = MAX_ANALYSIS_N) -> tuple[np.ndarray, bool]:
+    """Deterministic stride decimation to cap O(n^2)-ish analyses. Preserves temporal order."""
+    n = len(arr)
+    if n <= max_n:
+        return arr, False
+    stride = -(-n // max_n)  # ceiling division so len(arr[::stride]) <= max_n
+    return arr[::stride], True
 
 
 def _acf_safe(arr: np.ndarray, nlags: int) -> list:
@@ -406,6 +466,216 @@ def compute_exogenous_seasonality(df: pd.DataFrame) -> dict:
             "volume_mean": hourly_vol_mean,
         },
         "seasonality": seasonality,
+    }
+
+
+# ── Structure / complexity helpers ─────────────────────────────────────────────
+
+def _spectral_entropy_from_psd(psd: np.ndarray) -> float:
+    """Shannon entropy of a normalised power spectrum, scaled to [0, 1]."""
+    total = psd.sum()
+    if total <= 0:
+        return float("nan")
+    probs = psd[psd > 0] / total
+    if len(probs) < 2:
+        return float("nan")
+    return float(-np.sum(probs * np.log2(probs)) / np.log2(len(probs)))
+
+
+def _permutation_entropy(arr: np.ndarray, order: int = 3, delay: int = 1) -> float:
+    """Bandt–Pompe permutation entropy, normalised to [0, 1] by log2(order!)."""
+    n = len(arr)
+    span = delay * (order - 1)
+    if n <= span:
+        return float("nan")
+    patterns = list(itertools.permutations(range(order)))
+    pattern_idx = {p: i for i, p in enumerate(patterns)}
+    counts = np.zeros(len(patterns))
+    for i in range(n - span):
+        window = arr[i : i + span + 1 : delay]
+        counts[pattern_idx[tuple(np.argsort(window))]] += 1
+    counts = counts[counts > 0]
+    if len(counts) < 2:
+        return float("nan")
+    probs = counts / counts.sum()
+    return float(-np.sum(probs * np.log2(probs)) / np.log2(len(patterns)))
+
+
+def _sample_entropy(arr: np.ndarray, m: int = 2, r: float | None = None) -> float:
+    """SampEn(m, r): -log(A/B), A/B = count of (m+1)/m-length template matches within
+    tolerance r (Chebyshev distance), each unordered pair counted once."""
+    n = len(arr)
+    if r is None:
+        r = 0.2 * float(np.std(arr))
+    if r <= 0 or n <= m + 2:
+        return float("nan")
+
+    def _match_count(mm: int) -> int:
+        templates = np.array([arr[i : i + mm] for i in range(n - mm + 1)])
+        total = 0
+        for i in range(len(templates) - 1):
+            dist = np.max(np.abs(templates[i + 1 :] - templates[i]), axis=1)
+            total += int(np.sum(dist <= r))
+        return total
+
+    b = _match_count(m)
+    a = _match_count(m + 1)
+    if b == 0 or a == 0:
+        return float("nan")
+    return float(-np.log(a / b))
+
+
+# ── Registered analyses — long-term structure / complexity ────────────────────
+
+@register("long_range_dependence")
+def compute_long_range_dependence(df: pd.DataFrame) -> dict:
+    """Hurst exponent (DFA), trending/mean-reverting/random-walk label, ADF stationarity,
+    and effective memory length (first ACF lag to drop below the significance band)."""
+    _, r = _close_and_returns(df)
+    if len(r) < 32:
+        raise ValueError("Need at least 32 returns")
+    h = _hurst(r)
+    nlags = min(200, len(r) // 2 - 1)
+    acf_vals = _acf_safe(r, nlags)
+    band = 2 / np.sqrt(len(r))
+    memory_length = next(
+        (lag for lag in range(1, len(acf_vals)) if abs(acf_vals[lag]) < band),
+        len(acf_vals) - 1,
+    )
+    try:
+        adf_stat, adf_pvalue = _adfuller(r)[:2]
+    except Exception:
+        adf_stat, adf_pvalue = float("nan"), float("nan")
+    return {
+        "hurst": h,
+        "interpretation": _hurst_label(h),
+        "memory_length": int(memory_length),
+        "acf_significance_band": float(band),
+        "acf_values": acf_vals,
+        "adf_statistic": float(adf_stat),
+        "adf_pvalue": float(adf_pvalue),
+    }
+
+
+@register("spectral_periodicity")
+def compute_spectral_periodicity(df: pd.DataFrame) -> dict:
+    """Welch power spectral density of returns: dominant period, periodicity strength
+    (peak/mean power), low/mid/high frequency-band energy split, and spectral entropy."""
+    _, r = _close_and_returns(df)
+    if len(r) < 32:
+        raise ValueError("Need at least 32 returns")
+    nperseg = min(256, len(r))
+    freqs, psd = welch(r, nperseg=nperseg)
+    freqs, psd = freqs[1:], psd[1:]  # drop DC component
+    if len(psd) == 0:
+        raise ValueError("Insufficient data for spectral analysis")
+    peak_idx = int(np.argmax(psd))
+    dominant_freq = float(freqs[peak_idx])
+    thirds = np.array_split(psd, 3)
+    band_energy_raw = {"low": float(thirds[0].sum()), "mid": float(thirds[1].sum()), "high": float(thirds[2].sum())}
+    total = sum(band_energy_raw.values()) or 1.0
+    return {
+        "frequencies": freqs.tolist(),
+        "psd": psd.tolist(),
+        "dominant_frequency": dominant_freq,
+        "dominant_period": float(1 / dominant_freq) if dominant_freq > 0 else None,
+        "periodicity_strength": float(psd[peak_idx] / np.mean(psd)),
+        "band_energy": {k: v / total for k, v in band_energy_raw.items()},
+        "spectral_entropy": _spectral_entropy_from_psd(psd),
+    }
+
+
+@register("multiscale_wavelet")
+def compute_multiscale_wavelet(df: pd.DataFrame) -> dict:
+    """Wavelet decomposition (db4) of returns: energy fraction per scale, and a
+    "flatness score" (entropy of the energy distribution) — flat means short-, medium-,
+    and long-term fluctuations coexist; concentrated means one scale dominates."""
+    _, r = _close_and_returns(df)
+    if len(r) < 32:
+        raise ValueError("Need at least 32 returns")
+    wavelet = "db4"
+    max_level = pywt.dwt_max_level(len(r), pywt.Wavelet(wavelet).dec_len)
+    level = max(1, min(6, max_level))
+    coeffs = pywt.wavedec(np.array(r, dtype=np.float64, copy=True), wavelet=wavelet, level=level)
+    energies = np.array([float(np.sum(np.square(c))) for c in coeffs])
+    total = energies.sum() or 1.0
+    energy_fraction = (energies / total).tolist()
+    probs = energies[energies > 0] / total
+    flatness_score = (
+        float(-np.sum(probs * np.log2(probs)) / np.log2(len(probs))) if len(probs) > 1 else float("nan")
+    )
+    labels = [f"approx_L{level}"] + [f"detail_L{level - i}" for i in range(level)]
+    return {
+        "wavelet": wavelet,
+        "level": level,
+        "labels": labels,
+        "energy_fraction": energy_fraction,
+        "flatness_score": flatness_score,
+    }
+
+
+@register("complexity_nonlinearity")
+def compute_complexity_nonlinearity(df: pd.DataFrame) -> dict:
+    """Permutation entropy, sample entropy, and the BDS nonlinearity test on returns.
+    A low BDS p-value means dependence remains after removing linear structure — i.e.
+    the series has nonlinear dynamics a linear model can't capture."""
+    _, r = _close_and_returns(df)
+    if len(r) < 32:
+        raise ValueError("Need at least 32 returns")
+    permutation_entropy = _permutation_entropy(r, order=3, delay=1)
+    r_capped, downsampled = _decimate(r)
+    sample_entropy = _sample_entropy(r_capped, m=2)
+    try:
+        bds_stat, bds_pvalue = _bds(r_capped, max_dim=2)
+        bds_statistic = float(np.atleast_1d(bds_stat)[-1])
+        bds_pvalue = float(np.atleast_1d(bds_pvalue)[-1])
+    except Exception:
+        bds_statistic, bds_pvalue = float("nan"), float("nan")
+    return {
+        "permutation_entropy": permutation_entropy,
+        "sample_entropy": sample_entropy,
+        "bds_statistic": bds_statistic,
+        "bds_pvalue": bds_pvalue,
+        "nonlinear": (bool(bds_pvalue < 0.05) if not np.isnan(bds_pvalue) else None),
+        "n_used": int(len(r_capped)),
+        "downsampled": downsampled,
+    }
+
+
+@register("regime_changes")
+def compute_regime_changes(df: pd.DataFrame) -> dict:
+    """Changepoint detection (PELT, RBF cost, BIC-style penalty) on returns — counts
+    how often the series shifts between statistical regimes."""
+    _, r = _close_and_returns(df)
+    if len(r) < 32:
+        raise ValueError("Need at least 32 returns")
+    r_capped, downsampled = _decimate(r)
+    n = len(r_capped)
+    variance = float(np.var(r_capped))
+    # BIC-style penalty for the L2 (mean-shift) cost; the RBF cost's penalty isn't
+    # variance-scaled and over-segments badly at this magnitude — L2 tuned empirically
+    # against synthetic mean-shift and pure-noise series (see plan/tests).
+    penalty = 30.0 * float(np.log(n)) * variance if variance > 0 else 1.0
+    algo = rpt.Pelt(model="l2").fit(r_capped.reshape(-1, 1))
+    breakpoints = algo.predict(pen=penalty)
+    changepoints = [int(b) for b in breakpoints if b < n]
+    segment_lengths = np.diff([0] + changepoints + [n]).tolist()
+
+    # Downsampled series + changepoints scaled to the same index space, for charting
+    # (mirrors the ~400-point sampling convention used elsewhere, e.g. compute_exogenous_rolling_mean).
+    step = max(1, n // 400)
+    series_values = r_capped[::step].tolist()
+    changepoints_display = [round(cp / step) for cp in changepoints]
+
+    return {
+        "n_changepoints": len(changepoints),
+        "changepoints": changepoints,
+        "n_segments": len(segment_lengths),
+        "avg_segment_length": float(np.mean(segment_lengths)) if segment_lengths else None,
+        "n_used": n,
+        "downsampled": downsampled,
+        "series_values": series_values,
+        "changepoints_display": changepoints_display,
     }
 
 

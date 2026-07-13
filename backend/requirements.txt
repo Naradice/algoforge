@@ -54,3 +54,5 @@ orjson
 statsmodels
 scipy
 pyarrow
+PyWavelets
+ruptures
