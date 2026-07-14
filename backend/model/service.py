@@ -108,6 +108,7 @@ class ModelService:
                     "model_name": model_rec.name if model_rec else None,
                     "architecture": model_rec.architecture if model_rec else None,
                     "dataset_id": run.dataset_id,
+                    "preprocessed_dataset_id": run.preprocessed_dataset_id,
                     "hyperparams": run.hyperparams,
                     "status": run.status,
                     "best_epoch": run.best_epoch,

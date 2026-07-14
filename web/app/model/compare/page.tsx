@@ -31,6 +31,7 @@ interface CompareResult {
   model_name: string | null;
   architecture: string | null;
   dataset_id: number;
+  preprocessed_dataset_id: number | null;
   hyperparams: Record<string, unknown>;
   status: string;
   best_epoch: number | null;
@@ -290,6 +291,19 @@ export default function ModelComparePage() {
   // First selected baseline run (if any) — every other run's val_loss is shown relative to it.
   const baselineRun = validComparison.find((r) => BASELINE_ARCHITECTURES.includes(r.architecture ?? ""));
 
+  // Dataset + recipe names — the exact context that made the mismatched-normalize confusion
+  // (and the earlier "why is spectral entropy different" question) hard to spot at a glance.
+  const { data: allDatasets } = useSWR("/api/v1/datasets?page_size=1000", fetcher);
+  const { data: allRecipes } = useSWR("/api/v1/preprocessed-datasets?page_size=500", fetcher);
+  const datasetNameById = new Map<number, string>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (allDatasets ?? []).map((d: any) => [d.id, d.name])
+  );
+  const recipeById = new Map<number, { name: string; normalize: string }>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (allRecipes ?? []).map((r: any) => [r.id, { name: r.name, normalize: r.normalize }])
+  );
+
   const { data: datasetCharsData } = useSWR(
     datasetIds.length ? ["compare-model-chars", ...datasetIds] : null,
     () => Promise.all(datasetIds.map((id) =>
@@ -364,6 +378,7 @@ export default function ModelComparePage() {
               <thead>
                 <tr className="text-left text-gray-400 border-b border-gray-700">
                   <th className="pb-2 pr-4">Run</th>
+                  <th className="pb-2 pr-4">Dataset</th>
                   <th className="pb-2 pr-4">Architecture</th>
                   <th className="pb-2 pr-4">Params</th>
                   <th className="pb-2 pr-4">Best Epoch</th>
@@ -385,6 +400,22 @@ export default function ModelComparePage() {
                       >
                         #{r.run_id}
                       </a>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <a href={`/data/datasets/${r.dataset_id}`} className="text-gray-200 hover:text-white hover:underline">
+                        {datasetNameById.get(r.dataset_id) ?? `Dataset ${r.dataset_id}`}
+                      </a>
+                      {r.preprocessed_dataset_id != null && (
+                        <div>
+                          <a
+                            href={`/data/preprocessed/${r.preprocessed_dataset_id}`}
+                            className="text-xs text-gray-500 hover:text-gray-300 hover:underline"
+                          >
+                            {recipeById.get(r.preprocessed_dataset_id)?.name ?? `recipe ${r.preprocessed_dataset_id}`}
+                            {recipeById.get(r.preprocessed_dataset_id) && ` · ${recipeById.get(r.preprocessed_dataset_id)!.normalize}`}
+                          </a>
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-4 text-gray-300">{r.architecture ?? "—"}</td>
                     <td className="py-2 pr-4 text-gray-300 font-mono">{formatParams(r.num_params)}</td>

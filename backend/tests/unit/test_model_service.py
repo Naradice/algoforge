@@ -253,7 +253,7 @@ class TestCompareTrainingRuns:
     @pytest.mark.asyncio
     async def test_includes_model_size_and_architecture_when_model_resolves(self):
         svc = ModelService()
-        run = MagicMock(spec=TrainingRun, id=1, model_id=7, dataset_id=2,
+        run = MagicMock(spec=TrainingRun, id=1, model_id=7, dataset_id=2, preprocessed_dataset_id=9,
                         hyperparams={}, status="completed", best_epoch=10,
                         val_loss=0.1, num_params=184320, artifact_path="/path")
         model = MagicMock(spec=MLModel, id=7, architecture="lstm")
@@ -269,6 +269,8 @@ class TestCompareTrainingRuns:
         assert result[0]["architecture"] == "lstm"
         assert result[0]["model_name"] == "my-lstm"
         assert result[0]["validation"] is None
+        assert result[0]["dataset_id"] == 2
+        assert result[0]["preprocessed_dataset_id"] == 9
 
     @pytest.mark.asyncio
     async def test_includes_latest_validation_metrics_when_present(self):
