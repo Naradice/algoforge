@@ -49,6 +49,16 @@ const PALETTE = ["#0ea5e9", "#f97316", "#22c55e", "#a855f7", "#ec4899", "#eab308
 // "Relative MSE" = other_run.val_loss / baseline_run.val_loss needs no extra backend field.
 const BASELINE_ARCHITECTURES = ["ar", "ma", "arma"];
 
+// val_loss is MSE *of whatever the recipe's normalize step produced* — "returns" (log-return
+// scale, tiny numbers) and "zscore" (unit variance) are not the same units, so a ratio between
+// runs on different normalize settings is meaningless even though it's the same loss function.
+// Discovered live: an AR baseline on "returns" looked ~1,000,000x better than LSTMs on "zscore"
+// purely from scale, not skill — reproduce only by comparing runs built on the same recipe.
+function normalizeOf(r: CompareResult): string | null {
+  const v = r.hyperparams?.normalize;
+  return typeof v === "string" ? v : null;
+}
+
 function formatParams(n: number | null): string {
   if (n == null) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -387,9 +397,18 @@ export default function ModelComparePage() {
                         {r.run_id === baselineRun.run_id ? (
                           <span className="text-xs text-gray-500">(baseline)</span>
                         ) : r.val_loss != null && baselineRun.val_loss ? (
-                          <span className={r.val_loss < baselineRun.val_loss ? "text-green-400" : "text-red-400"}>
-                            {(r.val_loss / baselineRun.val_loss).toFixed(3)}×
-                          </span>
+                          normalizeOf(r) !== normalizeOf(baselineRun) ? (
+                            <span
+                              className="text-amber-400 cursor-help"
+                              title={`Not comparable: this run's recipe normalizes with "${normalizeOf(r) ?? "?"}", the baseline's with "${normalizeOf(baselineRun) ?? "?"}" — val_loss is MSE of different-scale data, so the ratio (${(r.val_loss / baselineRun.val_loss).toFixed(3)}×) is meaningless. Retrain both on recipes with the same normalize to compare.`}
+                            >
+                              ⚠ mismatched normalize
+                            </span>
+                          ) : (
+                            <span className={r.val_loss < baselineRun.val_loss ? "text-green-400" : "text-red-400"}>
+                              {(r.val_loss / baselineRun.val_loss).toFixed(3)}×
+                            </span>
+                          )
                         ) : "—"}
                       </td>
                     )}

@@ -72,6 +72,16 @@ alongside others, a "Relative MSE" column appears — `other_run.val_loss / base
 for every non-baseline run. Below 1× means the model beats the baseline; above 1× means it's
 worse than a naive statistical fit.
 
+**Only valid when every compared run's recipe uses the same `normalize`.** `val_loss` is MSE of
+whatever the recipe's `normalize` step produced — `"returns"` (log-returns, typically ~1e-3
+magnitude) and `"zscore"` (unit variance) are different units, so a ratio between runs on
+different `normalize` settings is meaningless even though it's the same loss function (MSE) on
+both sides. Discovered live: an AR baseline trained on a `"returns"` recipe looked ~1,000,000×
+better than LSTMs trained on a `"zscore"` recipe — pure scale artifact, not model skill. The
+compare table detects this (comparing each run's `hyperparams.normalize` against the baseline's)
+and shows "⚠ mismatched normalize" instead of a ratio. To get a real comparison, retrain every
+model you want to compare against the same `PreprocessedDataset` recipe.
+
 **Not supported yet**: live inference (`POST /models/{id}/predict`) and held-out-dataset
 validation jobs (`POST /models/{id}/validations`) both raise a clear error for these
 architectures — `predict()` guards explicitly rather than crashing on `torch.load()` of a
