@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { useParams } from "next/navigation";
 import { useToast } from "@/lib/toast";
 import { CsvUploadForm, type ColMap, type UploadOptions } from "@/components/csv-upload-form";
+import { TYPE_FIELD_DEFS } from "@/lib/datasource-types";
 
 type TestResult = {
   success: boolean;
@@ -16,89 +17,6 @@ type TestResult = {
   title?: string;
   links?: { href: string; text: string; filename: string; matches_ext: boolean }[];
   error?: string;
-};
-
-// ── Config field definitions (shared with new-datasource page) ────────────────
-
-const TIMEFRAME_OPTIONS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
-
-interface FieldDef {
-  key: string;
-  label: string;
-  type: "text" | "number" | "select" | "date";
-  options?: string[];
-  optionDescriptions?: Record<string, string>;
-  placeholder?: string;
-  hint?: string;
-}
-
-const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
-  ohlc_download: [
-    { key: "client", label: "Provider", type: "select", options: ["yfinance", "vantage"] },
-    {
-      key: "symbol", label: "Symbol", type: "text", placeholder: "USDJPY=X",
-      hint: "yfinance: USDJPY=X, EURUSD=X. Alpha Vantage: USD/JPY",
-    },
-    { key: "timeframe", label: "Timeframe", type: "select", options: TIMEFRAME_OPTIONS },
-    {
-      key: "from_ts", label: "From Date", type: "date",
-      hint: "yfinance H1/M data is limited to ~730 days lookback",
-    },
-    { key: "to_ts", label: "To Date", type: "date", hint: "Leave blank for today" },
-  ],
-  ddm_simulation: [
-    { key: "timeframe", label: "Timeframe", type: "select", options: TIMEFRAME_OPTIONS },
-    { key: "initial_price", label: "Initial Price", type: "number", placeholder: "100.0" },
-    { key: "num_agent", label: "Number of Agents", type: "number", placeholder: "50" },
-    { key: "seed", label: "Random Seed", type: "number", placeholder: "42" },
-  ],
-  web_report: [
-    {
-      key: "url", label: "URL", type: "text",
-      placeholder: "https://www.example.com/reports",
-      hint: "Landing page containing report links",
-    },
-    {
-      key: "ext", label: "File Type", type: "select",
-      options: ["pdf", "html", "mp3", "txt"],
-    },
-    {
-      key: "subfolder", label: "Subfolder", type: "text",
-      placeholder: "mizuho",
-      hint: "Output directory name (under artifacts/web_reports/)",
-    },
-    {
-      key: "filename", label: "Filename Template", type: "text",
-      placeholder: "{YYYYMMDD}.pdf",
-      hint: "Placeholders: {YYYYMMDD} {YYMMDD} {YYYYMM} {YYMM} {filename} {basefilename}",
-    },
-    {
-      key: "type", label: "Fetch Method", type: "select",
-      options: ["load", "goto_load", "goto_download", "load_rep"],
-      optionDescriptions: {
-        load:          "Direct HTTP download (httpx). Fast and simple — use for public links with no bot protection. Will get 403 on Akamai/CDN-protected sites.",
-        goto_load:     "Opens the URL in a real browser and saves the rendered page as a PDF. Use when the target is an HTML page you want to archive as PDF, not a file download.",
-        goto_download: "Uses the browser's fetch() to download the file in-page, carrying real browser headers and cookies. Required for Akamai/CDN-protected PDFs — most Japanese broker sites (Mizuho, Sony Finance, MUFG, etc.) need this.",
-        load_rep:      "Plain HTTP download saved as HTML source. Use to archive a page's raw HTML. Fast, but shares the same CDN limitations as load — won't work on bot-protected sites.",
-      },
-    },
-    {
-      key: "unique", label: "Deduplication", type: "select",
-      options: ["segment", "checksum", "text"],
-      hint: "segment: skip if file exists. checksum: skip if content unchanged. text: skip if link text unchanged.",
-    },
-    {
-      key: "interval_days", label: "Interval (days)", type: "number",
-      placeholder: "1",
-      hint: "Minimum days between downloads. Leave blank to always run.",
-    },
-    {
-      key: "download_time", label: "Download time (UTC)", type: "text",
-      placeholder: "18:00",
-      hint: "Optional. Run at this time each day (HH:MM, UTC).",
-    },
-  ],
-  manual_upload: [],
 };
 
 function configToValues(config: Record<string, unknown>): Record<string, string> {
