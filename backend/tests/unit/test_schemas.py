@@ -98,9 +98,13 @@ class TestMLModelUpdate:
 
 
 class TestTrainingRunCreate:
-    def test_requires_dataset_id(self):
-        with pytest.raises(ValidationError):
-            TrainingRunCreate()  # type: ignore
+    def test_dataset_id_and_preprocessed_dataset_id_both_optional_at_schema_level(self):
+        # Requiring "at least one of dataset_id / preprocessed_dataset_id" is a service-layer
+        # business rule (ModelService.create_training_run raises 422), not a schema constraint —
+        # a bare preprocessed_dataset_id-only payload must validate here.
+        t = TrainingRunCreate()  # type: ignore
+        assert t.dataset_id is None
+        assert t.preprocessed_dataset_id is None
 
     def test_hyperparams_default_empty(self):
         t = TrainingRunCreate(dataset_id=1)
@@ -109,6 +113,11 @@ class TestTrainingRunCreate:
     def test_accepts_hyperparams(self):
         t = TrainingRunCreate(dataset_id=2, hyperparams={"lr": 0.001, "epochs": 50})
         assert t.hyperparams["lr"] == 0.001
+
+    def test_accepts_preprocessed_dataset_id(self):
+        t = TrainingRunCreate(preprocessed_dataset_id=5, hyperparams={"epochs": 10})
+        assert t.preprocessed_dataset_id == 5
+        assert t.dataset_id is None
 
 
 class TestHyperparamSearchCreate:

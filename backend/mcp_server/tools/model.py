@@ -200,25 +200,101 @@ async def create_model(name: str, architecture: str, config: dict) -> dict:
 
 
 @mcp.tool()
-async def start_training_run(model_id: int, dataset_id: int, hyperparams: dict) -> dict:
+async def start_training_run(
+    model_id: int,
+    hyperparams: dict,
+    dataset_id: int | None = None,
+    preprocessed_dataset_id: int | None = None,
+) -> dict:
     """
     Start a training run for a model.
 
+    Either dataset_id or preprocessed_dataset_id must be given. Prefer
+    preprocessed_dataset_id when a saved preprocessing recipe already exists
+    (see list_preprocessed_datasets) — it determines dataset_id, feature
+    columns, and normalization automatically, and its structure
+    characteristics are reused instead of recomputed.
+
     Args:
-        model_id:    Model to train.
-        dataset_id:  Dataset to train on.
-        hyperparams: Training hyperparameters (epochs, lr, batch_size, etc.).
+        model_id:                 Model to train.
+        hyperparams:               Training hyperparameters (epochs, lr, batch_size, obs_len,
+                                    pred_len, etc.). Omit feature_cols/preprocessing/normalize
+                                    when preprocessed_dataset_id is set — they come from the recipe.
+        dataset_id:                Raw dataset to train on (ad-hoc, no saved recipe).
+        preprocessed_dataset_id:   A saved preprocessing recipe (see list_preprocessed_datasets).
     """
     from database import async_session_factory
     from model.service import model_service
     from model.models import TrainingRunCreate
-    from arq_pool import enqueue
+    from celery_app import enqueue
 
     async with async_session_factory() as db:
-        body = TrainingRunCreate(dataset_id=dataset_id, hyperparams=hyperparams)
+        body = TrainingRunCreate(dataset_id=dataset_id, preprocessed_dataset_id=preprocessed_dataset_id, hyperparams=hyperparams)
         run = await model_service.create_training_run(db, model_id, body)
         await enqueue("train_model", run.id)
         return {"run_id": run.id, "model_id": model_id, "status": run.status}
+
+
+@mcp.tool()
+async def list_preprocessed_datasets(dataset_id: int | None = None) -> list[dict]:
+    """
+    List saved preprocessing recipes (named indicator/clustering/feature_cols/normalize
+    configs that can be reused across training runs instead of specifying preprocessing
+    inline every time). Use this before start_training_run to find an existing recipe,
+    or to see whether one needs to be created first.
+
+    Args:
+        dataset_id: Optional — only recipes built on this raw dataset.
+    """
+    from database import async_session_factory
+    from model.service import model_service
+
+    async with async_session_factory() as db:
+        items, _ = await model_service.list_preprocessed_datasets(db, dataset_id=dataset_id, limit=200)
+
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "dataset_id": p.dataset_id,
+            "preprocessing": p.preprocessing,
+            "feature_cols": p.feature_cols,
+            "normalize": p.normalize,
+            "status": p.status,
+            "created_at": p.created_at.isoformat(),
+        }
+        for p in items
+    ]
+
+
+@mcp.tool()
+async def get_preprocessed_dataset(preprocessed_dataset_id: int) -> dict:
+    """
+    Get a saved preprocessing recipe's config and computed structure characteristics
+    (Hurst exponent, spectral periodicity, wavelet multiscale structure,
+    entropy/nonlinearity, regime changes) — the same analyses as get_dataset_characteristics,
+    but computed on the actual preprocessed series this recipe produces.
+
+    Args:
+        preprocessed_dataset_id: ID of the recipe (see list_preprocessed_datasets).
+    """
+    from database import async_session_factory
+    from model.service import model_service
+
+    async with async_session_factory() as db:
+        p = await model_service.get_preprocessed_dataset(db, preprocessed_dataset_id)
+
+    return {
+        "id": p.id,
+        "name": p.name,
+        "dataset_id": p.dataset_id,
+        "preprocessing": p.preprocessing,
+        "feature_cols": p.feature_cols,
+        "normalize": p.normalize,
+        "status": p.status,
+        "characteristics": p.characteristics,
+        "created_at": p.created_at.isoformat(),
+    }
 
 
 @mcp.tool()
@@ -322,7 +398,7 @@ async def start_hyperparameter_search(model_id: int, dataset_id: int, search_gri
     from database import async_session_factory
     from model.service import model_service
     from model.models import HyperparamSearchCreate
-    from arq_pool import enqueue
+    from celery_app import enqueue
 
     async with async_session_factory() as db:
         body = HyperparamSearchCreate(model_id=model_id, dataset_id=dataset_id, search_grid=search_grid)

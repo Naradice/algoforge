@@ -3,13 +3,18 @@
 ## Concepts
 
 ```
-MLModel  →  TrainingRun  →  (arq worker)  →  Checkpoint  →  Deploy  →  Predict
+PreprocessedDataset (recipe) ─┐
+                               ↓
+MLModel  →  TrainingRun  →  (celery worker)  →  Checkpoint  →  Deploy  →  Predict
                                                     ↓
                                            ModelValidation
 ```
 
 An **MLModel** defines an architecture and its configuration.
-A **TrainingRun** trains the model on a specific dataset with given hyperparameters.
+A **PreprocessedDataset** is a named, reusable preprocessing recipe (indicators/clustering,
+feature columns, normalization) built on a raw dataset — see "Preprocessed Datasets" below.
+A **TrainingRun** trains the model on a dataset (directly, or via a `PreprocessedDataset`
+recipe) with given hyperparameters.
 A **TrainingCheckpoint** stores the model weights at each epoch.
 **Deployment** copies the best checkpoint to the model's `artifact_path`, enabling inference.
 
@@ -39,15 +44,69 @@ Common hyperparameters (all architectures):
 | `epochs` | 50 | Training epochs |
 | `batch_size` | 32 | Mini-batch size |
 | `lr` | 0.001 | Learning rate |
-| `feature_cols` | `["close"]` | Columns to use as features |
-| `normalize` | `"returns"` | Normalisation: `returns`, `zscore`, `minmax`, `robust`, `none` |
 | `val_split` | 0.2 | Fraction of data held out for validation |
-| `preprocessing` | `null` | `{ indicators: [...], clustering: {...} }` — adds technical-indicator/cluster columns before `feature_cols` selection. See `backend/model/trainers/preprocessing.py` for the indicator types (`sma`, `ema`, `rsi`, `macd`, `bbands`, `atr`, `returns`, `volatility`) and their output column-naming convention. |
+| `feature_cols` | `["close"]` | Columns to use as features — only meaningful for ad-hoc runs; ignored (overridden) when `preprocessed_dataset_id` is set |
+| `normalize` | `"returns"` | Normalisation: `returns`, `zscore`, `minmax`, `robust`, `none` — same override rule as `feature_cols` |
+| `preprocessing` | `null` | `{ indicators: [...], clustering: {...} }` — same override rule as `feature_cols`. See `backend/model/trainers/preprocessing.py` for the indicator types (`sma`, `ema`, `rsi`, `macd`, `bbands`, `atr`, `returns`, `volatility`) and their output column-naming convention. |
 
 Architecture-specific params are passed in the same `hyperparams` dict.
 
+`feature_cols`/`normalize`/`preprocessing` can still be set inline for one-off/ad-hoc runs (e.g.
+via the MCP `start_training_run` tool or `POST /training-runs/search`), but the `/model/{id}`
+"New Training Run" UI only offers picking a saved `PreprocessedDataset` recipe — see below.
+
 Row cap: `OHLCWindowDataset` keeps only the most recent `_MAX_OHLC_ROWS` (50,000) rows after
 preprocessing, so a training run on a larger dataset only ever sees a recent slice of it.
+
+---
+
+## Preprocessed Datasets
+
+A **PreprocessedDataset** is a named, reusable preprocessing recipe — save it once, then pick
+it from a list every time you start a training run instead of re-specifying indicators/
+clustering/feature columns/normalization inline. It also gives you a browsable record of what
+kind of data each training run actually used.
+
+```
+POST   /preprocessed-datasets                              → 202, status: pending
+GET    /preprocessed-datasets?dataset_id={id}               → list (optionally filtered)
+GET    /preprocessed-datasets/{id}
+PATCH  /preprocessed-datasets/{id}    { "name": "..." }      → rename only, immutable otherwise
+DELETE /preprocessed-datasets/{id}                           → 409 if referenced by a TrainingRun
+POST   /preprocessed-datasets/{id}/characteristics/compute  → 202, recompute
+```
+
+```json
+POST /preprocessed-datasets
+{
+  "name": "USDJPY + RSI/MACD zscore",
+  "dataset_id": 3,
+  "preprocessing": { "indicators": [{"type": "rsi", "period": 14}], "clustering": {"enabled": false} },
+  "feature_cols": ["close", "rsi_14"],
+  "normalize": "zscore"
+}
+```
+
+Creating one enqueues `compute_preprocessed_characteristics` (`characteristics` queue) — the same
+5 "Structure" analyses as dataset/training-run characteristics (see below), computed once on this
+recipe's resulting series and cached (`status: ready` or `error`). To use it:
+
+```json
+POST /models/{id}/training-runs
+{ "preprocessed_dataset_id": 7, "hyperparams": { "obs_len": 60, "epochs": 50, "lr": 0.001 } }
+```
+
+`dataset_id` on the `TrainingRun` is derived server-side from the recipe — you don't send it. A
+recipe is immutable after creation (only `name` can change) so its cached characteristics always
+match what it actually produces; to change indicators, create a new recipe.
+
+Recipes are **config-only** — no extra parquet is written. The actual transform still runs
+on-the-fly at training time via the existing `apply_preprocessing`/`OHLCWindowDataset` pipeline,
+so a recipe never goes stale even if the base dataset later gets more data via incremental
+collection.
+
+Browse recipes and their characteristics at `/data/preprocessed` (list) and
+`/data/preprocessed/{id}` (detail) in the UI.
 
 ---
 
@@ -55,7 +114,7 @@ preprocessing, so a training run on a larger dataset only ever sees a recent sli
 
 ```
 POST /models/{id}/training-runs  →  status: pending
-       ↓ arq enqueues train_model
+       ↓ celery enqueues train_model
 status: running
   ↓ per epoch:  current_epoch, val_loss, eta_seconds updated in DB
   ↓             TrainingRunMetric written
@@ -74,14 +133,20 @@ the `TrainingRun`:
   `complexity_nonlinearity`, `regime_changes` — see `docs/data-layer.md`), but computed on the
   data this run actually trains on: after `preprocessing` (indicators/clustering) and the row
   cap, on the primary (`feature_cols[0]`) column, before `normalize` (whose output — differenced
-  or z-scored/min-maxed values — breaks the log-return math these analyses rely on). Computed via
-  `model/trainers/dataset.py:compute_effective_characteristics`, which reuses
-  `data/characteristics.py`'s `CHARACTERISTIC_REGISTRY` directly (a stateless-utility import, the
-  same pattern `dataset.py` already uses for `data.parquet_reader`). Best-effort — a computation
-  failure (e.g. a chosen feature column that isn't price-like and goes negative/zero) is stored
+  or z-scored/min-maxed values — breaks the log-return math these analyses rely on). When the run
+  references a `PreprocessedDataset` recipe, its already-computed `characteristics` are reused
+  as-is instead of recomputing (falling back to a fresh
+  `model/trainers/dataset.py:compute_effective_characteristics` call if the recipe's own
+  background job hasn't finished yet). Best-effort either way — a computation failure is stored
   per-analysis as `{"error": ...}` and never aborts training. Shown on the training run detail
   page, and used by `/model/compare`'s "Data × Model Analysis" chart in place of the raw
   dataset's characteristics whenever a run has it.
+
+When a run references a `PreprocessedDataset`, the worker also snapshots the recipe's resolved
+`preprocessing`/`feature_cols`/`normalize` (plus `preprocessed_dataset_id`/`_name`) back into
+`TrainingRun.hyperparams` at the same "status → running" update — so every run stays fully
+self-describing (what data it actually trained on) even if its recipe is later renamed or
+deleted.
 
 ---
 
@@ -160,11 +225,14 @@ Creates one `TrainingRun` per combination and enqueues all. Compare results via 
 
 Each entry in the compare response also includes `architecture`, `model_name`, `num_params`
 (trainable parameter count, recorded once the model is built at the start of training — `null`
-for `rl_agent` runs, which train outside this worker) and `validation` (the latest
-`ModelValidation.metrics` for that run, or `null` if none has been run yet). The `/model/compare`
-page uses these fields, joined client-side with `GET /datasets/{id}/characteristics` per run's
-`dataset_id`, to plot training-data characteristics (Hurst, periodicity strength, entropy, regime
-changes, etc. — see `docs/data-layer.md`) against model size and performance across runs.
+for `rl_agent` runs, which train outside this worker), `preprocessed_characteristics`, and
+`validation` (the latest `ModelValidation.metrics` for that run, or `null` if none has been run
+yet). The `/model/compare` page uses these fields to plot training-data characteristics (Hurst,
+periodicity strength, entropy, regime changes, etc.) against model size and performance across
+runs — preferring each run's own `preprocessed_characteristics` when present, and falling back
+to the raw dataset's characteristics (fetched client-side via `GET /datasets/{id}/characteristics`
+per run's `dataset_id`) for older runs that predate that field. See `docs/data-layer.md` for what
+each characteristic measures.
 
 ---
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from model.models import MLModel, TrainingRun, TrainingCheckpoint, ModelValidation
+from model.models import MLModel, TrainingRun, TrainingCheckpoint, ModelValidation, PreprocessedDataset
 
 
 class ModelRepository:
@@ -96,6 +96,40 @@ class ModelRepository:
             .order_by(TrainingRunMetric.epoch)
         )
         return list(result.scalars().all())
+
+    async def get_preprocessed_datasets(
+        self,
+        db: AsyncSession,
+        dataset_id: int | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> tuple[list[PreprocessedDataset], int]:
+        q = select(PreprocessedDataset)
+        if dataset_id is not None:
+            q = q.where(PreprocessedDataset.dataset_id == dataset_id)
+        total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+        items = (await db.execute(q.order_by(PreprocessedDataset.created_at.desc()).offset(offset).limit(limit))).scalars().all()
+        return list(items), total
+
+    async def get_preprocessed_dataset_by_id(self, db: AsyncSession, preprocessed_dataset_id: int) -> PreprocessedDataset | None:
+        result = await db.execute(select(PreprocessedDataset).where(PreprocessedDataset.id == preprocessed_dataset_id))
+        return result.scalar_one_or_none()
+
+    async def create_preprocessed_dataset(self, db: AsyncSession, **kwargs) -> PreprocessedDataset:
+        obj = PreprocessedDataset(**kwargs)
+        db.add(obj)
+        await db.flush()
+        await db.refresh(obj)
+        return obj
+
+    async def update_preprocessed_dataset(self, db: AsyncSession, preprocessed_dataset_id: int, **kwargs) -> PreprocessedDataset | None:
+        await db.execute(update(PreprocessedDataset).where(PreprocessedDataset.id == preprocessed_dataset_id).values(**kwargs))
+        return await self.get_preprocessed_dataset_by_id(db, preprocessed_dataset_id)
+
+    async def delete_preprocessed_dataset(self, db: AsyncSession, preprocessed_dataset_id: int) -> None:
+        obj = await self.get_preprocessed_dataset_by_id(db, preprocessed_dataset_id)
+        if obj is not None:
+            await db.delete(obj)
 
 
 model_repo = ModelRepository()

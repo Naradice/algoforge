@@ -1,30 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import { apiFetch, fetcher } from "@/lib/fetcher";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/lib/toast";
+import { summarizePreprocessing } from "@/lib/preprocessing";
 
 // ── Types ──────────────────────────────────────────────────────────────────
-
-type IndicatorType = "sma" | "ema" | "rsi" | "macd" | "bbands" | "atr" | "returns" | "volatility";
-
-interface IndicatorCfg {
-  type: IndicatorType;
-  period?: number;
-  fast?: number;
-  slow?: number;
-  signal?: number;
-  std?: number;
-}
-
-interface ClusteringCfg {
-  enabled: boolean;
-  n_clusters: number;
-  on_cols: string[];
-}
 
 interface TrainingParams {
   obs_len: number;
@@ -32,60 +16,15 @@ interface TrainingParams {
   epochs: number;
   batch_size: number;
   lr: number;
-  normalize: string;
   val_split: number;
-}
-
-// ── Indicator helpers ──────────────────────────────────────────────────────
-
-const INDICATOR_DEFAULTS: Record<IndicatorType, Partial<IndicatorCfg>> = {
-  sma:        { period: 20 },
-  ema:        { period: 20 },
-  rsi:        { period: 14 },
-  macd:       { fast: 12, slow: 26, signal: 9 },
-  bbands:     { period: 20, std: 2 },
-  atr:        { period: 14 },
-  returns:    { period: 1 },
-  volatility: { period: 20 },
-};
-
-const INDICATOR_LABELS: Record<IndicatorType, string> = {
-  sma: "SMA", ema: "EMA", rsi: "RSI", macd: "MACD",
-  bbands: "Bollinger Bands", atr: "ATR", returns: "Returns", volatility: "Volatility",
-};
-
-function getOutputCols(cfg: IndicatorCfg): string[] {
-  const p = cfg.period;
-  switch (cfg.type) {
-    case "sma":        return [`sma_${p ?? 20}`];
-    case "ema":        return [`ema_${p ?? 20}`];
-    case "rsi":        return [`rsi_${p ?? 14}`];
-    case "macd":       return ["macd", "macd_signal", "macd_hist"];
-    case "bbands":     return [`bb_upper_${p ?? 20}`, `bb_mid_${p ?? 20}`, `bb_lower_${p ?? 20}`, `bb_width_${p ?? 20}`];
-    case "atr":        return [`atr_${p ?? 14}`];
-    case "returns":    return [`returns_${p ?? 1}`];
-    case "volatility": return [`vol_${p ?? 20}`];
-    default:           return [];
-  }
-}
-
-const BASE_COLS = ["open", "high", "low", "close", "volume"];
-
-function getAllAvailableCols(indicators: IndicatorCfg[], clustering: ClusteringCfg): string[] {
-  const cols = [...BASE_COLS];
-  for (const ind of indicators) cols.push(...getOutputCols(ind));
-  if (clustering.enabled) cols.push(`cluster_${clustering.n_clusters}`);
-  return [...new Set(cols)];
 }
 
 // ── Defaults ───────────────────────────────────────────────────────────────
 
 const DEFAULT_TRAINING: TrainingParams = {
   obs_len: 60, pred_len: 10, epochs: 50, batch_size: 32,
-  lr: 0.001, normalize: "zscore", val_split: 0.2,
+  lr: 0.001, val_split: 0.2,
 };
-
-const DEFAULT_CLUSTERING: ClusteringCfg = { enabled: false, n_clusters: 5, on_cols: ["close"] };
 
 const DEFAULT_SEARCH_GRID = JSON.stringify({ lr: [0.001, 0.0001], batch_size: [32, 64] }, null, 2);
 
@@ -104,17 +43,13 @@ export default function ModelDetailPage() {
   // ── Train form state ──
   const [showTrainForm, setShowTrainForm] = useState(false);
   const [datasetId, setDatasetId] = useState("");
-  const [activeTab, setActiveTab] = useState<"preprocessing" | "features" | "training">("preprocessing");
-
-  const [indicators, setIndicators] = useState<IndicatorCfg[]>([]);
-  const [clustering, setClustering] = useState<ClusteringCfg>(DEFAULT_CLUSTERING);
-  const [featureCols, setFeatureCols] = useState<string[]>(["close"]);
+  const [preprocessedDatasetId, setPreprocessedDatasetId] = useState("");
   const [trainingParams, setTrainingParams] = useState<TrainingParams>(DEFAULT_TRAINING);
 
-  // new indicator mini-form
-  const [newIndType, setNewIndType] = useState<IndicatorType>("rsi");
-  const [newIndParams, setNewIndParams] = useState<Record<string, number>>(INDICATOR_DEFAULTS["rsi"] as Record<string, number>);
-  const [showNewInd, setShowNewInd] = useState(false);
+  const { data: preprocessedDatasets } = useSWR(
+    datasetId ? `/api/v1/preprocessed-datasets?dataset_id=${datasetId}&page_size=200` : null,
+    fetcher
+  );
 
   const [startingRun, setStartingRun] = useState(false);
   const [trainError, setTrainError] = useState<string | null>(null);
@@ -141,65 +76,26 @@ export default function ModelDetailPage() {
   const [validating, setValidating] = useState(false);
   const [validateError, setValidateError] = useState<string | null>(null);
 
-  // ── Derived ──
-
-  const availableCols = getAllAvailableCols(indicators, clustering);
-
-  const toggleFeatureCol = useCallback((col: string) => {
-    setFeatureCols((prev) =>
-      prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]
-    );
-  }, []);
-
-  function addIndicator() {
-    const cfg: IndicatorCfg = { type: newIndType, ...newIndParams } as IndicatorCfg;
-    setIndicators((prev) => [...prev, cfg]);
-    // auto-select output columns
-    setFeatureCols((prev) => [...new Set([...prev, ...getOutputCols(cfg)])]);
-    setShowNewInd(false);
-  }
-
-  function removeIndicator(idx: number) {
-    const removed = indicators[idx];
-    const removedCols = getOutputCols(removed);
-    const remaining = indicators.filter((_, i) => i !== idx);
-    const kept = new Set([
-      ...BASE_COLS,
-      ...remaining.flatMap(getOutputCols),
-      ...(clustering.enabled ? [`cluster_${clustering.n_clusters}`] : []),
-    ]);
-    setIndicators(remaining);
-    setFeatureCols((fc) => fc.filter((c) => !removedCols.includes(c) || kept.has(c)));
-  }
-
-  function changeNewIndType(t: IndicatorType) {
-    setNewIndType(t);
-    setNewIndParams(INDICATOR_DEFAULTS[t] as Record<string, number>);
-  }
-
-  function buildHyperparams() {
-    return {
-      ...trainingParams,
-      feature_cols: featureCols.length ? featureCols : ["close"],
-      preprocessing: {
-        indicators,
-        clustering: clustering.enabled ? clustering : undefined,
-      },
-    };
-  }
-
   // ── Actions ──
+
+  function selectDataset(newDatasetId: string) {
+    setDatasetId(newDatasetId);
+    setPreprocessedDatasetId(""); // recipe list is scoped to the chosen dataset
+  }
 
   async function startTraining() {
     setTrainError(null);
     if (!datasetId) { setTrainError("Select a dataset"); return; }
-    if (!featureCols.length) { setTrainError("Select at least one feature column"); return; }
+    if (!preprocessedDatasetId) { setTrainError("Select a preprocessed dataset (or create one)"); return; }
     setStartingRun(true);
     try {
       const res = await apiFetch(`/api/v1/models/${id}/training-runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataset_id: parseInt(datasetId), hyperparams: buildHyperparams() }),
+        body: JSON.stringify({
+          preprocessed_dataset_id: parseInt(preprocessedDatasetId),
+          hyperparams: trainingParams,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -339,7 +235,7 @@ export default function ModelDetailPage() {
               <label className="mb-1 block text-xs text-gray-400">Dataset</label>
               <select
                 value={datasetId}
-                onChange={(e) => setDatasetId(e.target.value)}
+                onChange={(e) => selectDataset(e.target.value)}
                 className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
               >
                 <option value="">Select dataset…</option>
@@ -349,229 +245,65 @@ export default function ModelDetailPage() {
               </select>
             </div>
 
-            {/* Tabs */}
-            <div>
-              <div className="flex gap-1 border-b border-gray-700 mb-4">
-                {(["preprocessing", "features", "training"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-                      activeTab === tab
-                        ? "border-b-2 border-brand-500 text-white"
-                        : "text-gray-500 hover:text-gray-300"
-                    }`}
+            {/* Preprocessed dataset (recipe) selector */}
+            {datasetId && (
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-xs text-gray-400">Preprocessed Dataset</label>
+                  <a
+                    href={`/data/preprocessed/new?dataset_id=${datasetId}`}
+                    className="text-xs text-brand-500 hover:underline"
                   >
-                    {tab}
-                  </button>
-                ))}
+                    + New recipe
+                  </a>
+                </div>
+                {preprocessedDatasets && preprocessedDatasets.length === 0 ? (
+                  <p className="text-xs text-gray-500">
+                    No preprocessing recipes for this dataset yet —{" "}
+                    <a href={`/data/preprocessed/new?dataset_id=${datasetId}`} className="text-brand-500 hover:underline">create one</a>.
+                  </p>
+                ) : (
+                  <select
+                    value={preprocessedDatasetId}
+                    onChange={(e) => setPreprocessedDatasetId(e.target.value)}
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  >
+                    <option value="">Select recipe…</option>
+                    {preprocessedDatasets?.map((r: any) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} — {summarizePreprocessing(r.preprocessing)}, {r.normalize}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
+            )}
 
-              {/* ── Preprocessing tab ── */}
-              {activeTab === "preprocessing" && (
-                <div className="space-y-4">
-                  {/* Indicator list */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-gray-300">Technical Indicators</span>
-                      <button
-                        onClick={() => setShowNewInd(!showNewInd)}
-                        className="text-xs text-brand-500 hover:underline"
-                      >
-                        + Add
-                      </button>
-                    </div>
-
-                    {indicators.length === 0 && !showNewInd && (
-                      <p className="text-xs text-gray-500">No indicators added. Click + Add to compute features from price data.</p>
-                    )}
-
-                    {indicators.map((ind, i) => (
-                      <div key={i} className="flex items-center justify-between rounded bg-gray-800 px-3 py-2 mb-1.5">
-                        <div>
-                          <span className="text-xs font-medium text-white">{INDICATOR_LABELS[ind.type]}</span>
-                          <span className="ml-2 text-xs text-gray-400">
-                            {Object.entries(ind)
-                              .filter(([k]) => k !== "type")
-                              .map(([k, v]) => `${k}=${v}`)
-                              .join(" ")}
-                          </span>
-                          <span className="ml-2 text-xs text-gray-600">→ {getOutputCols(ind).join(", ")}</span>
-                        </div>
-                        <button onClick={() => removeIndicator(i)} className="text-xs text-gray-500 hover:text-red-400">✕</button>
-                      </div>
-                    ))}
-
-                    {showNewInd && (
-                      <div className="rounded border border-gray-700 bg-gray-800 p-3 space-y-3">
-                        <div className="flex gap-2 flex-wrap">
-                          <div>
-                            <label className="mb-1 block text-xs text-gray-400">Type</label>
-                            <select
-                              value={newIndType}
-                              onChange={(e) => changeNewIndType(e.target.value as IndicatorType)}
-                              className="rounded border border-gray-600 bg-gray-700 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                            >
-                              {(Object.keys(INDICATOR_LABELS) as IndicatorType[]).map((t) => (
-                                <option key={t} value={t}>{INDICATOR_LABELS[t]}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {Object.entries(newIndParams).map(([param, val]) => (
-                            <div key={param}>
-                              <label className="mb-1 block text-xs text-gray-400">{param}</label>
-                              <input
-                                type="number"
-                                value={val}
-                                onChange={(e) => setNewIndParams((p) => ({ ...p, [param]: Number(e.target.value) }))}
-                                className="w-20 rounded border border-gray-600 bg-gray-700 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Produces: <span className="text-gray-300">{getOutputCols({ type: newIndType, ...newIndParams } as IndicatorCfg).join(", ")}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={addIndicator} className="rounded bg-brand-500 px-3 py-1 text-xs text-white hover:bg-sky-400">Add</button>
-                          <button onClick={() => setShowNewInd(false)} className="text-xs text-gray-500 hover:text-white">Cancel</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Clustering */}
-                  <div>
-                    <span className="text-xs font-medium text-gray-300">Clustering</span>
-                    <div className="mt-2 rounded bg-gray-800 p-3 space-y-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={clustering.enabled}
-                          onChange={(e) => {
-                            const enabled = e.target.checked;
-                            setClustering((c) => ({ ...c, enabled }));
-                            if (!enabled) setFeatureCols((fc) => fc.filter((c) => c !== `cluster_${clustering.n_clusters}`));
-                            else setFeatureCols((fc) => [...new Set([...fc, `cluster_${clustering.n_clusters}`])]);
-                          }}
-                          className="accent-brand-500"
-                        />
-                        <span className="text-xs text-white">Enable K-Means clustering</span>
-                      </label>
-                      {clustering.enabled && (
-                        <div className="space-y-2 pl-4">
-                          <div className="flex items-center gap-3">
-                            <label className="text-xs text-gray-400 w-20">K clusters</label>
-                            <input
-                              type="number"
-                              min={2}
-                              max={20}
-                              value={clustering.n_clusters}
-                              onChange={(e) => {
-                                const old = clustering.n_clusters;
-                                const n = Math.max(2, Number(e.target.value));
-                                setClustering((c) => ({ ...c, n_clusters: n }));
-                                setFeatureCols((fc) => fc.map((c) => c === `cluster_${old}` ? `cluster_${n}` : c));
-                              }}
-                              className="w-20 rounded border border-gray-600 bg-gray-700 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                            />
-                            <span className="text-xs text-gray-500">→ adds column <code className="text-gray-300">cluster_{clustering.n_clusters}</code></span>
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs text-gray-400">Cluster on columns</label>
-                            <div className="flex flex-wrap gap-2">
-                              {[...BASE_COLS, ...indicators.flatMap(getOutputCols)].map((col) => (
-                                <label key={col} className="flex items-center gap-1 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={clustering.on_cols.includes(col)}
-                                    onChange={(e) => {
-                                      setClustering((c) => ({
-                                        ...c,
-                                        on_cols: e.target.checked ? [...c.on_cols, col] : c.on_cols.filter((x) => x !== col),
-                                      }));
-                                    }}
-                                    className="accent-brand-500"
-                                  />
-                                  <span className="text-xs text-gray-300">{col}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+            {/* Training hyperparameters */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {(
+                [
+                  { key: "obs_len",    label: "Observation Length", step: 1, min: 1 },
+                  { key: "pred_len",   label: "Prediction Length",  step: 1, min: 1 },
+                  { key: "epochs",     label: "Epochs",             step: 1, min: 1 },
+                  { key: "batch_size", label: "Batch Size",         step: 1, min: 1 },
+                  { key: "lr",         label: "Learning Rate",      step: 0.0001, min: 0 },
+                  { key: "val_split",  label: "Validation Split",   step: 0.05, min: 0.05, max: 0.5 },
+                ] as { key: keyof TrainingParams; label: string; step: number; min?: number; max?: number }[]
+              ).map(({ key, label, step, min, max }) => (
+                <div key={key}>
+                  <label className="mb-1 block text-xs text-gray-400">{label}</label>
+                  <input
+                    type="number"
+                    step={step}
+                    min={min}
+                    max={max}
+                    value={trainingParams[key] as number}
+                    onChange={(e) => setTrainingParams((p) => ({ ...p, [key]: Number(e.target.value) }))}
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
                 </div>
-              )}
-
-              {/* ── Features tab ── */}
-              {activeTab === "features" && (
-                <div className="space-y-3">
-                  <p className="text-xs text-gray-400">Select which columns feed into the model. Add indicators in the Preprocessing tab to unlock more columns.</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-2">
-                    {availableCols.map((col) => (
-                      <label key={col} className="flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={featureCols.includes(col)}
-                          onChange={() => toggleFeatureCol(col)}
-                          className="accent-brand-500"
-                        />
-                        <span className="text-xs text-gray-200">{col}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {featureCols.length > 0 && (
-                    <p className="text-xs text-gray-500">
-                      Selected ({featureCols.length}): <span className="text-gray-300">{featureCols.join(", ")}</span>
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* ── Training tab ── */}
-              {activeTab === "training" && (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {(
-                    [
-                      { key: "obs_len",    label: "Observation Length", step: 1, min: 1 },
-                      { key: "pred_len",   label: "Prediction Length",  step: 1, min: 1 },
-                      { key: "epochs",     label: "Epochs",             step: 1, min: 1 },
-                      { key: "batch_size", label: "Batch Size",         step: 1, min: 1 },
-                      { key: "lr",         label: "Learning Rate",      step: 0.0001, min: 0 },
-                      { key: "val_split",  label: "Validation Split",   step: 0.05, min: 0.05, max: 0.5 },
-                    ] as { key: keyof TrainingParams; label: string; step: number; min?: number; max?: number }[]
-                  ).map(({ key, label, step, min, max }) => (
-                    <div key={key}>
-                      <label className="mb-1 block text-xs text-gray-400">{label}</label>
-                      <input
-                        type="number"
-                        step={step}
-                        min={min}
-                        max={max}
-                        value={trainingParams[key] as number}
-                        onChange={(e) => setTrainingParams((p) => ({ ...p, [key]: Number(e.target.value) }))}
-                        className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                      />
-                    </div>
-                  ))}
-                  <div>
-                    <label className="mb-1 block text-xs text-gray-400">Normalization</label>
-                    <select
-                      value={trainingParams.normalize}
-                      onChange={(e) => setTrainingParams((p) => ({ ...p, normalize: e.target.value }))}
-                      className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                    >
-                      <option value="zscore">Z-Score (recommended)</option>
-                      <option value="returns">Log Returns</option>
-                      <option value="minmax">Min-Max [0, 1]</option>
-                      <option value="robust">Robust (median/IQR)</option>
-                      <option value="none">None</option>
-                    </select>
-                  </div>
-                </div>
-              )}
+              ))}
             </div>
 
             {trainError && <p className="text-xs text-red-400">{trainError}</p>}

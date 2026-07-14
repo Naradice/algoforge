@@ -36,12 +36,33 @@ class MLModel(Base):
     validations: Mapped[list[ModelValidation]] = relationship("ModelValidation", back_populates="model", lazy="noload")
 
 
+class PreprocessedDataset(Base):
+    """A named, reusable preprocessing recipe for a base dataset — indicators/clustering,
+    feature_cols, and normalize saved once and referenced by TrainingRun instead of being
+    re-specified inline every time. Immutable after creation (only `name` may be updated);
+    to change the recipe, create a new one."""
+
+    __tablename__ = "preprocessed_datasets"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    dataset_id: Mapped[int] = mapped_column(sa.Integer, nullable=False, index=True)  # soft FK → datasets.id
+    preprocessing: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    feature_cols: Mapped[list] = mapped_column(JSONB, nullable=False, server_default='["close"]')
+    normalize: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="zscore")
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="pending")  # pending | ready | error
+    characteristics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())
+
+
 class TrainingRun(Base):
     __tablename__ = "training_runs"
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     model_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("ml_models.id", ondelete="CASCADE"), nullable=False, index=True)
     dataset_id: Mapped[int] = mapped_column(sa.Integer, nullable=False)  # soft FK → datasets.id
+    preprocessed_dataset_id: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)  # soft FK → preprocessed_datasets.id
     hyperparams: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="pending")  # pending | running | completed | error | stopped
     current_epoch: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
@@ -129,7 +150,8 @@ class MLModelRead(BaseModel):
 
 
 class TrainingRunCreate(BaseModel):
-    dataset_id: int
+    dataset_id: int | None = None
+    preprocessed_dataset_id: int | None = None
     hyperparams: dict[str, Any] = {}
 
 
@@ -139,6 +161,7 @@ class TrainingRunRead(BaseModel):
     id: int
     model_id: int
     dataset_id: int
+    preprocessed_dataset_id: int | None
     hyperparams: dict[str, Any]
     status: str
     current_epoch: int
@@ -151,6 +174,33 @@ class TrainingRunRead(BaseModel):
     started_at: datetime | None
     ended_at: datetime | None
     created_at: datetime
+
+
+class PreprocessedDatasetCreate(BaseModel):
+    name: str
+    dataset_id: int
+    preprocessing: dict[str, Any] = {}
+    feature_cols: list[str] = ["close"]
+    normalize: str = "zscore"
+
+
+class PreprocessedDatasetUpdate(BaseModel):
+    name: str
+
+
+class PreprocessedDatasetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    dataset_id: int
+    preprocessing: dict[str, Any]
+    feature_cols: list[str]
+    normalize: str
+    status: str
+    characteristics: dict[str, Any] | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ModelValidationRead(BaseModel):

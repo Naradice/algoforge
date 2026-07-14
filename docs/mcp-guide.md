@@ -41,7 +41,9 @@ The MCP server is mounted at `http://localhost:8000/mcp` using SSE transport. Ad
 |------|-------------|
 | `list_models()` | List all models with status |
 | `create_model(name, architecture, config)` | Create a model |
-| `start_training_run(model_id, dataset_id, hyperparams)` | Start training |
+| `list_preprocessed_datasets(dataset_id=None)` | List saved preprocessing recipes (optionally for one dataset) |
+| `get_preprocessed_dataset(preprocessed_dataset_id)` | Recipe config + its structure characteristics |
+| `start_training_run(model_id, hyperparams, dataset_id=None, preprocessed_dataset_id=None)` | Start training — prefer `preprocessed_dataset_id` when a recipe exists |
 | `get_training_status(training_run_id)` | Poll status with epoch/ETA |
 | `stop_training_run(training_run_id)` | Gracefully stop training |
 | `get_model_training_runs(model_id)` | List training run history |
@@ -50,6 +52,10 @@ The MCP server is mounted at `http://localhost:8000/mcp` using SSE transport. Ad
 | `deploy_model(model_id, training_run_id)` | Deploy best run |
 | `predict(model_id, features, feature_names)` | Run inference |
 | `start_hyperparameter_search(model_id, dataset_id, search_grid)` | Grid search |
+
+Preprocessed datasets aren't created via MCP yet (no `create_preprocessed_dataset` tool) — create
+one through the UI (`/data/preprocessed/new`) or `POST /preprocessed-datasets`, then reference it
+by ID from `start_training_run`.
 
 ### Strategy Tools
 
@@ -94,13 +100,14 @@ Resources expose structured read-only data without tool calls:
 
 ### Automated training loop
 ```
-1. list_datasets()                              → find a ready dataset
-2. create_model("LSTM v1", "lstm", {...})       → create model
-3. start_training_run(model_id, dataset_id, hp) → start training
-4. loop: get_training_status(run_id)            → wait for completion
-5. get_model_validations(model_id)              → check val metrics
-6. if val_loss > threshold: update hyperparams, goto 3
-7. deploy_model(model_id, best_run_id)
+1. list_datasets()                                        → find a ready dataset
+2. list_preprocessed_datasets(dataset_id)                 → reuse an existing recipe if one exists
+3. create_model("LSTM v1", "lstm", {...})                 → create model
+4. start_training_run(model_id, hp, preprocessed_dataset_id=recipe_id)   → start training
+5. loop: get_training_status(run_id)                      → wait for completion
+6. get_model_validations(model_id)                        → check val metrics
+7. if val_loss > threshold: update hyperparams, goto 4
+8. deploy_model(model_id, best_run_id)
 ```
 
 ### Automated backtest iteration

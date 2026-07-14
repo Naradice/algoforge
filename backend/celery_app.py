@@ -51,6 +51,7 @@ celery_app.conf.update(
     task_routes={
         "celery_worker.run_collection_job":    {"queue": "collection"},
         "celery_worker.compute_characteristics": {"queue": "characteristics"},
+        "celery_worker.compute_preprocessed_characteristics": {"queue": "characteristics"},
         "celery_worker.train_model":           {"queue": "training"},
         "celery_worker.validate_model":        {"queue": "training"},
         "celery_worker.execute_strategy_run":  {"queue": "backtest"},

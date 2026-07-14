@@ -5,12 +5,18 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from model.models import MLModel, MLModelCreate, MLModelUpdate, TrainingRun, TrainingRunCreate
+from model.models import (
+    MLModel, MLModelCreate, MLModelUpdate, TrainingRun, TrainingRunCreate,
+    PreprocessedDataset, PreprocessedDatasetCreate, PreprocessedDatasetUpdate,
+)
 from model.repository import model_repo
 
 MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
 TRAINING_RUN_NOT_FOUND = "TRAINING_RUN_NOT_FOUND"
 MODEL_NOT_DEPLOYED = "MODEL_NOT_DEPLOYED"
+PREPROCESSED_DATASET_NOT_FOUND = "PREPROCESSED_DATASET_NOT_FOUND"
+PREPROCESSED_DATASET_IN_USE = "PREPROCESSED_DATASET_IN_USE"
+DATASET_NOT_FOUND = "DATASET_NOT_FOUND"
 
 
 class ModelService:
@@ -56,7 +62,18 @@ class ModelService:
 
     async def create_training_run(self, db: AsyncSession, model_id: int, body: TrainingRunCreate) -> TrainingRun:
         await self.get_model(db, model_id)
-        return await model_repo.create_training_run(db, model_id=model_id, dataset_id=body.dataset_id, hyperparams=body.hyperparams)
+        dataset_id = body.dataset_id
+        if body.preprocessed_dataset_id is not None:
+            # The recipe is the single source of truth for which dataset it was built on —
+            # override whatever (if anything) the caller sent as dataset_id.
+            pd = await self.get_preprocessed_dataset(db, body.preprocessed_dataset_id)
+            dataset_id = pd.dataset_id
+        if dataset_id is None:
+            raise HTTPException(status_code=422, detail="dataset_id or preprocessed_dataset_id is required")
+        return await model_repo.create_training_run(
+            db, model_id=model_id, dataset_id=dataset_id,
+            preprocessed_dataset_id=body.preprocessed_dataset_id, hyperparams=body.hyperparams,
+        )
 
     async def get_validations(self, db: AsyncSession, model_id: int) -> list:
         await self.get_model(db, model_id)
@@ -115,6 +132,63 @@ class ModelService:
             run = await self.create_training_run(db, body.model_id, TrainingRunCreate(dataset_id=body.dataset_id, hyperparams=hyperparams))
             run_ids.append(run.id)
         return run_ids
+
+    async def list_preprocessed_datasets(
+        self, db: AsyncSession, dataset_id: int | None = None, offset: int = 0, limit: int = 20,
+    ) -> tuple[list[PreprocessedDataset], int]:
+        return await model_repo.get_preprocessed_datasets(db, dataset_id=dataset_id, offset=offset, limit=limit)
+
+    async def get_preprocessed_dataset(self, db: AsyncSession, preprocessed_dataset_id: int) -> PreprocessedDataset:
+        obj = await model_repo.get_preprocessed_dataset_by_id(db, preprocessed_dataset_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail=PREPROCESSED_DATASET_NOT_FOUND)
+        return obj
+
+    async def create_preprocessed_dataset(self, db: AsyncSession, body: PreprocessedDatasetCreate) -> PreprocessedDataset:
+        from sqlalchemy import select
+        from data.models import Dataset
+
+        ds = (await db.execute(select(Dataset).where(Dataset.id == body.dataset_id))).scalar_one_or_none()
+        if ds is None:
+            raise HTTPException(status_code=404, detail=DATASET_NOT_FOUND)
+        obj = await model_repo.create_preprocessed_dataset(
+            db,
+            name=body.name,
+            dataset_id=body.dataset_id,
+            preprocessing=body.preprocessing,
+            feature_cols=body.feature_cols,
+            normalize=body.normalize,
+            status="pending",
+        )
+        from celery_app import enqueue
+        await enqueue("compute_preprocessed_characteristics", obj.id)
+        return obj
+
+    async def update_preprocessed_dataset(
+        self, db: AsyncSession, preprocessed_dataset_id: int, body: PreprocessedDatasetUpdate,
+    ) -> PreprocessedDataset:
+        await self.get_preprocessed_dataset(db, preprocessed_dataset_id)
+        return await model_repo.update_preprocessed_dataset(db, preprocessed_dataset_id, name=body.name)
+
+    async def delete_preprocessed_dataset(self, db: AsyncSession, preprocessed_dataset_id: int) -> None:
+        from sqlalchemy import select
+
+        await self.get_preprocessed_dataset(db, preprocessed_dataset_id)
+        ref = (await db.execute(
+            select(TrainingRun).where(TrainingRun.preprocessed_dataset_id == preprocessed_dataset_id).limit(1)
+        )).scalar_one_or_none()
+        if ref is not None:
+            raise HTTPException(status_code=409, detail={
+                "code": PREPROCESSED_DATASET_IN_USE,
+                "message": f"Referenced by training run {ref.id}",
+            })
+        await model_repo.delete_preprocessed_dataset(db, preprocessed_dataset_id)
+
+    async def recompute_preprocessed_characteristics(self, db: AsyncSession, preprocessed_dataset_id: int) -> PreprocessedDataset:
+        obj = await self.get_preprocessed_dataset(db, preprocessed_dataset_id)
+        from celery_app import enqueue
+        await enqueue("compute_preprocessed_characteristics", preprocessed_dataset_id)
+        return obj
 
     async def create_validation_job(self, db: AsyncSession, model_id: int, body):
         from model.models import ModelValidation

@@ -538,6 +538,18 @@ async def _train_model(training_run_id: int) -> dict:
             dataset_id = run.dataset_id
             hp = {**TRAINING_DEFAULTS.get(architecture, {}), **run.hyperparams}
 
+            # A preprocessed-dataset recipe is the single source of truth for preprocessing/
+            # feature_cols/normalize when referenced — overrides any same-named inline hyperparams.
+            pd_rec = None
+            if run.preprocessed_dataset_id is not None:
+                from model.models import PreprocessedDataset
+                result = await db.execute(select(PreprocessedDataset).where(PreprocessedDataset.id == run.preprocessed_dataset_id))
+                pd_rec = result.scalar_one_or_none()
+                if pd_rec is not None:
+                    hp["preprocessing"] = pd_rec.preprocessing
+                    hp["feature_cols"] = pd_rec.feature_cols
+                    hp["normalize"] = pd_rec.normalize
+
             from data.models import Dataset
             result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
             ds_rec = result.scalar_one_or_none()
@@ -545,8 +557,21 @@ async def _train_model(training_run_id: int) -> dict:
                 return {"error": "dataset_not_found_or_no_artifact"}
             dataset_artifact = ds_rec.artifact_path
 
+            # Snapshot the resolved preprocessing config into hyperparams so this run stays
+            # fully self-describing even if its recipe is later renamed or deleted.
+            snapshot_hp = run.hyperparams
+            if pd_rec is not None:
+                snapshot_hp = {
+                    **run.hyperparams,
+                    "preprocessing": pd_rec.preprocessing,
+                    "feature_cols": pd_rec.feature_cols,
+                    "normalize": pd_rec.normalize,
+                    "preprocessed_dataset_id": pd_rec.id,
+                    "preprocessed_dataset_name": pd_rec.name,
+                }
+
             await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
-                status="running", started_at=datetime.now(timezone.utc)
+                status="running", started_at=datetime.now(timezone.utc), hyperparams=snapshot_hp
             ))
             await db.execute(update(MLModel).where(MLModel.id == model_rec.id).values(status="training"))
             await db.commit()
@@ -582,13 +607,19 @@ async def _train_model(training_run_id: int) -> dict:
             return {"error": str(e)}
 
         num_params = sum(p.numel() for p in model.parameters())
-        try:
-            preprocessed_characteristics = compute_effective_characteristics(
-                dataset_artifact, hp.get("feature_cols", ["close"]), hp.get("preprocessing")
-            )
-        except Exception as e:
-            # Best-effort — never let a characteristics failure abort training.
-            preprocessed_characteristics = {"error": str(e)}
+        if pd_rec is not None and pd_rec.characteristics is not None:
+            # Reuse the recipe's cached characteristics (identical inputs) instead of
+            # recomputing — falls through to a live compute below if the recipe's background
+            # job hasn't finished yet (characteristics still null).
+            preprocessed_characteristics = pd_rec.characteristics
+        else:
+            try:
+                preprocessed_characteristics = compute_effective_characteristics(
+                    dataset_artifact, hp.get("feature_cols", ["close"]), hp.get("preprocessing")
+                )
+            except Exception as e:
+                # Best-effort — never let a characteristics failure abort training.
+                preprocessed_characteristics = {"error": str(e)}
         async with factory() as db:
             await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
                 num_params=num_params, preprocessed_characteristics=preprocessed_characteristics
@@ -749,3 +780,58 @@ async def _execute_strategy_run(run_id: int) -> dict:
     finally:
         await engine.dispose()
         _release_lock("execute_strategy_run", run_id)
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — compute_preprocessed_characteristics
+# ---------------------------------------------------------------------------
+
+@celery_app.task(name="celery_worker.compute_preprocessed_characteristics", bind=False)
+def compute_preprocessed_characteristics(preprocessed_dataset_id: int) -> dict:
+    return asyncio.run(_compute_preprocessed_characteristics(preprocessed_dataset_id))
+
+
+async def _compute_preprocessed_characteristics(preprocessed_dataset_id: int) -> dict:
+    from sqlalchemy import select, update
+    from model.models import PreprocessedDataset
+    from data.models import Dataset
+    from model.trainers.dataset import compute_effective_characteristics
+
+    logger.info(f"compute_preprocessed_characteristics started for {preprocessed_dataset_id}")
+    factory, engine = _make_db()
+    try:
+        async with factory() as db:
+            result = await db.execute(select(PreprocessedDataset).where(PreprocessedDataset.id == preprocessed_dataset_id))
+            pd_rec = result.scalar_one_or_none()
+            if pd_rec is None:
+                return {"error": "preprocessed_dataset_not_found"}
+            result = await db.execute(select(Dataset).where(Dataset.id == pd_rec.dataset_id))
+            ds_rec = result.scalar_one_or_none()
+            if ds_rec is None or ds_rec.artifact_path is None:
+                async with factory() as db2:
+                    await db2.execute(update(PreprocessedDataset).where(PreprocessedDataset.id == preprocessed_dataset_id).values(status="error"))
+                    await db2.commit()
+                return {"error": "dataset_not_found_or_no_artifact"}
+            dataset_artifact = ds_rec.artifact_path
+            preprocessing = pd_rec.preprocessing
+            feature_cols = pd_rec.feature_cols
+
+        try:
+            characteristics = await asyncio.to_thread(compute_effective_characteristics, dataset_artifact, feature_cols, preprocessing)
+            status = "ready"
+        except Exception as e:
+            logger.exception(f"compute_preprocessed_characteristics failed for {preprocessed_dataset_id}")
+            characteristics = {"error": str(e)}
+            status = "error"
+
+        async with factory() as db:
+            await db.execute(update(PreprocessedDataset).where(PreprocessedDataset.id == preprocessed_dataset_id).values(
+                characteristics=characteristics, status=status,
+            ))
+            await db.commit()
+
+        logger.info(f"compute_preprocessed_characteristics done for {preprocessed_dataset_id}: status={status}")
+        return {"status": status}
+    finally:
+        await engine.dispose()
+        _release_lock("compute_preprocessed_characteristics", preprocessed_dataset_id)

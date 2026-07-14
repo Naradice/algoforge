@@ -73,7 +73,10 @@ export default function DataPage() {
       {/* Header */}
       <div className="md-page-header">
         <h1 className="md-title-lg">Data Management</h1>
-        <a href="/data/new" className="md-btn md-btn-primary">+ New Datasource</a>
+        <div className="flex items-center gap-3">
+          <a href="/data/preprocessed" className="md-btn-text">Preprocessed Datasets →</a>
+          <a href="/data/new" className="md-btn md-btn-primary">+ New Datasource</a>
+        </div>
       </div>
 
       {/* Datasources */}

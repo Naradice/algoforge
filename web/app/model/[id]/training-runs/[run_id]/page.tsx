@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { apiFetch, fetcher } from "@/lib/fetcher";
 import { LossChart } from "@/components/loss-chart";
+import { StructureStatGrid } from "@/components/structure-stat-grid";
+import { summarizePreprocessing } from "@/lib/preprocessing";
 import { useSSE } from "@/hooks/use-sse";
 
 interface EpochMetric {
@@ -16,45 +18,25 @@ interface EpochMetric {
 
 interface TrainingRunDetail {
   hyperparams: Record<string, unknown>;
+  preprocessed_dataset_id: number | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   preprocessed_characteristics: Record<string, any> | null;
 }
 
 // ── Data Characteristics (as trained) ───────────────────────────────────────
 
-function StatGrid({ stats }: { stats: { label: string; value: string }[] }) {
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-      {stats.map(({ label, value }) => (
-        <div key={label} className="rounded border border-gray-800 bg-gray-950 p-2">
-          <p className="text-xs text-gray-500 uppercase">{label}</p>
-          <p className="mt-0.5 text-sm font-bold text-white font-mono">{value}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function preprocessingSummary(hp: Record<string, unknown>): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pp = (hp.preprocessing ?? {}) as Record<string, any>;
-  const parts: string[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const indicators = (pp.indicators ?? []) as any[];
-  if (indicators.length > 0) {
-    parts.push(indicators.map((i) => `${i.type}${i.period != null ? `(${i.period})` : ""}`).join(", "));
-  }
-  if (pp.clustering?.enabled) parts.push(`clustering(k=${pp.clustering.n_clusters ?? "?"})`);
-  if (parts.length === 0) parts.push("none");
+  const indicatorSummary = summarizePreprocessing(hp.preprocessing as Parameters<typeof summarizePreprocessing>[0]);
   const featureCols = Array.isArray(hp.feature_cols) ? (hp.feature_cols as string[]).join(", ") : "close";
   const normalize = (hp.normalize as string) ?? "returns";
-  return `indicators: ${parts.join(" + ")} · features: [${featureCols}] · normalize: ${normalize}`;
+  return `indicators: ${indicatorSummary} · features: [${featureCols}] · normalize: ${normalize}`;
 }
 
-function DataCharacteristicsCard({ hyperparams, characteristics }: {
+function DataCharacteristicsCard({ hyperparams, characteristics, preprocessedDatasetId }: {
   hyperparams: Record<string, unknown>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   characteristics: Record<string, any> | null;
+  preprocessedDatasetId: number | null;
 }) {
   if (!characteristics) {
     return (
@@ -67,33 +49,18 @@ function DataCharacteristicsCard({ hyperparams, characteristics }: {
     );
   }
 
-  const lrd = characteristics.long_range_dependence ?? {};
-  const sp = characteristics.spectral_periodicity ?? {};
-  const mw = characteristics.multiscale_wavelet ?? {};
-  const cn = characteristics.complexity_nonlinearity ?? {};
-  const rc = characteristics.regime_changes ?? {};
-
-  const num = (v: unknown, fmt: (n: number) => string) =>
-    typeof v === "number" && !isNaN(v) ? fmt(v) : "—";
-
-  const stats = [
-    { label: "Hurst", value: num(lrd.hurst, (v) => v.toFixed(4)) },
-    { label: "Behavior", value: lrd.interpretation ?? "—" },
-    { label: "Memory length", value: num(lrd.memory_length, (v) => String(v)) },
-    { label: "Periodicity strength", value: num(sp.periodicity_strength, (v) => v.toFixed(2)) },
-    { label: "Spectral entropy", value: num(sp.spectral_entropy, (v) => v.toFixed(3)) },
-    { label: "Wavelet flatness", value: num(mw.flatness_score, (v) => v.toFixed(3)) },
-    { label: "Permutation entropy", value: num(cn.permutation_entropy, (v) => v.toFixed(3)) },
-    { label: "Sample entropy", value: num(cn.sample_entropy, (v) => v.toFixed(3)) },
-    { label: "Nonlinear (BDS)?", value: cn.nonlinear === true ? "Yes" : cn.nonlinear === false ? "No" : "—" },
-    { label: "Changepoints", value: num(rc.n_changepoints, (v) => String(v)) },
-  ];
-
   return (
     <div className="rounded border border-gray-700 bg-gray-900 p-4 space-y-3">
-      <h3 className="text-sm font-medium text-gray-300">Data Characteristics (as trained)</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-gray-300">Data Characteristics (as trained)</h3>
+        {preprocessedDatasetId != null && (
+          <a href={`/data/preprocessed/${preprocessedDatasetId}`} className="text-xs text-brand-400 hover:text-brand-300">
+            View recipe →
+          </a>
+        )}
+      </div>
       <p className="text-xs text-gray-500 font-mono">{preprocessingSummary(hyperparams)}</p>
-      <StatGrid stats={stats} />
+      <StructureStatGrid characteristics={characteristics} />
       <p className="text-xs text-gray-600">
         Computed on the primary feature column after preprocessing and the row cap, before
         normalization — the same structure indicators as the dataset &quot;Structure&quot; tab,
@@ -245,6 +212,7 @@ export default function TrainingRunDetailPage() {
         <DataCharacteristicsCard
           hyperparams={runDetail.hyperparams}
           characteristics={runDetail.preprocessed_characteristics}
+          preprocessedDatasetId={runDetail.preprocessed_dataset_id}
         />
       )}
     </div>
