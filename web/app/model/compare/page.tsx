@@ -37,6 +37,8 @@ interface CompareResult {
   val_loss: number | null;
   num_params: number | null;
   validation: Record<string, number> | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  preprocessed_characteristics: Record<string, any> | null;
 }
 
 // Distinct palette — mirrors multi-run-loss-chart.tsx so run colors stay consistent across charts
@@ -130,6 +132,10 @@ function AnalysisSection({ entries }: { entries: AnalysisEntry[] }) {
   return (
     <div className="rounded border border-gray-700 bg-gray-900 p-4 space-y-3">
       <h2 className="text-sm font-medium text-gray-300">Data × Model Analysis</h2>
+      <p className="text-xs text-gray-600">
+        &quot;Data:&quot; metrics use each run&apos;s own as-trained characteristics (after its
+        preprocessing) when available, falling back to the raw dataset&apos;s for older runs.
+      </p>
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <label className="flex items-center gap-1.5 text-gray-400">
           X:
@@ -284,7 +290,9 @@ export default function ModelComparePage() {
     numParams: r.num_params,
     valLoss: r.val_loss,
     validation: r.validation,
-    datasetMetrics: datasetCharsMap.get(r.dataset_id) ?? null,
+    // Prefer this run's own as-trained characteristics (post-preprocessing, pre-normalize);
+    // fall back to the raw dataset's for older runs computed before that field existed.
+    datasetMetrics: r.preprocessed_characteristics ?? datasetCharsMap.get(r.dataset_id) ?? null,
   }));
 
   return (

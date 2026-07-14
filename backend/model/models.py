@@ -49,6 +49,7 @@ class TrainingRun(Base):
     val_loss: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     eta_seconds: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     num_params: Mapped[int | None] = mapped_column(sa.BigInteger, nullable=True)
+    preprocessed_characteristics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     stop_requested: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="false")
     artifact_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -145,6 +146,7 @@ class TrainingRunRead(BaseModel):
     val_loss: float | None
     eta_seconds: int | None
     num_params: int | None
+    preprocessed_characteristics: dict[str, Any] | None
     artifact_path: str | None
     started_at: datetime | None
     ended_at: datetime | None

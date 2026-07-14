@@ -40,37 +40,7 @@ class OHLCWindowDataset:
         device: str = "cpu",
         preprocessing: dict | None = None,
     ) -> None:
-        store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
-        full_path = store / artifact_path
-
-        if full_path.is_dir():
-            # DDM tick directory: load a capped sample and resample to M1 OHLC
-            from data.parquet_reader import load_ddm_ticks
-            tick_df = load_ddm_ticks(full_path, max_files=self._MAX_TICK_FILES)
-            ohlc = tick_df["price"].resample("1min").ohlc()
-            ohlc.columns = ["open", "high", "low", "close"]
-            ohlc["volume"] = tick_df["price"].resample("1min").count()
-            df = ohlc.dropna()
-        else:
-            df = pd.read_parquet(full_path)
-
-        df.columns = [c.lower() for c in df.columns]
-        df = df.sort_index().dropna()
-
-        # Apply indicators and clustering before row cap so indicators have full history
-        if preprocessing:
-            from model.trainers.preprocessing import apply_preprocessing
-            df = apply_preprocessing(df, preprocessing)
-
-        if len(df) > self._MAX_OHLC_ROWS:
-            df = df.iloc[-self._MAX_OHLC_ROWS:]
-
-        if feature_cols is None:
-            feature_cols = ["close"]
-        feature_cols = [c for c in feature_cols if c in df.columns]
-        if not feature_cols:
-            feature_cols = [df.columns[-1]]
-
+        df, feature_cols = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing)
         data = df[feature_cols].values.astype(np.float32)
 
         # Normalise
@@ -117,6 +87,53 @@ class OHLCWindowDataset:
         self.pred_len = pred_len
         self.n_features = len(feature_cols)
 
+    @classmethod
+    def _load_preprocessed_df(
+        cls,
+        artifact_path: str,
+        feature_cols: list[str] | None,
+        preprocessing: dict | None,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        """Load + preprocess a dataset artifact, up to (but not including) normalization.
+
+        Returns the DataFrame with its real DatetimeIndex intact — this is "what will be fed
+        to the model" after indicators/clustering and the row cap, before feature_cols are
+        pulled out as a plain ndarray and normalized. Shared by __init__ and
+        compute_effective_characteristics below.
+        """
+        store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
+        full_path = store / artifact_path
+
+        if full_path.is_dir():
+            # DDM tick directory: load a capped sample and resample to M1 OHLC
+            from data.parquet_reader import load_ddm_ticks
+            tick_df = load_ddm_ticks(full_path, max_files=cls._MAX_TICK_FILES)
+            ohlc = tick_df["price"].resample("1min").ohlc()
+            ohlc.columns = ["open", "high", "low", "close"]
+            ohlc["volume"] = tick_df["price"].resample("1min").count()
+            df = ohlc.dropna()
+        else:
+            df = pd.read_parquet(full_path)
+
+        df.columns = [c.lower() for c in df.columns]
+        df = df.sort_index().dropna()
+
+        # Apply indicators and clustering before row cap so indicators have full history
+        if preprocessing:
+            from model.trainers.preprocessing import apply_preprocessing
+            df = apply_preprocessing(df, preprocessing)
+
+        if len(df) > cls._MAX_OHLC_ROWS:
+            df = df.iloc[-cls._MAX_OHLC_ROWS:]
+
+        if feature_cols is None:
+            feature_cols = ["close"]
+        feature_cols = [c for c in feature_cols if c in df.columns]
+        if not feature_cols:
+            feature_cols = [df.columns[-1]]
+
+        return df, feature_cols
+
     @staticmethod
     def _make_windows(data: np.ndarray, obs_len: int, tgt_len: int):
         n = len(data)
@@ -148,3 +165,42 @@ class OHLCWindowDataset:
             tgt = torch.tensor(tgt_arr[key], device=self.device)
 
         return src, tgt
+
+
+# Structure/complexity analyses from data/characteristics.py's registry — see that module's
+# docstring for what each one measures (long-range dependence, periodicity, multiscale
+# wavelet structure, entropy/nonlinearity, regime changes).
+_EFFECTIVE_CHARACTERISTIC_KEYS = [
+    "long_range_dependence",
+    "spectral_periodicity",
+    "multiscale_wavelet",
+    "complexity_nonlinearity",
+    "regime_changes",
+]
+
+
+def compute_effective_characteristics(
+    artifact_path: str,
+    feature_cols: list[str] | None,
+    preprocessing: dict | None,
+) -> dict:
+    """Structure characteristics of the data a training run will actually consume: after
+    preprocessing (indicators/clustering) and the row cap, on the primary feature column,
+    before normalization (whose output breaks the log-return math these analyses rely on).
+
+    Best-effort per analysis — an error in one doesn't blank the rest. Callers should also
+    wrap the call itself, since a completely unreadable/degenerate dataset can still raise
+    before any per-analysis try/except is reached (e.g. during loading).
+    """
+    from data.characteristics import CHARACTERISTIC_REGISTRY
+
+    df, resolved_feature_cols = OHLCWindowDataset._load_preprocessed_df(artifact_path, feature_cols, preprocessing)
+    series_df = pd.DataFrame({"close": df[resolved_feature_cols[0]]})
+
+    results: dict = {}
+    for name in _EFFECTIVE_CHARACTERISTIC_KEYS:
+        try:
+            results[name] = CHARACTERISTIC_REGISTRY[name](series_df)
+        except Exception as e:
+            results[name] = {"error": str(e)}
+    return results

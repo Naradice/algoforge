@@ -40,10 +40,14 @@ Common hyperparameters (all architectures):
 | `batch_size` | 32 | Mini-batch size |
 | `lr` | 0.001 | Learning rate |
 | `feature_cols` | `["close"]` | Columns to use as features |
-| `normalize` | `"returns"` | Normalisation: `returns`, `zscore`, `minmax`, `none` |
+| `normalize` | `"returns"` | Normalisation: `returns`, `zscore`, `minmax`, `robust`, `none` |
 | `val_split` | 0.2 | Fraction of data held out for validation |
+| `preprocessing` | `null` | `{ indicators: [...], clustering: {...} }` — adds technical-indicator/cluster columns before `feature_cols` selection. See `backend/model/trainers/preprocessing.py` for the indicator types (`sma`, `ema`, `rsi`, `macd`, `bbands`, `atr`, `returns`, `volatility`) and their output column-naming convention. |
 
 Architecture-specific params are passed in the same `hyperparams` dict.
+
+Row cap: `OHLCWindowDataset` keeps only the most recent `_MAX_OHLC_ROWS` (50,000) rows after
+preprocessing, so a training run on a larger dataset only ever sees a recent slice of it.
 
 ---
 
@@ -61,6 +65,23 @@ status: completed | error | stopped
 ```
 
 Stop a running job: `POST /training-runs/{id}/stop` — sets `stop_requested=true`, worker exits after current epoch.
+
+Right after the model is built (before the epoch loop), the worker also records two things on
+the `TrainingRun`:
+- `num_params` — trainable parameter count (`null` for `rl_agent`, trained outside this worker).
+- `preprocessed_characteristics` — the same 5 "Structure" analyses as the dataset characteristics
+  (`long_range_dependence`, `spectral_periodicity`, `multiscale_wavelet`,
+  `complexity_nonlinearity`, `regime_changes` — see `docs/data-layer.md`), but computed on the
+  data this run actually trains on: after `preprocessing` (indicators/clustering) and the row
+  cap, on the primary (`feature_cols[0]`) column, before `normalize` (whose output — differenced
+  or z-scored/min-maxed values — breaks the log-return math these analyses rely on). Computed via
+  `model/trainers/dataset.py:compute_effective_characteristics`, which reuses
+  `data/characteristics.py`'s `CHARACTERISTIC_REGISTRY` directly (a stateless-utility import, the
+  same pattern `dataset.py` already uses for `data.parquet_reader`). Best-effort — a computation
+  failure (e.g. a chosen feature column that isn't price-like and goes negative/zero) is stored
+  per-analysis as `{"error": ...}` and never aborts training. Shown on the training run detail
+  page, and used by `/model/compare`'s "Data × Model Analysis" chart in place of the raw
+  dataset's characteristics whenever a run has it.
 
 ---
 

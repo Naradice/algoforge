@@ -191,7 +191,7 @@ class TestCompareTrainingRuns:
         svc = ModelService()
         run = MagicMock(spec=TrainingRun, id=1, model_id=1, dataset_id=2,
                         hyperparams={}, status="completed", best_epoch=10,
-                        val_loss=0.1, num_params=None, artifact_path="/path")
+                        val_loss=0.1, num_params=None, preprocessed_characteristics=None, artifact_path="/path")
         with patch(PATCH) as repo:
             repo.get_training_run_by_id = AsyncMock(return_value=run)
             repo.get_by_id = AsyncMock(return_value=None)
@@ -271,3 +271,19 @@ class TestCompareTrainingRuns:
             result = await svc.compare_training_runs(AsyncMock(), [1])
 
         assert result[0]["validation"] == {"directional_accuracy": 0.55, "sharpe_proxy": 1.2}
+
+    @pytest.mark.asyncio
+    async def test_includes_preprocessed_characteristics_when_present(self):
+        svc = ModelService()
+        chars = {"long_range_dependence": {"hurst": 0.58}, "regime_changes": {"n_changepoints": 4}}
+        run = MagicMock(spec=TrainingRun, id=1, model_id=7, dataset_id=2,
+                        hyperparams={}, status="completed", best_epoch=10,
+                        val_loss=0.1, num_params=None, preprocessed_characteristics=chars, artifact_path="/path")
+        with patch(PATCH) as repo:
+            repo.get_training_run_by_id = AsyncMock(return_value=run)
+            repo.get_by_id = AsyncMock(return_value=None)
+            repo.get_latest_validation_for_run = AsyncMock(return_value=None)
+
+            result = await svc.compare_training_runs(AsyncMock(), [1])
+
+        assert result[0]["preprocessed_characteristics"] == chars

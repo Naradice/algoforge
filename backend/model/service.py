@@ -96,6 +96,7 @@ class ModelService:
                     "best_epoch": run.best_epoch,
                     "val_loss": run.val_loss,
                     "num_params": run.num_params,
+                    "preprocessed_characteristics": run.preprocessed_characteristics,
                     "artifact_path": run.artifact_path,
                     "validation": validation.metrics if validation else None,
                 })

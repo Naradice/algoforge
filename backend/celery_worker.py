@@ -516,7 +516,7 @@ async def _train_model(training_run_id: int) -> dict:
     from sqlalchemy import select, update
     from model.models import MLModel, TrainingRun, TrainingCheckpoint, TrainingRunMetric
     from model.architectures import build_model, TRAINING_DEFAULTS
-    from model.trainers import get_trainer_fns, OHLCWindowDataset
+    from model.trainers import get_trainer_fns, OHLCWindowDataset, compute_effective_characteristics
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
@@ -582,8 +582,17 @@ async def _train_model(training_run_id: int) -> dict:
             return {"error": str(e)}
 
         num_params = sum(p.numel() for p in model.parameters())
+        try:
+            preprocessed_characteristics = compute_effective_characteristics(
+                dataset_artifact, hp.get("feature_cols", ["close"]), hp.get("preprocessing")
+            )
+        except Exception as e:
+            # Best-effort — never let a characteristics failure abort training.
+            preprocessed_characteristics = {"error": str(e)}
         async with factory() as db:
-            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(num_params=num_params))
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                num_params=num_params, preprocessed_characteristics=preprocessed_characteristics
+            ))
             await db.commit()
 
         train_fn, eval_fn = get_trainer_fns(architecture)
