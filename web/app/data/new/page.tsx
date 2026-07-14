@@ -122,6 +122,25 @@ const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: "from_ts", label: "From Date", type: "date" },
     { key: "to_ts", label: "To Date", type: "date", placeholder: "", hint: "Leave blank for today" },
   ],
+  synthetic_function: [
+    {
+      key: "function", label: "Formula", type: "select",
+      options: ["sine", "sine_sum"],
+      optionDescriptions: {
+        sine: "x_t = amplitude · sin(2π·t / period) — a single clean periodic wave.",
+        sine_sum: "x_t = sin(2π·t / period) + amplitude · sin(2π·freq_ratio·t / period) — two frequencies mixed together.",
+      },
+    },
+    { key: "period", label: "Period (T, bars)", type: "number", placeholder: "50", hint: "Bars per cycle of the base wave" },
+    { key: "amplitude", label: "Amplitude (A)", type: "number", placeholder: "0.5", hint: "sine: wave amplitude. sine_sum: 2nd wave's amplitude" },
+    { key: "freq_ratio", label: "Frequency Ratio", type: "number", placeholder: "5", hint: "sine_sum only — how many times faster the 2nd wave oscillates than the base" },
+    { key: "base_price", label: "Base Price", type: "number", placeholder: "100" },
+    { key: "noise", label: "Noise (std dev)", type: "number", placeholder: "0", hint: "0 = pure deterministic signal" },
+    { key: "length", label: "Length (bars)", type: "number", placeholder: "2000" },
+    { key: "timeframe", label: "Timeframe", type: "select", options: TIMEFRAME_OPTIONS },
+    { key: "start_ts", label: "Start Date", type: "date" },
+    { key: "seed", label: "Random Seed", type: "number", placeholder: "42", hint: "Only used when noise > 0" },
+  ],
   manual_upload: [],
 };
 
@@ -161,6 +180,18 @@ const TYPE_DEFAULTS: Record<string, Record<string, string>> = {
     from_ts: "2020-01-01",
     to_ts: "",
   },
+  synthetic_function: {
+    function: "sine_sum",
+    period: "50",
+    amplitude: "0.5",
+    freq_ratio: "5",
+    base_price: "100",
+    noise: "0",
+    length: "2000",
+    timeframe: "M5",
+    start_ts: "2024-01-01",
+    seed: "42",
+  },
   manual_upload: {},
 };
 
@@ -182,6 +213,11 @@ const TYPE_DESCRIPTIONS: Record<string, { label: string; description: string; st
     label: "Economic Calendar",
     description:
       "Download historical economic indicator releases (CPI, NFP, unemployment, Fed rate decisions) from Alpha Vantage or FRED. Stored as long-format parquet indexed by release date.",
+  },
+  synthetic_function: {
+    label: "Synthetic Function",
+    description:
+      "Generate a simple, deterministic time series from a closed-form formula (a single sine wave, or a sum of two frequencies) — useful for sanity-checking whether a model actually recovers a known periodicity.",
   },
   manual_upload: {
     label: "Manual Upload",

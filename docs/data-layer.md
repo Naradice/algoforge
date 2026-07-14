@@ -62,6 +62,45 @@ Key parameters:
 Rule of thumb for row count: `rows ≈ length × tick_time / (timeframe_seconds)`.
 Example: 50000 ticks × 1s / 60s = ~833 M1 bars.
 
+### `synthetic_function`
+Generates a simple, deterministic time series from a closed-form formula — no external data, no
+simulation randomness (unless you opt into noise). Useful for sanity-checking whether a model
+(classical baseline or neural net) actually recovers a known periodicity, since you know the
+ground truth exactly.
+
+```json
+{
+  "type": "synthetic_function",
+  "config": {
+    "function": "sine_sum",
+    "period": "50",
+    "amplitude": "0.5",
+    "freq_ratio": "5",
+    "base_price": "100",
+    "noise": "0",
+    "length": "2000",
+    "timeframe": "M5",
+    "start_ts": "2024-01-01",
+    "seed": "42"
+  }
+}
+```
+
+Formulas (`t` = bar index, `0..length-1`):
+
+| `function` | Formula | Notes |
+|---|---|---|
+| `sine` | `base_price + amplitude * sin(2π·t / period)` | Single clean periodic wave |
+| `sine_sum` | `base_price + sin(2π·t / period) + amplitude * sin(2π·freq_ratio·t / period)` | Base wave plus a second wave `freq_ratio`× faster, scaled by `amplitude` |
+
+`period` is in bars, not raw formula units — this reparameterizes the classic "x periodic with
+period T" / "sin(t) + A·sin(T·t)" definitions around a bar count so the result is a usable series
+at any timeframe (raw `sin(t)` with integer `t` oscillates every ~6.3 bars — too fast to be a
+useful comparison signal). `noise` (gaussian std dev) defaults to 0 for a pure deterministic
+signal; set it above 0 to add reproducible (seeded) randomness on top. `open`/`high`/`low`/`close`
+are all set to the same value per bar (a flat OHLC candle) since the series is a single point
+value, not a simulated market.
+
 ### `manual_upload`
 Upload a CSV or Parquet file directly via `POST /datasets/upload`.
 

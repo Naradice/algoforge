@@ -25,7 +25,8 @@ class Datasource(Base):
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     name: Mapped[str] = mapped_column(sa.Text, nullable=False)
-    type: Mapped[str] = mapped_column(sa.Text, nullable=False)  # ohlc_download | web_report | ddm_simulation | manual_upload | economic_calendar
+    # ohlc_download | web_report | ddm_simulation | manual_upload | economic_calendar | synthetic_function
+    type: Mapped[str] = mapped_column(sa.Text, nullable=False)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())

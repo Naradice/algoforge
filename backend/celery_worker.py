@@ -390,6 +390,9 @@ def _run_collector(datasource_type: str, datasource_id: int, config: dict, incre
     elif datasource_type == "economic_calendar":
         from data.collectors.economic_calendar import collect
         return collect(datasource_id, config)
+    elif datasource_type == "synthetic_function":
+        from data.collectors.synthetic_function import collect
+        return collect(datasource_id, config)
     else:
         raise ValueError(f"Unknown datasource type: {datasource_type!r}")
 
