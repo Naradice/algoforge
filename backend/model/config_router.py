@@ -88,6 +88,34 @@ ARCHITECTURE_SCHEMAS = {
         },
         "_note": "input_dim and output_dim are set automatically from the selected feature columns at training time.",
     },
+    "ar": {
+        "type": "object",
+        "properties": {
+            "p": {"type": "integer", "default": 2, "description": "Autoregressive order"},
+            "d": {"type": "integer", "default": 0, "description": "Differencing order"},
+        },
+        "_note": "Statistical baseline (statsmodels ARIMA(p,d,0)), fit by MLE in one shot. "
+        "No live inference/deploy yet — use the training run's val_loss to compare.",
+    },
+    "ma": {
+        "type": "object",
+        "properties": {
+            "q": {"type": "integer", "default": 2, "description": "Moving-average order"},
+            "d": {"type": "integer", "default": 0, "description": "Differencing order"},
+        },
+        "_note": "Statistical baseline (statsmodels ARIMA(0,d,q)), fit by MLE in one shot. "
+        "No live inference/deploy yet — use the training run's val_loss to compare.",
+    },
+    "arma": {
+        "type": "object",
+        "properties": {
+            "p": {"type": "integer", "default": 2, "description": "Autoregressive order"},
+            "d": {"type": "integer", "default": 0, "description": "Differencing order"},
+            "q": {"type": "integer", "default": 2, "description": "Moving-average order"},
+        },
+        "_note": "Statistical baseline (statsmodels ARIMA(p,d,q)), fit by MLE in one shot. "
+        "No live inference/deploy yet — use the training run's val_loss to compare.",
+    },
 }
 
 

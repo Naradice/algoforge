@@ -44,6 +44,11 @@ interface CompareResult {
 // Distinct palette — mirrors multi-run-loss-chart.tsx so run colors stay consistent across charts
 const PALETTE = ["#0ea5e9", "#f97316", "#22c55e", "#a855f7", "#ec4899", "#eab308", "#14b8a6", "#f43f5e"];
 
+// Classical statistical baselines (fit by MLE, not gradient descent) — see docs/model-layer.md.
+// TrainingRun.val_loss is a real MSE for every architecture (statsmodels .mse / MSELoss()), so
+// "Relative MSE" = other_run.val_loss / baseline_run.val_loss needs no extra backend field.
+const BASELINE_ARCHITECTURES = ["ar", "ma", "arma"];
+
 function formatParams(n: number | null): string {
   if (n == null) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -272,6 +277,9 @@ export default function ModelComparePage() {
   const validComparison = (comparison ?? []).filter((r) => r.status != null);
   const datasetIds = Array.from(new Set(validComparison.map((r) => r.dataset_id)));
 
+  // First selected baseline run (if any) — every other run's val_loss is shown relative to it.
+  const baselineRun = validComparison.find((r) => BASELINE_ARCHITECTURES.includes(r.architecture ?? ""));
+
   const { data: datasetCharsData } = useSWR(
     datasetIds.length ? ["compare-model-chars", ...datasetIds] : null,
     () => Promise.all(datasetIds.map((id) =>
@@ -350,6 +358,7 @@ export default function ModelComparePage() {
                   <th className="pb-2 pr-4">Params</th>
                   <th className="pb-2 pr-4">Best Epoch</th>
                   <th className="pb-2 pr-4">Best Val Loss</th>
+                  {baselineRun && <th className="pb-2 pr-4">Relative MSE</th>}
                   <th className="pb-2 pr-4">Dir. Acc.</th>
                   <th className="pb-2 pr-4">Sharpe</th>
                   <th className="pb-2 pr-4">Status</th>
@@ -373,6 +382,17 @@ export default function ModelComparePage() {
                     <td className={`py-2 pr-4 font-mono ${r.val_loss != null ? "text-green-400" : "text-gray-400"}`}>
                       {r.val_loss != null ? r.val_loss.toFixed(6) : "—"}
                     </td>
+                    {baselineRun && (
+                      <td className="py-2 pr-4 font-mono text-gray-300">
+                        {r.run_id === baselineRun.run_id ? (
+                          <span className="text-xs text-gray-500">(baseline)</span>
+                        ) : r.val_loss != null && baselineRun.val_loss ? (
+                          <span className={r.val_loss < baselineRun.val_loss ? "text-green-400" : "text-red-400"}>
+                            {(r.val_loss / baselineRun.val_loss).toFixed(3)}×
+                          </span>
+                        ) : "—"}
+                      </td>
+                    )}
                     <td className="py-2 pr-4 text-gray-300 font-mono">
                       {r.validation?.directional_accuracy != null ? `${(r.validation.directional_accuracy * 100).toFixed(1)}%` : "—"}
                     </td>

@@ -40,6 +40,13 @@ def predict(
     Returns: list of pred_len dicts with keys matching feature_names + "direction", "step"
     """
     from model.architectures import build_model
+    from model.trainers.arima_trainer import ARIMA_ARCHITECTURES
+
+    if architecture in ARIMA_ARCHITECTURES:
+        raise ValueError(
+            f"Live inference for {architecture!r} models isn't supported yet — "
+            "use the training run's val_loss for baseline comparison."
+        )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cache_key = _cache_key(model_id, artifact_path)

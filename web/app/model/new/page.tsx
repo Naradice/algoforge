@@ -45,6 +45,22 @@ const TRANSFORMER_FIELDS: ConfigField[] = [
   { key: "dropout",            label: "Dropout",          type: "number",  default: 0.1 },
 ];
 
+const AR_FIELDS: ConfigField[] = [
+  { key: "p", label: "AR Order (p)",     type: "integer", default: 2 },
+  { key: "d", label: "Differencing (d)", type: "integer", default: 0 },
+];
+
+const MA_FIELDS: ConfigField[] = [
+  { key: "q", label: "MA Order (q)",     type: "integer", default: 2 },
+  { key: "d", label: "Differencing (d)", type: "integer", default: 0 },
+];
+
+const ARMA_FIELDS: ConfigField[] = [
+  { key: "p", label: "AR Order (p)",     type: "integer", default: 2 },
+  { key: "d", label: "Differencing (d)", type: "integer", default: 0 },
+  { key: "q", label: "MA Order (q)",     type: "integer", default: 2 },
+];
+
 const RL_FIELDS: ConfigField[] = [
   {
     key: "algorithm", label: "Algorithm", type: "select", default: "ppo",
@@ -225,6 +241,35 @@ const TEMPLATES: ModelTemplate[] = [
     ],
   },
 
+  // ── Classical baselines ───────────────────────────────────────────────────
+  {
+    id: "ar",
+    architecture: "ar",
+    name: "AR Baseline",
+    description: "Autoregressive model — fit by MLE in one shot (no epochs). Fast statistical baseline to check whether a neural net is actually earning its complexity.",
+    tags: ["baseline", "statistical", "fast"],
+    config: { p: 2, d: 0 },
+    fields: AR_FIELDS,
+  },
+  {
+    id: "ma",
+    architecture: "ma",
+    name: "MA Baseline",
+    description: "Moving-average model — fit by MLE in one shot (no epochs). Fast statistical baseline to check whether a neural net is actually earning its complexity.",
+    tags: ["baseline", "statistical", "fast"],
+    config: { q: 2, d: 0 },
+    fields: MA_FIELDS,
+  },
+  {
+    id: "arma",
+    architecture: "arma",
+    name: "ARMA Baseline",
+    description: "Combined AR + MA model — fit by MLE in one shot (no epochs). Fast statistical baseline to check whether a neural net is actually earning its complexity.",
+    tags: ["baseline", "statistical", "fast"],
+    config: { p: 2, d: 0, q: 2 },
+    fields: ARMA_FIELDS,
+  },
+
   // ── RL Agent variants ─────────────────────────────────────────────────────
   {
     id: "rl_ppo",
@@ -282,6 +327,8 @@ const TAG_COLORS: Record<string, string> = {
   MLP:                      "bg-zinc-700 text-zinc-300",
   "on-policy":              "bg-orange-800 text-orange-300",
   "off-policy":             "bg-yellow-800 text-yellow-300",
+  baseline:                 "bg-gray-700 text-gray-300",
+  statistical:              "bg-teal-800 text-teal-300",
 };
 
 function TagBadge({ tag }: { tag: string }) {
@@ -360,6 +407,7 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
   { label: "Convolutional",          ids: ["cnn_lstm", "tcn"] },
   { label: "Generative & Latent",    ids: ["timegan", "vae"] },
   { label: "Interpretable",          ids: ["nbeats"] },
+  { label: "Classical Baselines",    ids: ["ar", "ma", "arma"] },
   { label: "Reinforcement Learning", ids: ["rl_ppo", "rl_dqn", "rl_a2c"] },
 ];
 

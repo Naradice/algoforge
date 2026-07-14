@@ -28,8 +28,54 @@ A **TrainingCheckpoint** stores the model weights at each epoch.
 | `seq2seq_transformer` | Transformer encoder-decoder | Multi-step sequence prediction |
 | `timegan` | TimeGAN generative model | Synthetic data generation |
 | `rl_agent` | Reinforcement learning agent | Adaptive policy learning |
+| `ar` / `ma` / `arma` | Classical statistical baseline (statsmodels ARIMA) | Sanity-checking whether a neural net beats a naive fit — see "Baseline Models" below |
 
 Configuration schemas: `GET /model-config/architectures/{architecture}`
+
+---
+
+## Baseline Models (`ar` / `ma` / `arma`)
+
+Every other architecture is a `torch.nn.Module` trained by gradient descent over epochs. `ar`,
+`ma`, and `arma` are classical statistical models (`statsmodels.tsa.arima.model.ARIMA`) fit by
+MLE in a single shot — no epochs, no checkpoints per epoch, no `state_dict`. They still go
+through the same `MLModel`/`TrainingRun` tables and the same `/model`, `/model/{id}`, and
+`/model/compare` UI as any other model, so you can directly compare a real model's MSE against a
+naive baseline's.
+
+**Config** (`MLModel.config`) maps to a statsmodels `(p, d, q)` order:
+
+| Architecture | Order | Config fields |
+|---|---|---|
+| `ar` | `(p, d, 0)` | `p` (default 2), `d` (default 0) |
+| `ma` | `(0, d, q)` | `q` (default 2), `d` (default 0) |
+| `arma` | `(p, d, q)` | `p`, `d`, `q` (defaults 2, 0, 2) |
+
+`d` defaults to 0 because classical AR/MA assume an already-stationary series — pick a
+`PreprocessedDataset` recipe with `normalize: "returns"` (log-differenced), or raise `d` if you
+select a recipe with `normalize: "none"` on a raw, non-stationary price series.
+
+**Training** (`celery_worker.py`'s `_run_arima_training`, dispatched from `_train_model` before
+reaching the torch-specific code): fits on the training split (from `OHLCWindowDataset`'s
+train/val split, but as a flat series, not sliding windows — see
+`model/trainers/arima_trainer.py:load_series_for_arima`), then walk-forward evaluates over the
+validation split in non-overlapping `pred_len`-sized blocks, extending state after each block via
+`.append(actual, refit=False)` (cheap — no re-optimization). Reported as `best_epoch=1` with one
+`TrainingRunMetric` row; `num_params` is `len(results.params)` (AR/MA coefficients + const +
+`sigma2`) — directly comparable to a neural net's parameter count on the same "Data × Model
+Analysis" chart in `/model/compare`. `TrainingRun.val_loss` is the walk-forward MSE — the same
+kind of number `MSELoss()` produces for the neural architectures, so it's directly comparable
+across every architecture without any extra validation step.
+
+**Relative MSE**: on `/model/compare`, once you select at least one `ar`/`ma`/`arma` run
+alongside others, a "Relative MSE" column appears — `other_run.val_loss / baseline_run.val_loss`
+for every non-baseline run. Below 1× means the model beats the baseline; above 1× means it's
+worse than a naive statistical fit.
+
+**Not supported yet**: live inference (`POST /models/{id}/predict`) and held-out-dataset
+validation jobs (`POST /models/{id}/validations`) both raise a clear error for these
+architectures — `predict()` guards explicitly rather than crashing on `torch.load()` of a
+statsmodels pickle. Use `TrainingRun.val_loss` / Relative MSE for comparison in the meantime.
 
 ---
 

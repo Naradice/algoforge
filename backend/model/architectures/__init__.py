@@ -10,6 +10,8 @@ Supported architectures:
     "vae"                  → VAEModel
     "nbeats"               → NBEATSModel
     "rl_agent"             → raises ValueError (handled by ml_worker, Python 3.8)
+    "ar" / "ma" / "arma"   → raises ValueError — not torch.nn.Module; fit via statsmodels in
+                             celery_worker.py's _run_arima_training, see model/trainers/arima_trainer.py
 """
 
 from __future__ import annotations
@@ -92,6 +94,12 @@ ARCHITECTURE_DEFAULTS: dict[str, dict] = {
         "nb_blocks": 3,
         "theta_dim": 64,
     },
+    # ar/ma/arma are statsmodels ARIMA fits, not torch models — build_model() rejects them
+    # below. Defaults kept here so this stays the single source of truth per architecture;
+    # model/trainers/arima_trainer.py's order_from_config() merges these with MLModel.config.
+    "ar": {"p": 2, "d": 0},
+    "ma": {"q": 2, "d": 0},
+    "arma": {"p": 2, "d": 0, "q": 2},
 }
 
 TRAINING_DEFAULTS: dict[str, dict] = {
@@ -102,6 +110,10 @@ TRAINING_DEFAULTS: dict[str, dict] = {
     "tcn": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "vae": {"obs_len": 60, "pred_len": 10, "epochs": 80, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "nbeats": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    # No epochs/batch_size/lr — fitting is a single MLE optimization, not gradient descent.
+    "ar":   {"pred_len": 10, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    "ma":   {"pred_len": 10, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    "arma": {"pred_len": 10, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
 }
 
 
@@ -126,5 +138,10 @@ def build_model(architecture: str, config: dict, device: str = _DEVICE) -> torch
         return NBEATSModel(**merged, device=device)
     elif arch == "rl_agent":
         raise ValueError("rl_agent training must be submitted to ml_worker (Python 3.8 container)")
+    elif arch in ("ar", "ma", "arma"):
+        raise ValueError(
+            f"{arch!r} is fit via statsmodels, not build_model() — see "
+            "celery_worker.py's _run_arima_training / model/trainers/arima_trainer.py"
+        )
     else:
         raise ValueError(f"Unknown architecture: {architecture!r}")

@@ -511,70 +511,165 @@ def train_model(training_run_id: int) -> dict:
     return asyncio.run(_train_model(training_run_id))
 
 
+class _TrainingResolutionError(Exception):
+    """Raised by _resolve_training_context for the not-found cases — caller translates to the
+    same {"error": code} shape _train_model has always returned for these."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+async def _resolve_training_context(factory, training_run_id: int):
+    """Load the TrainingRun + MLModel, resolve preprocessing (recipe or inline) + the dataset
+    artifact, snapshot the resolved hyperparams back onto the run, and flip status to
+    running/training. Shared prologue for both the neural (_train_model) and ARIMA
+    (_run_arima_training) paths.
+
+    Returns (model_id, architecture, model_config, hp, dataset_artifact, pd_rec).
+    Raises _TrainingResolutionError for the not-found cases (run/model/dataset) — matches the
+    {"error": ...} returns this prologue always produced, with no status write in those cases
+    (pre-existing behavior, unchanged).
+    """
+    from sqlalchemy import select, update
+    from model.models import MLModel, TrainingRun
+    from model.architectures import TRAINING_DEFAULTS
+
+    async with factory() as db:
+        result = await db.execute(select(TrainingRun).where(TrainingRun.id == training_run_id))
+        run = result.scalar_one_or_none()
+        if run is None:
+            raise _TrainingResolutionError("training_run_not_found")
+        result = await db.execute(select(MLModel).where(MLModel.id == run.model_id))
+        model_rec = result.scalar_one_or_none()
+        if model_rec is None:
+            raise _TrainingResolutionError("model_not_found")
+
+        architecture = model_rec.architecture
+        model_config = model_rec.config
+        dataset_id = run.dataset_id
+        hp = {**TRAINING_DEFAULTS.get(architecture, {}), **run.hyperparams}
+
+        # A preprocessed-dataset recipe is the single source of truth for preprocessing/
+        # feature_cols/normalize when referenced — overrides any same-named inline hyperparams.
+        pd_rec = None
+        if run.preprocessed_dataset_id is not None:
+            from model.models import PreprocessedDataset
+            result = await db.execute(select(PreprocessedDataset).where(PreprocessedDataset.id == run.preprocessed_dataset_id))
+            pd_rec = result.scalar_one_or_none()
+            if pd_rec is not None:
+                hp["preprocessing"] = pd_rec.preprocessing
+                hp["feature_cols"] = pd_rec.feature_cols
+                hp["normalize"] = pd_rec.normalize
+
+        from data.models import Dataset
+        result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+        ds_rec = result.scalar_one_or_none()
+        if ds_rec is None or ds_rec.artifact_path is None:
+            raise _TrainingResolutionError("dataset_not_found_or_no_artifact")
+        dataset_artifact = ds_rec.artifact_path
+
+        # Snapshot the resolved preprocessing config into hyperparams so this run stays
+        # fully self-describing even if its recipe is later renamed or deleted.
+        snapshot_hp = run.hyperparams
+        if pd_rec is not None:
+            snapshot_hp = {
+                **run.hyperparams,
+                "preprocessing": pd_rec.preprocessing,
+                "feature_cols": pd_rec.feature_cols,
+                "normalize": pd_rec.normalize,
+                "preprocessed_dataset_id": pd_rec.id,
+                "preprocessed_dataset_name": pd_rec.name,
+            }
+
+        await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+            status="running", started_at=datetime.now(timezone.utc), hyperparams=snapshot_hp
+        ))
+        await db.execute(update(MLModel).where(MLModel.id == model_rec.id).values(status="training"))
+        await db.commit()
+
+    return model_rec.id, architecture, model_config, hp, dataset_artifact, pd_rec
+
+
+async def _run_arima_training(factory, training_run_id: int, model_id: int, architecture: str,
+                               model_config: dict, hp: dict, dataset_artifact: str, pd_rec, store: Path) -> dict:
+    """AR/MA/ARMA training — a single statsmodels MLE fit, not a torch epoch loop. Called
+    inline from _train_model's try/finally, so the outer engine.dispose()/_release_lock still
+    covers this path."""
+    from sqlalchemy import update
+    from model.models import MLModel, TrainingRun, TrainingRunMetric
+    from model.trainers import order_from_config, load_series_for_arima, fit_and_evaluate_arima, compute_effective_characteristics
+
+    try:
+        order = order_from_config(architecture, model_config)
+        train_series, val_series = load_series_for_arima(
+            dataset_artifact, hp.get("feature_cols", ["close"]), hp.get("preprocessing"),
+            hp.get("normalize", "returns"), hp.get("val_split", 0.2),
+        )
+        fit_result = await asyncio.get_event_loop().run_in_executor(
+            None, fit_and_evaluate_arima, train_series, val_series, order, hp.get("pred_len", 10)
+        )
+    except Exception as e:
+        async with factory() as db:
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                status="error", ended_at=datetime.now(timezone.utc)
+            ))
+            await db.commit()
+        return {"error": str(e)}
+
+    checkpoint_dir = store / "models" / str(model_id) / f"training_{training_run_id}"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = checkpoint_dir / "best.pkl"
+    fit_result["results"].save(str(artifact_path))
+
+    if pd_rec is not None and pd_rec.characteristics is not None:
+        preprocessed_characteristics = pd_rec.characteristics
+    else:
+        try:
+            preprocessed_characteristics = compute_effective_characteristics(
+                dataset_artifact, hp.get("feature_cols", ["close"]), hp.get("preprocessing")
+            )
+        except Exception as e:
+            preprocessed_characteristics = {"error": str(e)}
+
+    metrics = fit_result["metrics"]
+    async with factory() as db:
+        db.add(TrainingRunMetric(
+            training_run_id=training_run_id, epoch=1,
+            train_loss=fit_result["train_mse"], val_loss=metrics["mse"],
+        ))
+        await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+            status="completed", current_epoch=1, best_epoch=1, val_loss=metrics["mse"],
+            num_params=fit_result["n_params"], preprocessed_characteristics=preprocessed_characteristics,
+            artifact_path=str(artifact_path.relative_to(store)), ended_at=datetime.now(timezone.utc), eta_seconds=0,
+        ))
+        await db.execute(update(MLModel).where(MLModel.id == model_id).values(status="trained"))
+        await db.commit()
+
+    logger.info(f"Training run {training_run_id} ({architecture}) completed. val_loss(mse): {metrics['mse']:.6f}")
+    return {"best_epoch": 1, "val_loss": metrics["mse"], "artifact_path": str(artifact_path.relative_to(store))}
+
+
 async def _train_model(training_run_id: int) -> dict:
     import torch
-    from sqlalchemy import select, update
+    from sqlalchemy import update
     from model.models import MLModel, TrainingRun, TrainingCheckpoint, TrainingRunMetric
-    from model.architectures import build_model, TRAINING_DEFAULTS
+    from model.architectures import build_model
     from model.trainers import get_trainer_fns, OHLCWindowDataset, compute_effective_characteristics
+    from model.trainers.arima_trainer import ARIMA_ARCHITECTURES
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
 
     factory, engine = _make_db()
     try:
-        async with factory() as db:
-            result = await db.execute(select(TrainingRun).where(TrainingRun.id == training_run_id))
-            run = result.scalar_one_or_none()
-            if run is None:
-                return {"error": "training_run_not_found"}
-            result = await db.execute(select(MLModel).where(MLModel.id == run.model_id))
-            model_rec = result.scalar_one_or_none()
-            if model_rec is None:
-                return {"error": "model_not_found"}
+        try:
+            model_id, architecture, model_config, hp, dataset_artifact, pd_rec = await _resolve_training_context(factory, training_run_id)
+        except _TrainingResolutionError as e:
+            return {"error": e.code}
 
-            architecture = model_rec.architecture
-            model_config = model_rec.config
-            dataset_id = run.dataset_id
-            hp = {**TRAINING_DEFAULTS.get(architecture, {}), **run.hyperparams}
-
-            # A preprocessed-dataset recipe is the single source of truth for preprocessing/
-            # feature_cols/normalize when referenced — overrides any same-named inline hyperparams.
-            pd_rec = None
-            if run.preprocessed_dataset_id is not None:
-                from model.models import PreprocessedDataset
-                result = await db.execute(select(PreprocessedDataset).where(PreprocessedDataset.id == run.preprocessed_dataset_id))
-                pd_rec = result.scalar_one_or_none()
-                if pd_rec is not None:
-                    hp["preprocessing"] = pd_rec.preprocessing
-                    hp["feature_cols"] = pd_rec.feature_cols
-                    hp["normalize"] = pd_rec.normalize
-
-            from data.models import Dataset
-            result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
-            ds_rec = result.scalar_one_or_none()
-            if ds_rec is None or ds_rec.artifact_path is None:
-                return {"error": "dataset_not_found_or_no_artifact"}
-            dataset_artifact = ds_rec.artifact_path
-
-            # Snapshot the resolved preprocessing config into hyperparams so this run stays
-            # fully self-describing even if its recipe is later renamed or deleted.
-            snapshot_hp = run.hyperparams
-            if pd_rec is not None:
-                snapshot_hp = {
-                    **run.hyperparams,
-                    "preprocessing": pd_rec.preprocessing,
-                    "feature_cols": pd_rec.feature_cols,
-                    "normalize": pd_rec.normalize,
-                    "preprocessed_dataset_id": pd_rec.id,
-                    "preprocessed_dataset_name": pd_rec.name,
-                }
-
-            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
-                status="running", started_at=datetime.now(timezone.utc), hyperparams=snapshot_hp
-            ))
-            await db.execute(update(MLModel).where(MLModel.id == model_rec.id).values(status="training"))
-            await db.commit()
+        if architecture in ARIMA_ARCHITECTURES:
+            return await _run_arima_training(factory, training_run_id, model_id, architecture, model_config, hp, dataset_artifact, pd_rec, store)
 
         try:
             dataset = OHLCWindowDataset(
@@ -635,7 +730,7 @@ async def _train_model(training_run_id: int) -> dict:
         batch_size = int(hp.get("batch_size", 32))
         best_val_loss = float("inf")
         best_epoch = 0
-        checkpoint_dir = store / "models" / str(model_rec.id) / f"training_{training_run_id}"
+        checkpoint_dir = store / "models" / str(model_id) / f"training_{training_run_id}"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         loop = asyncio.get_event_loop()
@@ -695,7 +790,7 @@ async def _train_model(training_run_id: int) -> dict:
                 best_epoch=best_epoch, val_loss=best_val_loss,
                 artifact_path=best_artifact, eta_seconds=0,
             ))
-            await db.execute(update(MLModel).where(MLModel.id == model_rec.id).values(status="trained"))
+            await db.execute(update(MLModel).where(MLModel.id == model_id).values(status="trained"))
             await db.commit()
 
         logger.info(f"Training run {training_run_id} completed. Best epoch: {best_epoch}, val_loss: {best_val_loss:.6f}")
