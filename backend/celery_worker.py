@@ -660,6 +660,20 @@ async def _train_model(training_run_id: int) -> dict:
     from model.architectures import build_model
     from model.trainers import get_trainer_fns, OHLCWindowDataset, compute_effective_characteristics
     from model.trainers.arima_trainer import ARIMA_ARCHITECTURES
+    from celery_app import _get_redis
+
+    # Training tasks can legitimately run for hours, well past a broker's default message
+    # visibility window — if the underlying task message gets redelivered while the original
+    # execution is still in flight (observed in practice even with a generous
+    # broker_transport_options visibility_timeout), a second worker would start an
+    # uncoordinated duplicate training loop against the same TrainingRun row. Guard against
+    # that directly: only one execution may hold this run's lock at a time.
+    redis = _get_redis()
+    exec_lock_key = f"algoforge:executing:train_model:{training_run_id}"
+    lock_acquired = redis is None or redis.set(exec_lock_key, "1", nx=True, ex=43200)
+    if not lock_acquired:
+        logger.warning(f"Training run {training_run_id}: duplicate execution detected (already running) — skipping")
+        return {"skipped": "duplicate_execution"}
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
@@ -814,6 +828,8 @@ async def _train_model(training_run_id: int) -> dict:
     finally:
         await engine.dispose()
         _release_lock("train_model", training_run_id)
+        if redis is not None:
+            redis.delete(exec_lock_key)
 
 
 # ---------------------------------------------------------------------------
