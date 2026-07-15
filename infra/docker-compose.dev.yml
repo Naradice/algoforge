@@ -177,6 +177,16 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    # GPU 1 (RTX 3060 Ti) is dedicated to training so it doesn't contend with the desktop's
+    # own use of GPU 0. Installed torch (2.13.0+cu130) already has CUDA support built in —
+    # this reservation is the only thing needed to make torch.cuda.is_available() true.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
     command: celery -A celery_worker worker -Q training --concurrency=2 --pool=prefork --loglevel=info
 
   celery-backtest:
