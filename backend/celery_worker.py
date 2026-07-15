@@ -731,6 +731,9 @@ async def _train_model(training_run_id: int) -> dict:
 
         epochs = int(hp.get("epochs", 50))
         batch_size = int(hp.get("batch_size", 32))
+        early_stop_patience = hp.get("early_stop_patience")
+        early_stop_patience = int(early_stop_patience) if early_stop_patience else None
+        epochs_since_improvement = 0
         best_val_loss = float("inf")
         best_epoch = 0
         checkpoint_dir = store / "models" / str(model_id) / f"training_{training_run_id}"
@@ -761,7 +764,10 @@ async def _train_model(training_run_id: int) -> dict:
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_epoch = epoch
+                epochs_since_improvement = 0
                 torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, checkpoint_dir / "best.pt")
+            else:
+                epochs_since_improvement += 1
 
             eta_seconds = (epochs - epoch) * 5
 
@@ -785,6 +791,13 @@ async def _train_model(training_run_id: int) -> dict:
                 await db.commit()
 
             logger.info(f"Training run {training_run_id} epoch {epoch}/{epochs}: train={train_loss:.6f} val={val_loss:.6f}")
+
+            if early_stop_patience is not None and epochs_since_improvement >= early_stop_patience:
+                logger.info(
+                    f"Training run {training_run_id} early-stopped at epoch {epoch} "
+                    f"(no improvement for {early_stop_patience} epochs, best={best_val_loss:.6f} @ epoch {best_epoch})"
+                )
+                break
 
         best_artifact = str((checkpoint_dir / "best.pt").relative_to(store))
         async with factory() as db:

@@ -104,6 +104,7 @@ Common hyperparameters (all architectures):
 | `feature_cols` | `["close"]` | Columns to use as features — only meaningful for ad-hoc runs; ignored (overridden) when `preprocessed_dataset_id` is set |
 | `normalize` | `"returns"` | Normalisation: `returns`, `zscore`, `minmax`, `robust`, `none` — same override rule as `feature_cols` |
 | `preprocessing` | `null` | `{ indicators: [...], clustering: {...} }` — same override rule as `feature_cols`. See `backend/model/trainers/preprocessing.py` for the indicator types (`sma`, `ema`, `rsi`, `macd`, `bbands`, `atr`, `returns`, `volatility`) and their output column-naming convention. |
+| `early_stop_patience` | `null` (disabled) | If set, training stops once `epochs_since_improvement >= early_stop_patience` — i.e. that many consecutive epochs with no new best `val_loss`. `epochs` still applies as a hard cap. Recommended whenever comparing architectures/sizes: a fixed `epochs` budget under-trains larger models and makes params-vs-loss comparisons meaningless (see the "Baseline Models" scaling-law caveat above). |
 
 Architecture-specific params are passed in the same `hyperparams` dict.
 

@@ -46,6 +46,13 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     # Ack only after the task completes so a killed worker re-queues the task.
     task_acks_late=True,
+    # Redis's default visibility_timeout (1 h) is shorter than a single training task can
+    # legitimately run (early-stopped runs have taken 1.5+ h). Once a task exceeds the
+    # visibility window, Redis assumes the original worker died and redelivers the task to
+    # another idle worker — even though the original is still executing — producing two
+    # concurrent, uncoordinated training loops writing to the same TrainingRun row. Set well
+    # above any realistic single-task duration.
+    broker_transport_options={"visibility_timeout": 43200},  # 12 h
     # Keep results long enough for dedup checks (24 h).
     result_expires=86400,
     task_routes={
