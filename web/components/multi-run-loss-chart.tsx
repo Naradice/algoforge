@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   LineChart,
   Line,
@@ -56,7 +57,50 @@ function mergeByEpoch(runs: RunSeries[]): object[] {
   );
 }
 
+type AxisScale = "linear" | "log";
+
+/** Log scale chokes on domains that include zero/negative values — clamp to the smallest
+ * positive value actually present so the scale stays well-defined. */
+function positiveDomain(data: object[], keys: string[]): [number, number] {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const row of data) {
+    for (const key of keys) {
+      const v = (row as Record<string, number>)[key];
+      if (typeof v === "number" && v > 0) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+  }
+  if (!isFinite(min) || !isFinite(max)) return [0.0001, 1];
+  return [min, max];
+}
+
+function ScaleToggle({ label, value, onChange }: { label: string; value: AxisScale; onChange: (v: AxisScale) => void }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+      <span>{label}</span>
+      <div className="flex rounded border border-gray-700 overflow-hidden">
+        {(["linear", "log"] as const).map((opt) => (
+          <button
+            key={opt}
+            type="button"
+            onClick={() => onChange(opt)}
+            className={`px-2 py-0.5 ${value === opt ? "bg-sky-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+          >
+            {opt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MultiRunLossChart({ runs, height = 280 }: MultiRunLossChartProps) {
+  const [yScale, setYScale] = useState<AxisScale>("linear");
+  const [xScale, setXScale] = useState<AxisScale>("linear");
+
   if (runs.length === 0 || runs.every((r) => r.metrics.length === 0)) {
     return (
       <div
@@ -69,52 +113,68 @@ export function MultiRunLossChart({ runs, height = 280 }: MultiRunLossChartProps
   }
 
   const data = mergeByEpoch(runs);
+  const valLossKeys = runs.map((r) => `val_loss_${r.runId}`);
+  const yDomain = yScale === "log" ? positiveDomain(data, valLossKeys) : undefined;
+  const xDomain = xScale === "log" ? positiveDomain(data, ["epoch"]) : undefined;
+  const yTickFormatter = (v: number) => (yScale === "log" ? v.toExponential(1) : v.toFixed(4));
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 8, right: 30, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-        <XAxis
-          dataKey="epoch"
-          stroke="#374151"
-          tick={{ fontSize: 11, fill: "#6b7280" }}
-          label={{ value: "Epoch", position: "insideBottomRight", offset: -5, fill: "#6b7280", fontSize: 11 }}
-        />
-        <YAxis
-          stroke="#374151"
-          tick={{ fontSize: 11, fill: "#6b7280" }}
-          tickFormatter={(v: number) => v.toFixed(4)}
-          width={60}
-        />
-        <Tooltip
-          contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: 4, fontSize: 11 }}
-          labelFormatter={(v) => `Epoch ${v}`}
-          formatter={(value: number, name: string) => {
-            const match = name.match(/^val_loss_(\d+)$/);
-            return [value.toFixed(6), match ? `Run #${match[1]} val` : name];
-          }}
-        />
-        <Legend
-          formatter={(name: string) => {
-            const match = name.match(/^val_loss_(\d+)$/);
-            if (!match) return name;
-            const run = runs.find((r) => r.runId === parseInt(match[1]));
-            return run?.label ?? `Run #${match[1]}`;
-          }}
-          wrapperStyle={{ fontSize: 11, color: "#9ca3af" }}
-        />
-        {runs.map((run, i) => (
-          <Line
-            key={run.runId}
-            type="monotone"
-            dataKey={`val_loss_${run.runId}`}
-            stroke={PALETTE[i % PALETTE.length]}
-            strokeWidth={2}
-            dot={false}
-            isAnimationActive={false}
+    <div>
+      <div className="flex items-center justify-end gap-4 mb-1">
+        <ScaleToggle label="X scale" value={xScale} onChange={setXScale} />
+        <ScaleToggle label="Y scale" value={yScale} onChange={setYScale} />
+      </div>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={data} margin={{ top: 8, right: 30, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis
+            dataKey="epoch"
+            stroke="#374151"
+            tick={{ fontSize: 11, fill: "#6b7280" }}
+            label={{ value: "Epoch", position: "insideBottomRight", offset: -5, fill: "#6b7280", fontSize: 11 }}
+            scale={xScale}
+            domain={xDomain}
+            allowDataOverflow={xScale === "log"}
           />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+          <YAxis
+            stroke="#374151"
+            tick={{ fontSize: 11, fill: "#6b7280" }}
+            tickFormatter={yTickFormatter}
+            width={60}
+            scale={yScale}
+            domain={yDomain}
+            allowDataOverflow={yScale === "log"}
+          />
+          <Tooltip
+            contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: 4, fontSize: 11 }}
+            labelFormatter={(v) => `Epoch ${v}`}
+            formatter={(value: number, name: string) => {
+              const match = name.match(/^val_loss_(\d+)$/);
+              return [value.toFixed(6), match ? `Run #${match[1]} val` : name];
+            }}
+          />
+          <Legend
+            formatter={(name: string) => {
+              const match = name.match(/^val_loss_(\d+)$/);
+              if (!match) return name;
+              const run = runs.find((r) => r.runId === parseInt(match[1]));
+              return run?.label ?? `Run #${match[1]}`;
+            }}
+            wrapperStyle={{ fontSize: 11, color: "#9ca3af" }}
+          />
+          {runs.map((run, i) => (
+            <Line
+              key={run.runId}
+              type="monotone"
+              dataKey={`val_loss_${run.runId}`}
+              stroke={PALETTE[i % PALETTE.length]}
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
