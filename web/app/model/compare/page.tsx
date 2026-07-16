@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { apiFetch, fetcher } from "@/lib/fetcher";
 import { MultiRunLossChart } from "@/components/multi-run-loss-chart";
 import type { RunSeries } from "@/components/multi-run-loss-chart";
+import { type AxisScale, positiveDomain, ScaleToggle } from "@/components/scale-toggle";
 import {
   ScatterChart,
   Scatter,
@@ -133,6 +134,8 @@ function metricValue(entry: AnalysisEntry, key: string): number | null {
 function AnalysisSection({ entries }: { entries: AnalysisEntry[] }) {
   const [xKey, setXKey] = useState<string>(X_METRICS[0].key);
   const [yKey, setYKey] = useState<string>(Y_METRICS[0].key);
+  const [xScale, setXScale] = useState<AxisScale>("linear");
+  const [yScale, setYScale] = useState<AxisScale>("linear");
 
   const xLabel = X_METRICS.find((m) => m.key === xKey)?.label ?? xKey;
   const yLabel = Y_METRICS.find((m) => m.key === yKey)?.label ?? yKey;
@@ -144,6 +147,11 @@ function AnalysisSection({ entries }: { entries: AnalysisEntry[] }) {
       return x != null && y != null ? { x, y, entry: e } : null;
     })
     .filter((p): p is { x: number; y: number; entry: AnalysisEntry } => p !== null);
+
+  const xDomain = xScale === "log" ? positiveDomain(points.map((p) => p.x)) : undefined;
+  const yDomain = yScale === "log" ? positiveDomain(points.map((p) => p.y)) : undefined;
+  const xTickFormatter = (v: number) => (xScale === "log" ? v.toExponential(1) : String(v));
+  const yTickFormatter = (v: number) => (yScale === "log" ? v.toExponential(1) : String(v));
 
   return (
     <div className="rounded border border-gray-700 bg-gray-900 p-4 space-y-3">
@@ -167,6 +175,8 @@ function AnalysisSection({ entries }: { entries: AnalysisEntry[] }) {
             {Y_METRICS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
         </label>
+        <ScaleToggle label="X scale" value={xScale} onChange={setXScale} />
+        <ScaleToggle label="Y scale" value={yScale} onChange={setYScale} />
       </div>
       {points.length === 0 ? (
         <p className="text-xs text-gray-500">
@@ -178,9 +188,11 @@ function AnalysisSection({ entries }: { entries: AnalysisEntry[] }) {
             <ScatterChart margin={{ top: 8, right: 20, bottom: 24, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
               <XAxis type="number" dataKey="x" name={xLabel} tick={{ fontSize: 10, fill: "#6b7280" }}
-                label={{ value: xLabel, position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }} />
+                label={{ value: xLabel, position: "insideBottom", offset: -12, fill: "#6b7280", fontSize: 11 }}
+                scale={xScale} domain={xDomain} allowDataOverflow={xScale === "log"} tickFormatter={xTickFormatter} />
               <YAxis type="number" dataKey="y" name={yLabel} tick={{ fontSize: 10, fill: "#6b7280" }} width={64}
-                label={{ value: yLabel, angle: -90, position: "insideLeft", fill: "#6b7280", fontSize: 11 }} />
+                label={{ value: yLabel, angle: -90, position: "insideLeft", fill: "#6b7280", fontSize: 11 }}
+                scale={yScale} domain={yDomain} allowDataOverflow={yScale === "log"} tickFormatter={yTickFormatter} />
               <Tooltip
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 content={({ active, payload }: any) => {

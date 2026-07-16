@@ -11,6 +11,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { type AxisScale, positiveDomain, ScaleToggle } from "@/components/scale-toggle";
 
 export interface RunMetricsPoint {
   epoch: number;
@@ -57,46 +58,6 @@ function mergeByEpoch(runs: RunSeries[]): object[] {
   );
 }
 
-type AxisScale = "linear" | "log";
-
-/** Log scale chokes on domains that include zero/negative values — clamp to the smallest
- * positive value actually present so the scale stays well-defined. */
-function positiveDomain(data: object[], keys: string[]): [number, number] {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const row of data) {
-    for (const key of keys) {
-      const v = (row as Record<string, number>)[key];
-      if (typeof v === "number" && v > 0) {
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-    }
-  }
-  if (!isFinite(min) || !isFinite(max)) return [0.0001, 1];
-  return [min, max];
-}
-
-function ScaleToggle({ label, value, onChange }: { label: string; value: AxisScale; onChange: (v: AxisScale) => void }) {
-  return (
-    <div className="flex items-center gap-1.5 text-xs text-gray-400">
-      <span>{label}</span>
-      <div className="flex rounded border border-gray-700 overflow-hidden">
-        {(["linear", "log"] as const).map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => onChange(opt)}
-            className={`px-2 py-0.5 ${value === opt ? "bg-sky-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
-          >
-            {opt}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function MultiRunLossChart({ runs, height = 280 }: MultiRunLossChartProps) {
   const [yScale, setYScale] = useState<AxisScale>("linear");
   const [xScale, setXScale] = useState<AxisScale>("linear");
@@ -114,8 +75,12 @@ export function MultiRunLossChart({ runs, height = 280 }: MultiRunLossChartProps
 
   const data = mergeByEpoch(runs);
   const valLossKeys = runs.map((r) => `val_loss_${r.runId}`);
-  const yDomain = yScale === "log" ? positiveDomain(data, valLossKeys) : undefined;
-  const xDomain = xScale === "log" ? positiveDomain(data, ["epoch"]) : undefined;
+  const yDomain = yScale === "log"
+    ? positiveDomain(data.flatMap((row) => valLossKeys.map((k) => (row as Record<string, number>)[k])))
+    : undefined;
+  const xDomain = xScale === "log"
+    ? positiveDomain(data.map((row) => (row as { epoch: number }).epoch))
+    : undefined;
   const yTickFormatter = (v: number) => (yScale === "log" ? v.toExponential(1) : v.toFixed(4));
 
   return (
