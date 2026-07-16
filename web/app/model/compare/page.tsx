@@ -131,6 +131,77 @@ function metricValue(entry: AnalysisEntry, key: string): number | null {
   return null;
 }
 
+const DATA_DETAIL_METRICS = X_METRICS.filter((m) => m.key.startsWith("data."));
+
+function formatMetricValue(v: number): string {
+  if (Math.abs(v) !== 0 && (Math.abs(v) < 0.001 || Math.abs(v) >= 100000)) return v.toExponential(2);
+  return v.toFixed(4).replace(/\.?0+$/, "") || "0";
+}
+
+/** Per-run breakdown of every structural data characteristic (Hurst, periodicity, entropy,
+ * etc.) at once — the scatter chart above only shows one metric at a time via its dropdown. */
+function DataCharacteristicsSection({ entries }: { entries: AnalysisEntry[] }) {
+  const withData = entries.filter((e) => e.datasetMetrics != null);
+  if (withData.length === 0) {
+    return (
+      <div className="rounded border border-gray-700 bg-gray-900 p-4">
+        <h2 className="text-sm font-medium text-gray-300">Data Characteristics</h2>
+        <p className="text-xs text-gray-500 mt-2">
+          None of the compared runs have data characteristics available yet — they may still be computing.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded border border-gray-700 bg-gray-900 p-4 space-y-3">
+      <h2 className="text-sm font-medium text-gray-300">Data Characteristics</h2>
+      <p className="text-xs text-gray-600">
+        All structural indicators for each run&apos;s training data at once, not just the one
+        picked in the scatter plot below. Uses each run&apos;s own as-trained characteristics
+        (after its preprocessing) when available.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {withData.map((e) => {
+          const m = e.datasetMetrics as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+          const interpretation = m?.long_range_dependence?.interpretation as string | undefined;
+          const nonlinear = m?.complexity_nonlinearity?.nonlinear as boolean | undefined;
+          return (
+            <div key={e.runId} className="rounded border border-gray-800 bg-gray-950 p-3">
+              <p className="text-xs font-medium text-white mb-2">
+                Run #{e.runId} <span className="text-gray-500 font-normal">{e.architecture ?? ""}</span>
+              </p>
+              <dl className="space-y-1">
+                {DATA_DETAIL_METRICS.map((dm) => {
+                  const v = metricValue(e, dm.key);
+                  return (
+                    <div key={dm.key} className="flex items-baseline justify-between gap-3 text-xs">
+                      <dt className="text-gray-500">{dm.label.replace(/^Data:\s*/, "")}</dt>
+                      <dd className="text-gray-200 font-mono">{v != null ? formatMetricValue(v) : "—"}</dd>
+                    </div>
+                  );
+                })}
+                {interpretation && (
+                  <div className="flex items-baseline justify-between gap-3 text-xs">
+                    <dt className="text-gray-500">Trend interpretation</dt>
+                    <dd className="text-gray-200">{interpretation}</dd>
+                  </div>
+                )}
+                {nonlinear != null && (
+                  <div className="flex items-baseline justify-between gap-3 text-xs">
+                    <dt className="text-gray-500">Nonlinear</dt>
+                    <dd className="text-gray-200">{nonlinear ? "yes" : "no"}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AnalysisSection({ entries }: { entries: AnalysisEntry[] }) {
   const [xKey, setXKey] = useState<string>(X_METRICS[0].key);
   const [yKey, setYKey] = useState<string>(Y_METRICS[0].key);
@@ -475,6 +546,9 @@ export default function ModelComparePage() {
           </div>
         </div>
       )}
+
+      {/* Full per-run breakdown of every structural data characteristic at once */}
+      {analysisEntries.length > 0 && <DataCharacteristicsSection entries={analysisEntries} />}
 
       {/* Joint training-data characteristics × model size × performance analysis */}
       {analysisEntries.length > 0 && <AnalysisSection entries={analysisEntries} />}
