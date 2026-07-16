@@ -436,6 +436,7 @@ export default function ModelComparePage() {
               model={model}
               selectedIds={selectedIds}
               onToggle={toggleRun}
+              datasetNameById={datasetNameById}
             />
           ))}
           {models.length === 0 && (
@@ -560,10 +561,12 @@ function ModelRunSelector({
   model,
   selectedIds,
   onToggle,
+  datasetNameById,
 }: {
   model: { id: number; name: string };
   selectedIds: Set<number>;
   onToggle: (run: TrainingRun) => void;
+  datasetNameById: Map<number, string>;
 }) {
   const { data: runs } = useSWR<TrainingRun[]>(
     `/api/v1/models/${model.id}/training-runs`,
@@ -587,6 +590,7 @@ function ModelRunSelector({
             />
             <span className="text-sm text-gray-300">{runLabel(run)}</span>
             <span className="text-xs text-gray-500">
+              dataset: {datasetNameById.get(run.dataset_id) ?? `#${run.dataset_id}`} ·
               val_loss: {run.val_loss?.toFixed(6) ?? "—"} · best epoch: {run.best_epoch ?? "—"}
             </span>
           </label>
