@@ -18,6 +18,13 @@ recipe) with given hyperparameters.
 A **TrainingCheckpoint** stores the model weights at each epoch.
 **Deployment** copies the best checkpoint to the model's `artifact_path`, enabling inference.
 
+Training automatically uses a GPU when one is available (`torch.cuda.is_available()`); falls
+back to CPU otherwise. In the Docker dev stack, the `celery-training` service reserves a GPU
+device via `deploy.resources.reservations.devices` in `infra/docker-compose.dev.yml` — no image
+rebuild needed as long as the installed `torch` wheel has CUDA support. Measured speedup: a
+1.85M-param `seq2seq_transformer` went from ~5.5 min/epoch on 4 CPU cores to ~12s/epoch on an
+RTX 3060 Ti (~25–30×).
+
 ---
 
 ## Architectures
