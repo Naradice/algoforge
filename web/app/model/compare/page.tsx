@@ -77,6 +77,7 @@ function numOrNull(v: any): number | null {
 
 const X_METRICS = [
   { key: "num_params", label: "Model size (params)" },
+  { key: "num_rows", label: "Training data volume (rows)" },
   { key: "data.hurst", label: "Data: Hurst exponent" },
   { key: "data.memory_length", label: "Data: Memory length" },
   { key: "data.periodicity_strength", label: "Data: Periodicity strength" },
@@ -101,6 +102,7 @@ interface AnalysisEntry {
   architecture: string | null;
   color: string;
   numParams: number | null;
+  numRows: number | null;
   valLoss: number | null;
   validation: Record<string, number> | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -109,6 +111,7 @@ interface AnalysisEntry {
 
 function metricValue(entry: AnalysisEntry, key: string): number | null {
   if (key === "num_params") return entry.numParams;
+  if (key === "num_rows") return entry.numRows;
   if (key === "val_loss") return entry.valLoss;
   if (key.startsWith("validation.")) {
     return numOrNull(entry.validation?.[key.slice("validation.".length)]);
@@ -419,6 +422,10 @@ export default function ModelComparePage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (allDatasets ?? []).map((d: any) => [d.id, d.name])
   );
+  const datasetRowCountById = new Map<number, number>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (allDatasets ?? []).map((d: any) => [d.id, d.row_count])
+  );
   const recipeById = new Map<number, { name: string; normalize: string }>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (allRecipes ?? []).map((r: any) => [r.id, { name: r.name, normalize: r.normalize }])
@@ -434,18 +441,28 @@ export default function ModelComparePage() {
     datasetIds.map((id, i) => [id, datasetCharsData?.[i]?.metrics ?? null])
   );
 
-  const analysisEntries: AnalysisEntry[] = validComparison.map((r, i) => ({
+  const analysisEntries: AnalysisEntry[] = validComparison.map((r, i) => {
+    // Rows actually consumed by training, not just the dataset's nominal size — matches
+    // OHLCWindowDataset's default 50K cap (backend/model/trainers/dataset.py) unless the run
+    // set max_rows to override it. Older runs (before that hyperparam existed) correctly show
+    // the effective 50K they were silently truncated to.
+    const datasetRows = datasetRowCountById.get(r.dataset_id);
+    const maxRowsOverride = r.hyperparams?.max_rows as number | undefined;
+    const numRows = datasetRows != null ? Math.min(datasetRows, maxRowsOverride ?? 50_000) : null;
+    return {
     runId: r.run_id,
     label: runSeries.find((s) => s.runId === r.run_id)?.label ?? `Run #${r.run_id}`,
     architecture: r.architecture,
     color: PALETTE[i % PALETTE.length],
     numParams: r.num_params,
+    numRows,
     valLoss: r.val_loss,
     validation: r.validation,
     // Prefer this run's own as-trained characteristics (post-preprocessing, pre-normalize);
     // fall back to the raw dataset's for older runs computed before that field existed.
     datasetMetrics: r.preprocessed_characteristics ?? datasetCharsMap.get(r.dataset_id) ?? null,
-  }));
+    };
+  });
 
   return (
     <div className="space-y-6">
