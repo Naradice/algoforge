@@ -112,6 +112,7 @@ Common hyperparameters (all architectures):
 | `normalize` | `"returns"` | Normalisation: `returns`, `zscore`, `minmax`, `robust`, `none` — same override rule as `feature_cols` |
 | `preprocessing` | `null` | `{ indicators: [...], clustering: {...} }` — same override rule as `feature_cols`. See `backend/model/trainers/preprocessing.py` for the indicator types (`sma`, `ema`, `rsi`, `macd`, `bbands`, `atr`, `returns`, `volatility`) and their output column-naming convention. |
 | `early_stop_patience` | `null` (disabled) | If set, training stops once `epochs_since_improvement >= early_stop_patience` — i.e. that many consecutive epochs with no new best `val_loss`. `epochs` still applies as a hard cap. Recommended whenever comparing architectures/sizes: a fixed `epochs` budget under-trains larger models and makes params-vs-loss comparisons meaningless (see the "Baseline Models" scaling-law caveat above). |
+| `max_rows` | `null` (uses the 50,000-row default cap) | Overrides `OHLCWindowDataset._MAX_OHLC_ROWS` for this run — set it to the dataset's actual row count (or higher) to train on more than the default cap. See "Row cap" below for why this exists and when to raise it. |
 
 Architecture-specific params are passed in the same `hyperparams` dict.
 
@@ -120,7 +121,11 @@ via the MCP `start_training_run` tool or `POST /training-runs/search`), but the 
 "New Training Run" UI only offers picking a saved `PreprocessedDataset` recipe — see below.
 
 Row cap: `OHLCWindowDataset` keeps only the most recent `_MAX_OHLC_ROWS` (50,000) rows after
-preprocessing, so a training run on a larger dataset only ever sees a recent slice of it.
+preprocessing by default, so a training run on a larger dataset only ever sees a recent slice of
+it unless `max_rows` is set. The default exists to bound window-array memory (~1 GB) on typical
+datasets, not as a hard ceiling — raising it is a deliberate per-run opt-in, since building
+windows for a multi-million-row dataset costs real time and memory up front (once, at dataset
+load, not per epoch).
 
 ---
 

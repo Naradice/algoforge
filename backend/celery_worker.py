@@ -698,6 +698,7 @@ async def _train_model(training_run_id: int) -> dict:
                 val_split=hp.get("val_split", 0.2),
                 device=device,
                 preprocessing=hp.get("preprocessing"),
+                max_rows=hp.get("max_rows"),
             )
             # Override input_dim/output_dim from actual dataset so the model layer sizes
             # always match the number of selected feature columns. Also sync obs_len/pred_len
@@ -727,7 +728,7 @@ async def _train_model(training_run_id: int) -> dict:
         else:
             try:
                 preprocessed_characteristics = compute_effective_characteristics(
-                    dataset_artifact, hp.get("feature_cols", ["close"]), hp.get("preprocessing")
+                    dataset_artifact, hp.get("feature_cols", ["close"]), hp.get("preprocessing"), hp.get("max_rows")
                 )
             except Exception as e:
                 # Best-effort — never let a characteristics failure abort training.

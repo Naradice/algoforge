@@ -39,8 +39,9 @@ class OHLCWindowDataset:
         val_split: float = 0.2,
         device: str = "cpu",
         preprocessing: dict | None = None,
+        max_rows: int | None = None,
     ) -> None:
-        df, feature_cols = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing)
+        df, feature_cols = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         data = df[feature_cols].values.astype(np.float32)
 
         # Normalise
@@ -93,6 +94,7 @@ class OHLCWindowDataset:
         artifact_path: str,
         feature_cols: list[str] | None,
         preprocessing: dict | None,
+        max_rows: int | None = None,
     ) -> tuple[pd.DataFrame, list[str]]:
         """Load + preprocess a dataset artifact, up to (but not including) normalization.
 
@@ -100,6 +102,11 @@ class OHLCWindowDataset:
         to the model" after indicators/clustering and the row cap, before feature_cols are
         pulled out as a plain ndarray and normalized. Shared by __init__ and
         compute_effective_characteristics below.
+
+        `max_rows` overrides the default `_MAX_OHLC_ROWS` cap (opt-in per training run via the
+        `max_rows` hyperparam) — the default exists to keep window arrays from exceeding ~1 GB
+        RAM on typical datasets, not as a hard ceiling; a caller that wants a genuine data-size
+        comparison needs to be able to raise it.
         """
         store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
         full_path = store / artifact_path
@@ -123,8 +130,9 @@ class OHLCWindowDataset:
             from model.trainers.preprocessing import apply_preprocessing
             df = apply_preprocessing(df, preprocessing)
 
-        if len(df) > cls._MAX_OHLC_ROWS:
-            df = df.iloc[-cls._MAX_OHLC_ROWS:]
+        effective_cap = max_rows if max_rows is not None else cls._MAX_OHLC_ROWS
+        if len(df) > effective_cap:
+            df = df.iloc[-effective_cap:]
 
         if feature_cols is None:
             feature_cols = ["close"]
@@ -183,6 +191,7 @@ def compute_effective_characteristics(
     artifact_path: str,
     feature_cols: list[str] | None,
     preprocessing: dict | None,
+    max_rows: int | None = None,
 ) -> dict:
     """Structure characteristics of the data a training run will actually consume: after
     preprocessing (indicators/clustering) and the row cap, on the primary feature column,
@@ -194,7 +203,7 @@ def compute_effective_characteristics(
     """
     from data.characteristics import CHARACTERISTIC_REGISTRY
 
-    df, resolved_feature_cols = OHLCWindowDataset._load_preprocessed_df(artifact_path, feature_cols, preprocessing)
+    df, resolved_feature_cols = OHLCWindowDataset._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
     series_df = pd.DataFrame({"close": df[resolved_feature_cols[0]]})
 
     results: dict = {}
