@@ -304,6 +304,43 @@ function runLabel(run: TrainingRun): string {
   return parts.join(" ");
 }
 
+/** Full hyperparam summary for the compare table — window size, batch size, normalization,
+ * stopping rule, and preprocessing, not just lr/batch_size/epochs. */
+function formatHyperparams(hp: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const windowParts: string[] = [];
+  if (hp.obs_len != null) windowParts.push(`obs_len=${hp.obs_len}`);
+  if (hp.pred_len != null) windowParts.push(`pred_len=${hp.pred_len}`);
+  if (hp.batch_size != null) windowParts.push(`batch=${hp.batch_size}`);
+  if (windowParts.length) lines.push(windowParts.join(" "));
+
+  const trainParts: string[] = [];
+  if (hp.lr != null) trainParts.push(`lr=${hp.lr}`);
+  if (hp.epochs != null) trainParts.push(`epochs≤${hp.epochs}`);
+  if (hp.early_stop_patience != null) trainParts.push(`patience=${hp.early_stop_patience}`);
+  if (trainParts.length) lines.push(trainParts.join(" "));
+
+  const dataParts: string[] = [];
+  if (hp.normalize != null) dataParts.push(`normalize=${hp.normalize}`);
+  const feats = hp.feature_cols as unknown[] | undefined;
+  if (Array.isArray(feats) && feats.length) dataParts.push(`features=${feats.join(",")}`);
+  if (dataParts.length) lines.push(dataParts.join(" "));
+
+  const preprocessing = hp.preprocessing as Record<string, unknown> | undefined;
+  if (preprocessing && Object.keys(preprocessing).length > 0) {
+    const indicators = preprocessing.indicators as { type?: string }[] | undefined;
+    if (Array.isArray(indicators) && indicators.length > 0) {
+      lines.push(`preprocessing: ${indicators.map((i) => i.type ?? "?").join(", ")}`);
+    } else {
+      lines.push(`preprocessing: ${JSON.stringify(preprocessing)}`);
+    }
+  } else {
+    lines.push("preprocessing: none");
+  }
+
+  return lines;
+}
+
 export default function ModelComparePage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [comparing, setComparing] = useState(false);
@@ -471,7 +508,7 @@ export default function ModelComparePage() {
                   <th className="pb-2 pr-4">Dir. Acc.</th>
                   <th className="pb-2 pr-4">Sharpe</th>
                   <th className="pb-2 pr-4">Status</th>
-                  <th className="pb-2">Key Hyperparams</th>
+                  <th className="pb-2">Training Config</th>
                 </tr>
               </thead>
               <tbody>
@@ -534,11 +571,10 @@ export default function ModelComparePage() {
                       {r.validation?.sharpe_proxy != null ? r.validation.sharpe_proxy.toFixed(3) : "—"}
                     </td>
                     <td className="py-2 pr-4 text-gray-400">{r.status}</td>
-                    <td className="py-2 text-gray-400 text-xs font-mono">
-                      {Object.entries(r.hyperparams ?? {})
-                        .filter(([k]) => ["lr", "batch_size", "epochs"].includes(k))
-                        .map(([k, v]) => `${k}=${v}`)
-                        .join(", ")}
+                    <td className="py-2 text-gray-400 text-xs font-mono whitespace-nowrap">
+                      {formatHyperparams(r.hyperparams ?? {}).map((line, i) => (
+                        <div key={i}>{line}</div>
+                      ))}
                     </td>
                   </tr>
                 ))}
