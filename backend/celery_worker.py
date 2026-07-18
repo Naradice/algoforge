@@ -749,6 +749,8 @@ async def _train_model(training_run_id: int) -> dict:
         shuffle = bool(hp.get("shuffle", False))
         early_stop_patience = hp.get("early_stop_patience")
         early_stop_patience = int(early_stop_patience) if early_stop_patience else None
+        divergence_factor = hp.get("divergence_factor")
+        divergence_factor = float(divergence_factor) if divergence_factor else None
         epochs_since_improvement = 0
         best_val_loss = float("inf")
         best_epoch = 0
@@ -812,6 +814,18 @@ async def _train_model(training_run_id: int) -> dict:
                 logger.info(
                     f"Training run {training_run_id} early-stopped at epoch {epoch} "
                     f"(no improvement for {early_stop_patience} epochs, best={best_val_loss:.6f} @ epoch {best_epoch})"
+                )
+                break
+
+            # Divergence stop: distinct from patience above. Patience fires on a *plateau*
+            # (many epochs with no improvement, however small the gap); this fires the moment
+            # val_loss gets much *worse* than the best seen so far, however few epochs that
+            # takes — catches a blown-up run (bad batch_size/lr interaction, NaN-adjacent
+            # instability) long before patience would.
+            if divergence_factor is not None and val_loss > best_val_loss * divergence_factor:
+                logger.info(
+                    f"Training run {training_run_id} diverged at epoch {epoch}: "
+                    f"val={val_loss:.6f} exceeds {divergence_factor}x best ({best_val_loss:.6f}) — stopping"
                 )
                 break
 
