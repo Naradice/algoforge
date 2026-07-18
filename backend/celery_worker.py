@@ -740,13 +740,18 @@ async def _train_model(training_run_id: int) -> dict:
             await db.commit()
 
         train_fn, eval_fn = get_trainer_fns(architecture)
-        optimizer = torch.optim.Adam(model.parameters(), lr=hp.get("lr", 0.001))
+        target_lr = hp.get("lr", 0.001)
+        optimizer = torch.optim.Adam(model.parameters(), lr=target_lr)
         criterion = None if architecture in ("timegan", "vae") else torch.nn.MSELoss()
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5) if criterion else None
 
         epochs = int(hp.get("epochs", 50))
         batch_size = int(hp.get("batch_size", 32))
         shuffle = bool(hp.get("shuffle", False))
+        # Opt-in only -- never inferred from lr/batch_size. Linear ramp from lr/N up to the
+        # full target lr over the first N epochs; the plateau scheduler is held off until
+        # warmup finishes so it doesn't fight the ramp with its own reductions.
+        lr_warmup_epochs = int(hp.get("lr_warmup_epochs", 0) or 0)
         early_stop_patience = hp.get("early_stop_patience")
         early_stop_patience = int(early_stop_patience) if early_stop_patience else None
         divergence_factor = hp.get("divergence_factor")
@@ -770,10 +775,15 @@ async def _train_model(training_run_id: int) -> dict:
                     logger.info(f"Training run {training_run_id} stopped at epoch {epoch}")
                     break
 
+            if lr_warmup_epochs > 0 and epoch <= lr_warmup_epochs:
+                warmup_lr = target_lr * epoch / lr_warmup_epochs
+                for pg in optimizer.param_groups:
+                    pg["lr"] = warmup_lr
+
             train_loss = await loop.run_in_executor(None, train_fn, model, dataset, optimizer, criterion, batch_size, shuffle)
             val_loss = await loop.run_in_executor(None, eval_fn, model, dataset, criterion, batch_size)
 
-            if scheduler:
+            if scheduler and epoch >= lr_warmup_epochs:
                 scheduler.step(val_loss)
 
             ckpt_path = checkpoint_dir / f"epoch_{epoch:04d}.pt"
