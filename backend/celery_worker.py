@@ -746,6 +746,7 @@ async def _train_model(training_run_id: int) -> dict:
 
         epochs = int(hp.get("epochs", 50))
         batch_size = int(hp.get("batch_size", 32))
+        shuffle = bool(hp.get("shuffle", False))
         early_stop_patience = hp.get("early_stop_patience")
         early_stop_patience = int(early_stop_patience) if early_stop_patience else None
         epochs_since_improvement = 0
@@ -767,7 +768,7 @@ async def _train_model(training_run_id: int) -> dict:
                     logger.info(f"Training run {training_run_id} stopped at epoch {epoch}")
                     break
 
-            train_loss = await loop.run_in_executor(None, train_fn, model, dataset, optimizer, criterion, batch_size)
+            train_loss = await loop.run_in_executor(None, train_fn, model, dataset, optimizer, criterion, batch_size, shuffle)
             val_loss = await loop.run_in_executor(None, eval_fn, model, dataset, criterion, batch_size)
 
             if scheduler:

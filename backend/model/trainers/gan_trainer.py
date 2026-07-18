@@ -13,7 +13,9 @@ import torch.nn as nn
 from .dataset import OHLCWindowDataset
 
 
-def train_epoch(model, ds: OHLCWindowDataset, optimizer: torch.optim.Optimizer, criterion, batch_size: int) -> float:
+def train_epoch(model, ds: OHLCWindowDataset, optimizer: torch.optim.Optimizer, criterion, batch_size: int, shuffle: bool = False) -> float:
+    # shuffle: accepted for call-signature uniformity with the supervised trainer
+    # (celery_worker.py dispatches to whichever train_epoch generically) — not yet applied here.
     model.train()
     ds.train()
 

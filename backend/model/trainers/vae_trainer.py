@@ -19,7 +19,9 @@ def _split_tgt(tgt: torch.Tensor):
     return tgt[:, :-1, :], tgt[:, 1:, :]
 
 
-def train_epoch(model, ds: OHLCWindowDataset, optimizer: torch.optim.Optimizer, criterion, batch_size: int) -> float:
+def train_epoch(model, ds: OHLCWindowDataset, optimizer: torch.optim.Optimizer, criterion, batch_size: int, shuffle: bool = False) -> float:
+    # shuffle: accepted for call-signature uniformity with the supervised trainer
+    # (celery_worker.py dispatches to whichever train_epoch generically) — not yet applied here.
     model.train()
     ds.train()
     losses = []

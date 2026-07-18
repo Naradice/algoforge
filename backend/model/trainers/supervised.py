@@ -18,12 +18,27 @@ def _split_tgt(tgt: torch.Tensor):
     return tgt[:, :-1, :], tgt[:, 1:, :]
 
 
-def train_epoch(model: nn.Module, ds: OHLCWindowDataset, optimizer: torch.optim.Optimizer, criterion: nn.Module, batch_size: int) -> float:
+def train_epoch(
+    model: nn.Module,
+    ds: OHLCWindowDataset,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    batch_size: int,
+    shuffle: bool = False,
+) -> float:
     model.train()
     ds.train()
     losses = []
-    for i in range(0, len(ds) - batch_size, batch_size):
-        src, tgt = ds[i : i + batch_size]
+    n = len(ds)
+    # Windows are highly overlapping/redundant for small or strongly periodic datasets, and
+    # without shuffling every epoch walks them in the exact same order — for a small dataset
+    # trained many epochs, that's a perfectly periodic gradient sequence that can lock Adam's
+    # momentum/adaptive-LR state into a plateau tied to that specific batch order rather than
+    # converging toward the true optimum. Shuffling breaks that periodicity.
+    order = np.random.permutation(n) if shuffle else np.arange(n)
+    for i in range(0, n - batch_size, batch_size):
+        batch_idx = order[i : i + batch_size]
+        src, tgt = ds[batch_idx]
         input_tgt, output_tgt = _split_tgt(tgt)
         logits = model(src, input_tgt)
         loss = criterion(logits, output_tgt)
