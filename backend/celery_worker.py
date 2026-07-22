@@ -743,7 +743,16 @@ async def _train_model(training_run_id: int) -> dict:
         target_lr = hp.get("lr", 0.001)
         optimizer = torch.optim.Adam(model.parameters(), lr=target_lr)
         criterion = None if architecture in ("timegan", "vae") else torch.nn.MSELoss()
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5) if criterion else None
+        # disable_lr_scheduler: opt-in escape hatch for step-count-controlled comparisons.
+        # ReduceLROnPlateau's patience is epoch-denominated same as early_stop_patience, so it's
+        # a second epoch-length-dependent confound that survives even when early stopping is
+        # disabled -- isolating "does optimizer step count alone explain the data-volume effect"
+        # requires taking this out of the picture too, not just running a fixed epoch count.
+        disable_lr_scheduler = bool(hp.get("disable_lr_scheduler", False))
+        scheduler = (
+            torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5)
+            if criterion and not disable_lr_scheduler else None
+        )
 
         epochs = int(hp.get("epochs", 50))
         batch_size = int(hp.get("batch_size", 32))
