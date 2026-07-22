@@ -655,6 +655,7 @@ async def _run_arima_training(factory, training_run_id: int, model_id: int, arch
 
 async def _train_model(training_run_id: int) -> dict:
     import torch
+    import numpy as np
     from sqlalchemy import update
     from model.models import MLModel, TrainingRun, TrainingCheckpoint, TrainingRunMetric
     from model.architectures import build_model
@@ -689,6 +690,18 @@ async def _train_model(training_run_id: int) -> dict:
             return await _run_arima_training(factory, training_run_id, model_id, architecture, model_config, hp, dataset_artifact, pd_rec, store)
 
         try:
+            # Opt-in only. Without it, weight init (and shuffle= ordering) comes from whatever
+            # ambient RNG state the worker process happens to be in -- fine normally, but it
+            # means two "identical" runs can land 2x+ apart on nothing but init luck (observed
+            # live), which makes any comparison claiming a small effect size unreliable unless
+            # the seed is controlled and varied deliberately across repeats.
+            seed = hp.get("seed")
+            if seed is not None:
+                import random
+                torch.manual_seed(int(seed))
+                np.random.seed(int(seed))
+                random.seed(int(seed))
+
             dataset = OHLCWindowDataset(
                 dataset_artifact,
                 obs_len=hp.get("obs_len", 60),
