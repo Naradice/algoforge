@@ -121,6 +121,7 @@ Common hyperparameters (all architectures):
 | `optimizer` | `"adam"` | `"adam"`, `"adamw"`, or `"sgd"`. Used to isolate whether an optimizer's own internal state (Adam/AdamW's per-parameter first/second moment estimates) — not just `ReduceLROnPlateau`'s epoch-denominated schedule — explains a result that differs between runs with very different epoch lengths at the same total step count. `sgd` ignores `beta1`/`beta2` and instead reads `momentum` (default `0.0`, i.e. plain SGD). |
 | `beta1` / `beta2` | `0.9` / `0.999` | Overrides for Adam/AdamW's momentum (`beta1`) and second-moment (`beta2`) coefficients. Ignored for `optimizer="sgd"`. Setting `beta1=0` removes momentum from Adam/AdamW entirely, isolating the second-moment (adaptive learning rate) term on its own. |
 | `momentum` | `0.0` | SGD momentum coefficient. Ignored unless `optimizer="sgd"`. |
+| `weight_decay` | `null` (uses each optimizer's own torch default: `0` for `adam`/`sgd`, `0.01` for `adamw`) | Explicit override so cross-optimizer comparisons aren't silently skewed by torch's differing per-optimizer defaults — e.g. comparing `optimizer="adam"` against `optimizer="adamw"` without setting this compares "no weight decay" against "0.01 decoupled decay" as much as it compares the optimizers themselves. Set it explicitly (e.g. `0`) on both sides to isolate the optimizer's own update rule. |
 
 Architecture-specific params are passed in the same `hyperparams` dict.
 

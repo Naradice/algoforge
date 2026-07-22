@@ -758,15 +758,30 @@ async def _train_model(training_run_id: int) -> dict:
         # per-parameter moment estimates (m, v) -- not just its epoch-denominated scheduler --
         # are what's driving the data-volume effect. beta1/beta2 override Adam/AdamW's defaults
         # (0.9, 0.999); ignored for sgd. beta1=0 removes momentum entirely.
+        # weight_decay: opt-in override, explicit so a comparison across optimizers isn't silently
+        # skewed by torch's differing per-optimizer defaults (Adam/SGD default to 0, AdamW to 0.01
+        # -- AdamW's whole reason to exist is decoupled decay, so leaving it unset would make an
+        # "adam vs adamw" comparison actually a "no decay vs 0.01 decay" comparison instead).
+        # None (the default) preserves each optimizer's own torch default unless set explicitly.
         optimizer_name = str(hp.get("optimizer", "adam")).lower()
         beta1 = float(hp.get("beta1", 0.9))
         beta2 = float(hp.get("beta2", 0.999))
+        weight_decay = hp.get("weight_decay")
         if optimizer_name == "sgd":
-            optimizer = torch.optim.SGD(model.parameters(), lr=target_lr, momentum=hp.get("momentum", 0.0))
+            sgd_kwargs = {"momentum": hp.get("momentum", 0.0)}
+            if weight_decay is not None:
+                sgd_kwargs["weight_decay"] = float(weight_decay)
+            optimizer = torch.optim.SGD(model.parameters(), lr=target_lr, **sgd_kwargs)
         elif optimizer_name == "adamw":
-            optimizer = torch.optim.AdamW(model.parameters(), lr=target_lr, betas=(beta1, beta2))
+            adamw_kwargs = {"betas": (beta1, beta2)}
+            if weight_decay is not None:
+                adamw_kwargs["weight_decay"] = float(weight_decay)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=target_lr, **adamw_kwargs)
         else:
-            optimizer = torch.optim.Adam(model.parameters(), lr=target_lr, betas=(beta1, beta2))
+            adam_kwargs = {"betas": (beta1, beta2)}
+            if weight_decay is not None:
+                adam_kwargs["weight_decay"] = float(weight_decay)
+            optimizer = torch.optim.Adam(model.parameters(), lr=target_lr, **adam_kwargs)
         criterion = None if architecture in ("timegan", "vae") else torch.nn.MSELoss()
         # disable_lr_scheduler: opt-in escape hatch for step-count-controlled comparisons.
         # ReduceLROnPlateau's patience is epoch-denominated same as early_stop_patience, so it's
