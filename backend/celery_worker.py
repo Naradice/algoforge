@@ -754,7 +754,19 @@ async def _train_model(training_run_id: int) -> dict:
 
         train_fn, eval_fn = get_trainer_fns(architecture)
         target_lr = hp.get("lr", 0.001)
-        optimizer = torch.optim.Adam(model.parameters(), lr=target_lr)
+        # optimizer: opt-in choice of adam (default) / adamw / sgd, to isolate whether Adam's
+        # per-parameter moment estimates (m, v) -- not just its epoch-denominated scheduler --
+        # are what's driving the data-volume effect. beta1/beta2 override Adam/AdamW's defaults
+        # (0.9, 0.999); ignored for sgd. beta1=0 removes momentum entirely.
+        optimizer_name = str(hp.get("optimizer", "adam")).lower()
+        beta1 = float(hp.get("beta1", 0.9))
+        beta2 = float(hp.get("beta2", 0.999))
+        if optimizer_name == "sgd":
+            optimizer = torch.optim.SGD(model.parameters(), lr=target_lr, momentum=hp.get("momentum", 0.0))
+        elif optimizer_name == "adamw":
+            optimizer = torch.optim.AdamW(model.parameters(), lr=target_lr, betas=(beta1, beta2))
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=target_lr, betas=(beta1, beta2))
         criterion = None if architecture in ("timegan", "vae") else torch.nn.MSELoss()
         # disable_lr_scheduler: opt-in escape hatch for step-count-controlled comparisons.
         # ReduceLROnPlateau's patience is epoch-denominated same as early_stop_patience, so it's
