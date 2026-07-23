@@ -659,7 +659,7 @@ async def _train_model(training_run_id: int) -> dict:
     from sqlalchemy import update
     from model.models import MLModel, TrainingRun, TrainingCheckpoint, TrainingRunMetric
     from model.architectures import build_model
-    from model.trainers import get_trainer_fns, OHLCWindowDataset, compute_effective_characteristics
+    from model.trainers import get_trainer_fns, get_step_trainer_fn, OHLCWindowDataset, compute_effective_characteristics
     from model.trainers.arima_trainer import ARIMA_ARCHITECTURES
     from celery_app import _get_redis
 
@@ -811,82 +811,178 @@ async def _train_model(training_run_id: int) -> dict:
         checkpoint_dir = store / "models" / str(model_id) / f"training_{training_run_id}"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+        # max_steps: opt-in escape hatch that removes the concept of "epoch" from the loop
+        # entirely -- an infinite, reshuffled stream of training windows (train_steps), with
+        # validation/checkpointing/early-stopping keyed to a step counter (val_every_steps) that
+        # has no relationship to how many windows one pass through the data takes. Exists because
+        # even with epochs run to a fixed step count and the LR scheduler disabled (see
+        # disable_lr_scheduler), a residual gap between many-small-epochs and few-huge-epochs
+        # training survived -- this tests whether *any* periodic epoch-boundary structure
+        # (validation timing, early-stop checks) is still contributing, or whether it's purely
+        # about the batch sequence / optimizer state itself. epoch-keyed features above
+        # (lr_warmup_epochs, the ReduceLROnPlateau scheduler) don't translate to step space and
+        # are not applied in this mode -- pair max_steps with disable_lr_scheduler=true.
+        max_steps = hp.get("max_steps")
         loop = asyncio.get_event_loop()
-        for epoch in range(1, epochs + 1):
-            # Check for stop request before each epoch
-            async with factory() as db:
-                stop_result = await db.execute(
-                    __import__("sqlalchemy", fromlist=["select"]).select(
-                        TrainingRun.stop_requested
-                    ).where(TrainingRun.id == training_run_id)
+        if max_steps is not None:
+            max_steps = int(max_steps)
+            val_every_steps = int(hp.get("val_every_steps", 5000))
+            # Patience counted in validation *checks*, not epochs -- a check happens every
+            # val_every_steps regardless of dataset size, so this is already step-denominated.
+            early_stop_patience_checks = hp.get("early_stop_patience_checks")
+            early_stop_patience_checks = int(early_stop_patience_checks) if early_stop_patience_checks else None
+            step_train_fn = get_step_trainer_fn(architecture)
+            steps_done = 0
+            n_checks = 0
+            checks_since_improvement = 0
+            while steps_done < max_steps:
+                async with factory() as db:
+                    stop_result = await db.execute(
+                        __import__("sqlalchemy", fromlist=["select"]).select(
+                            TrainingRun.stop_requested
+                        ).where(TrainingRun.id == training_run_id)
+                    )
+                    if stop_result.scalar():
+                        logger.info(f"Training run {training_run_id} stopped at step {steps_done}")
+                        break
+
+                chunk = min(val_every_steps, max_steps - steps_done)
+                train_loss = await loop.run_in_executor(
+                    None, step_train_fn, model, dataset, optimizer, criterion, batch_size, chunk
                 )
-                if stop_result.scalar():
-                    logger.info(f"Training run {training_run_id} stopped at epoch {epoch}")
+                steps_done += chunk
+                n_checks += 1
+                val_loss = await loop.run_in_executor(None, eval_fn, model, dataset, criterion, batch_size)
+
+                # n_checks is stored in the TrainingCheckpoint/TrainingRunMetric "epoch" column
+                # (no schema change for what's fundamentally a research-mode loop) -- multiply by
+                # val_every_steps (recorded in hyperparams) to recover the actual step count.
+                ckpt_path = checkpoint_dir / f"epoch_{n_checks:04d}.pt"
+                torch.save({"epoch": n_checks, "step": steps_done, "model_state": model.state_dict(), "val_loss": val_loss}, ckpt_path)
+
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_epoch = n_checks
+                    checks_since_improvement = 0
+                    torch.save({"epoch": n_checks, "step": steps_done, "model_state": model.state_dict(), "val_loss": val_loss}, checkpoint_dir / "best.pt")
+                else:
+                    checks_since_improvement += 1
+
+                eta_seconds = 0
+
+                async with factory() as db:
+                    await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                        current_epoch=n_checks, val_loss=val_loss, best_epoch=best_epoch, eta_seconds=eta_seconds
+                    ))
+                    db.add(TrainingCheckpoint(
+                        training_run_id=training_run_id,
+                        epoch=n_checks,
+                        metrics={"train_loss": train_loss, "val_loss": val_loss, "step": steps_done},
+                        artifact_path=str(ckpt_path.relative_to(store)),
+                    ))
+                    db.add(TrainingRunMetric(
+                        training_run_id=training_run_id,
+                        epoch=n_checks,
+                        train_loss=train_loss,
+                        val_loss=val_loss,
+                        lr=optimizer.param_groups[0].get("lr"),
+                    ))
+                    await db.commit()
+
+                logger.info(
+                    f"Training run {training_run_id} step {steps_done}/{max_steps} "
+                    f"(check {n_checks}): train={train_loss:.6f} val={val_loss:.6f}"
+                )
+
+                if early_stop_patience_checks is not None and checks_since_improvement >= early_stop_patience_checks:
+                    logger.info(
+                        f"Training run {training_run_id} early-stopped at step {steps_done} "
+                        f"(no improvement for {early_stop_patience_checks} checks, best={best_val_loss:.6f} @ check {best_epoch})"
+                    )
                     break
 
-            if lr_warmup_epochs > 0 and epoch <= lr_warmup_epochs:
-                warmup_lr = target_lr * epoch / lr_warmup_epochs
-                for pg in optimizer.param_groups:
-                    pg["lr"] = warmup_lr
+                if divergence_factor is not None and val_loss > best_val_loss * divergence_factor:
+                    logger.info(
+                        f"Training run {training_run_id} diverged at step {steps_done}: "
+                        f"val={val_loss:.6f} exceeds {divergence_factor}x best ({best_val_loss:.6f}) — stopping"
+                    )
+                    break
+        else:
+            for epoch in range(1, epochs + 1):
+                # Check for stop request before each epoch
+                async with factory() as db:
+                    stop_result = await db.execute(
+                        __import__("sqlalchemy", fromlist=["select"]).select(
+                            TrainingRun.stop_requested
+                        ).where(TrainingRun.id == training_run_id)
+                    )
+                    if stop_result.scalar():
+                        logger.info(f"Training run {training_run_id} stopped at epoch {epoch}")
+                        break
 
-            train_loss = await loop.run_in_executor(None, train_fn, model, dataset, optimizer, criterion, batch_size, shuffle)
-            val_loss = await loop.run_in_executor(None, eval_fn, model, dataset, criterion, batch_size)
+                if lr_warmup_epochs > 0 and epoch <= lr_warmup_epochs:
+                    warmup_lr = target_lr * epoch / lr_warmup_epochs
+                    for pg in optimizer.param_groups:
+                        pg["lr"] = warmup_lr
 
-            if scheduler and epoch >= lr_warmup_epochs:
-                scheduler.step(val_loss)
+                train_loss = await loop.run_in_executor(None, train_fn, model, dataset, optimizer, criterion, batch_size, shuffle)
+                val_loss = await loop.run_in_executor(None, eval_fn, model, dataset, criterion, batch_size)
 
-            ckpt_path = checkpoint_dir / f"epoch_{epoch:04d}.pt"
-            torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, ckpt_path)
+                if scheduler and epoch >= lr_warmup_epochs:
+                    scheduler.step(val_loss)
 
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                best_epoch = epoch
-                epochs_since_improvement = 0
-                torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, checkpoint_dir / "best.pt")
-            else:
-                epochs_since_improvement += 1
+                ckpt_path = checkpoint_dir / f"epoch_{epoch:04d}.pt"
+                torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, ckpt_path)
 
-            eta_seconds = (epochs - epoch) * 5
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_epoch = epoch
+                    epochs_since_improvement = 0
+                    torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, checkpoint_dir / "best.pt")
+                else:
+                    epochs_since_improvement += 1
 
-            async with factory() as db:
-                await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
-                    current_epoch=epoch, val_loss=val_loss, best_epoch=best_epoch, eta_seconds=eta_seconds
-                ))
-                db.add(TrainingCheckpoint(
-                    training_run_id=training_run_id,
-                    epoch=epoch,
-                    metrics={"train_loss": train_loss, "val_loss": val_loss},
-                    artifact_path=str(ckpt_path.relative_to(store)),
-                ))
-                db.add(TrainingRunMetric(
-                    training_run_id=training_run_id,
-                    epoch=epoch,
-                    train_loss=train_loss,
-                    val_loss=val_loss,
-                    lr=optimizer.param_groups[0].get("lr"),
-                ))
-                await db.commit()
+                eta_seconds = (epochs - epoch) * 5
 
-            logger.info(f"Training run {training_run_id} epoch {epoch}/{epochs}: train={train_loss:.6f} val={val_loss:.6f}")
+                async with factory() as db:
+                    await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                        current_epoch=epoch, val_loss=val_loss, best_epoch=best_epoch, eta_seconds=eta_seconds
+                    ))
+                    db.add(TrainingCheckpoint(
+                        training_run_id=training_run_id,
+                        epoch=epoch,
+                        metrics={"train_loss": train_loss, "val_loss": val_loss},
+                        artifact_path=str(ckpt_path.relative_to(store)),
+                    ))
+                    db.add(TrainingRunMetric(
+                        training_run_id=training_run_id,
+                        epoch=epoch,
+                        train_loss=train_loss,
+                        val_loss=val_loss,
+                        lr=optimizer.param_groups[0].get("lr"),
+                    ))
+                    await db.commit()
 
-            if early_stop_patience is not None and epochs_since_improvement >= early_stop_patience:
-                logger.info(
-                    f"Training run {training_run_id} early-stopped at epoch {epoch} "
-                    f"(no improvement for {early_stop_patience} epochs, best={best_val_loss:.6f} @ epoch {best_epoch})"
-                )
-                break
+                logger.info(f"Training run {training_run_id} epoch {epoch}/{epochs}: train={train_loss:.6f} val={val_loss:.6f}")
 
-            # Divergence stop: distinct from patience above. Patience fires on a *plateau*
-            # (many epochs with no improvement, however small the gap); this fires the moment
-            # val_loss gets much *worse* than the best seen so far, however few epochs that
-            # takes — catches a blown-up run (bad batch_size/lr interaction, NaN-adjacent
-            # instability) long before patience would.
-            if divergence_factor is not None and val_loss > best_val_loss * divergence_factor:
-                logger.info(
-                    f"Training run {training_run_id} diverged at epoch {epoch}: "
-                    f"val={val_loss:.6f} exceeds {divergence_factor}x best ({best_val_loss:.6f}) — stopping"
-                )
-                break
+                if early_stop_patience is not None and epochs_since_improvement >= early_stop_patience:
+                    logger.info(
+                        f"Training run {training_run_id} early-stopped at epoch {epoch} "
+                        f"(no improvement for {early_stop_patience} epochs, best={best_val_loss:.6f} @ epoch {best_epoch})"
+                    )
+                    break
+
+                # Divergence stop: distinct from patience above. Patience fires on a *plateau*
+                # (many epochs with no improvement, however small the gap); this fires the moment
+                # val_loss gets much *worse* than the best seen so far, however few epochs that
+                # takes — catches a blown-up run (bad batch_size/lr interaction, NaN-adjacent
+                # instability) long before patience would.
+                if divergence_factor is not None and val_loss > best_val_loss * divergence_factor:
+                    logger.info(
+                        f"Training run {training_run_id} diverged at epoch {epoch}: "
+                        f"val={val_loss:.6f} exceeds {divergence_factor}x best ({best_val_loss:.6f}) — stopping"
+                    )
+                    break
 
         best_artifact = str((checkpoint_dir / "best.pt").relative_to(store))
         async with factory() as db:

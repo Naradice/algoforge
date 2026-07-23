@@ -50,6 +50,44 @@ def train_epoch(
     return float(np.mean(losses)) if losses else float("inf")
 
 
+def train_steps(
+    model: nn.Module,
+    ds: OHLCWindowDataset,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    batch_size: int,
+    n_steps: int,
+) -> float:
+    """Runs exactly n_steps gradient updates over an infinite, reshuffled stream of training
+    windows -- unlike train_epoch, there is no "one pass through the data" boundary here, so
+    nothing (validation, early stopping, LR schedule) can be keyed to it. Exists to test whether
+    an epoch-length-dependent effect is really about epoch structure at all, by removing the
+    concept of an epoch from the training loop entirely (see docs/model-layer.md, "Baseline
+    Models" / mechanism-hunt notes)."""
+    model.train()
+    ds.train()
+    n = len(ds)
+    losses = []
+    order = np.random.permutation(n)
+    pos = 0
+    for _ in range(n_steps):
+        if pos + batch_size > n:
+            order = np.random.permutation(n)
+            pos = 0
+        batch_idx = order[pos : pos + batch_size]
+        pos += batch_size
+        src, tgt = ds[batch_idx]
+        input_tgt, output_tgt = _split_tgt(tgt)
+        logits = model(src, input_tgt)
+        loss = criterion(logits, output_tgt)
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        losses.append(loss.item())
+    return float(np.mean(losses)) if losses else float("inf")
+
+
 def eval_epoch(model: nn.Module, ds: OHLCWindowDataset, criterion: nn.Module, batch_size: int) -> float:
     model.eval()
     ds.eval()
