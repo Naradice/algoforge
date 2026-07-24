@@ -86,6 +86,12 @@ const X_METRICS = [
   { key: "data.permutation_entropy", label: "Data: Permutation entropy" },
   { key: "data.sample_entropy", label: "Data: Sample entropy" },
   { key: "data.n_changepoints", label: "Data: Regime changes (count)" },
+  { key: "data.token_entropy", label: "Token: Entropy (bits)" },
+  { key: "data.effective_vocab_size", label: "Token: Effective vocabulary" },
+  { key: "data.token_zipf_alpha", label: "Token: Zipf exponent" },
+  { key: "data.token_mutual_information", label: "Token: Adjacent mutual information" },
+  { key: "data.ngram_entropy_rate", label: "Token: N-gram entropy rate" },
+  { key: "data.lz_compression_ratio", label: "Token: LZ compression ratio" },
 ] as const;
 
 const Y_METRICS = [
@@ -128,6 +134,16 @@ function metricValue(entry: AnalysisEntry, key: string): number | null {
       case "permutation_entropy": return numOrNull(m.complexity_nonlinearity?.permutation_entropy);
       case "sample_entropy": return numOrNull(m.complexity_nonlinearity?.sample_entropy);
       case "n_changepoints": return numOrNull(m.regime_changes?.n_changepoints);
+      case "token_entropy": return numOrNull(m.token_entropy?.bits);
+      case "effective_vocab_size": return numOrNull(m.effective_vocab_size);
+      case "token_zipf_alpha": return numOrNull(m.token_zipf?.alpha);
+      case "token_mutual_information": return numOrNull(m.token_mutual_information);
+      // JSONB round-trips object keys as strings even though the backend builds them from ints.
+      case "ngram_entropy_rate": {
+        const rates = m.ngram_entropy?.conditional_rates as Record<string, number> | undefined;
+        return numOrNull(rates?.["3"] ?? rates?.["2"]);
+      }
+      case "lz_compression_ratio": return numOrNull(m.lz_compression_ratio);
       default: return null;
     }
   }

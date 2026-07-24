@@ -754,6 +754,19 @@ async def _train_model(training_run_id: int) -> dict:
             except Exception as e:
                 # Best-effort — never let a characteristics failure abort training.
                 preprocessed_characteristics = {"error": str(e)}
+        # token_level characteristics are run-specific (depend on this run's hyperparams, not
+        # just the recipe), so they're always computed fresh and merged in here -- never cached
+        # on pd_rec, unlike preprocessed_characteristics above, which is safe to cache since it
+        # only depends on the recipe (dataset/preprocessing/feature_cols).
+        if dataset.vocab_size is not None and dataset.token_stream is not None:
+            try:
+                from model.trainers.dataset import compute_token_characteristics
+                preprocessed_characteristics = {
+                    **preprocessed_characteristics,
+                    **compute_token_characteristics(dataset.token_stream, dataset.vocab_size),
+                }
+            except Exception as e:
+                preprocessed_characteristics = {**preprocessed_characteristics, "token_characteristics_error": str(e)}
         async with factory() as db:
             await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
                 num_params=num_params, preprocessed_characteristics=preprocessed_characteristics

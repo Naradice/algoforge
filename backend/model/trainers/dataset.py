@@ -75,6 +75,7 @@ class OHLCWindowDataset:
         self.token_level = token_level
         self.vocab_size: int | None = None
         self.token_bin_edges: np.ndarray | None = None
+        self.token_stream: np.ndarray | None = None  # flat, pre-windowing -- see compute_token_characteristics
 
         if token_level is None:
             src_data = tgt_data
@@ -102,6 +103,7 @@ class OHLCWindowDataset:
                 self.token_bin_edges = edges
                 self.vocab_size = n_bins
                 src_data = np.digitize(diff_full[:, 0], edges).astype(np.int64).reshape(-1, 1)
+                self.token_stream = src_data.reshape(-1)
             else:
                 raise ValueError(f"Unknown token_level: {token_level!r}")
 
@@ -279,3 +281,144 @@ def compute_effective_characteristics(
         except Exception as e:
             results[name] = {"error": str(e)}
     return results
+
+
+def compute_token_characteristics(tokens: np.ndarray, vocab_size: int) -> dict:
+    """Information-theoretic structure of a discretized token stream (OHLCWindowDataset's
+    token_stream, produced by token_level="quantize_diff" or future discrete token_levels).
+
+    Lets Validation Loss be plotted against how complex/predictable a *representation* actually
+    is (effective vocabulary, entropy rate, compressibility, ...) instead of against training row
+    count alone — two token_levels or vocab sizes that use the same number of rows can still
+    differ hugely in how much structure the model actually has to learn.
+
+    Best-effort per metric, same pattern as compute_effective_characteristics — one metric
+    failing (e.g. too few tokens for a stable n-gram estimate) never blanks the rest.
+    """
+    tokens = np.asarray(tokens).reshape(-1)
+    results: dict = {}
+
+    try:
+        results["token_entropy"] = _token_entropy(tokens, vocab_size)
+    except Exception as e:
+        results["token_entropy"] = {"error": str(e)}
+
+    try:
+        h = results["token_entropy"]["bits"] if isinstance(results["token_entropy"], dict) else None
+        results["effective_vocab_size"] = float(2 ** h) if h is not None else None
+    except Exception as e:
+        results["effective_vocab_size"] = {"error": str(e)}
+
+    try:
+        results["token_zipf"] = _token_zipf_fit(tokens)
+    except Exception as e:
+        results["token_zipf"] = {"error": str(e)}
+
+    try:
+        results["token_mutual_information"] = _adjacent_mutual_information(tokens, vocab_size)
+    except Exception as e:
+        results["token_mutual_information"] = {"error": str(e)}
+
+    try:
+        results["ngram_entropy"] = _ngram_entropy_rates(tokens, vocab_size, max_n=3)
+    except Exception as e:
+        results["ngram_entropy"] = {"error": str(e)}
+
+    try:
+        results["lz_compression_ratio"] = _lz_compression_ratio(tokens)
+    except Exception as e:
+        results["lz_compression_ratio"] = {"error": str(e)}
+
+    return results
+
+
+def _token_entropy(tokens: np.ndarray, vocab_size: int) -> dict:
+    """Shannon entropy of the unigram token distribution, in bits, plus the same value
+    normalized by the maximum possible entropy (log2(vocab_size), a uniform distribution) so
+    entropy is comparable across runs with different vocab sizes."""
+    counts = np.bincount(tokens, minlength=vocab_size)
+    p = counts[counts > 0] / counts.sum()
+    bits = float(-np.sum(p * np.log2(p)))
+    max_bits = float(np.log2(vocab_size)) if vocab_size > 1 else 1.0
+    return {"bits": bits, "normalized": bits / max_bits if max_bits > 0 else 0.0}
+
+
+def _token_zipf_fit(tokens: np.ndarray) -> dict:
+    """Fits the token rank-frequency curve to a power law (Zipf's law: frequency ∝ rank^-alpha)
+    via a log-log linear regression. alpha near 1 and a high r2 mean the token stream's usage
+    pattern looks "language-like"; a low r2 means frequency doesn't follow a clean power law at
+    all (e.g. a near-uniform or bimodal distribution)."""
+    counts = np.bincount(tokens)
+    freqs = np.sort(counts[counts > 0])[::-1].astype(np.float64)
+    if len(freqs) < 3:
+        return {"alpha": None, "r2": None, "note": "too few distinct tokens for a stable fit"}
+    ranks = np.arange(1, len(freqs) + 1, dtype=np.float64)
+    log_r, log_f = np.log(ranks), np.log(freqs)
+    slope, intercept = np.polyfit(log_r, log_f, 1)
+    pred = slope * log_r + intercept
+    ss_res = np.sum((log_f - pred) ** 2)
+    ss_tot = np.sum((log_f - log_f.mean()) ** 2)
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return {"alpha": float(-slope), "r2": float(r2)}
+
+
+def _adjacent_mutual_information(tokens: np.ndarray, vocab_size: int) -> float:
+    """I(X_t; X_{t+1}) in bits, from the empirical joint distribution of consecutive tokens --
+    how much knowing the current token reduces uncertainty about the next one. 0 means adjacent
+    tokens are statistically independent (pure noise, from the model's point of view); higher
+    values mean there's short-range structure a model could in principle exploit."""
+    x, y = tokens[:-1], tokens[1:]
+    joint = np.zeros((vocab_size, vocab_size))
+    np.add.at(joint, (x, y), 1)
+    joint /= joint.sum()
+    px = joint.sum(axis=1, keepdims=True)
+    py = joint.sum(axis=0, keepdims=True)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        outer = px * py
+        ratio = np.where((joint > 0) & (outer > 0), joint / outer, 1.0)
+        terms = np.where(joint > 0, joint * np.log2(ratio), 0.0)
+    return float(terms.sum())
+
+
+def _ngram_entropy_rates(tokens: np.ndarray, vocab_size: int, max_n: int = 3) -> dict:
+    """Block entropy H(n) (Shannon entropy of the n-gram distribution) for n=1..max_n, plus the
+    conditional entropy rate estimates h(n) = H(n) - H(n-1) -- "bits of surprise in the next
+    token, given n-1 tokens of context". A falling h(n) as n grows means longer context keeps
+    reducing uncertainty (learnable long-range structure); a flat h(n) means n-1 tokens of
+    context already captures everything predictable (a low-order Markov process, or noise)."""
+    block_entropy: dict[int, float] = {}
+    for n in range(1, max_n + 1):
+        if len(tokens) < n or vocab_size ** n > 10_000_000:
+            break
+        ids = np.zeros(len(tokens) - n + 1, dtype=np.int64)
+        for i in range(n):
+            ids += tokens[i: len(tokens) - n + 1 + i].astype(np.int64) * (vocab_size ** (n - 1 - i))
+        counts = np.bincount(ids)
+        p = counts[counts > 0] / counts.sum()
+        block_entropy[n] = float(-np.sum(p * np.log2(p)))
+
+    conditional_rates = {
+        n: block_entropy[n] - block_entropy[n - 1]
+        for n in block_entropy if n > 1 and (n - 1) in block_entropy
+    }
+    return {"block_entropy": block_entropy, "conditional_rates": conditional_rates}
+
+
+def _lz_compression_ratio(tokens: np.ndarray) -> float:
+    """Generic LZ-family (zlib/DEFLATE) compressed size over raw size of the token stream's byte
+    encoding -- a standard, well-tested compressibility proxy (not the classic LZ76 production
+    count specifically, but the same family of algorithmic-complexity idea: a highly repetitive
+    or low-entropy token stream compresses well; a high-entropy or near-random one doesn't).
+
+    Encodes as uint8 (vocab sizes in practice are tiny, e.g. n_bins=7) rather than a wider dtype
+    -- int32 would pad every token with 3 constant zero bytes, which zlib then "compresses away"
+    regardless of the actual token sequence, making the ratio mostly measure dtype padding
+    instead of token structure.
+    """
+    import zlib
+
+    if tokens.max(initial=0) >= 256:
+        raise ValueError("_lz_compression_ratio assumes vocab_size < 256 (uint8 encoding)")
+    raw_bytes = tokens.astype(np.uint8).tobytes()
+    compressed = zlib.compress(raw_bytes, level=9)
+    return len(compressed) / len(raw_bytes)

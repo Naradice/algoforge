@@ -186,6 +186,33 @@ not just for data-volume sweeps:
    partly or wholly artifacts once checked against seeds and, finally, validation-frequency
    parity. Treat "this fits a satisfying narrative" as orthogonal to "this is true."
 
+### Token-level characteristics — comparing input representations, not just row counts
+
+When `token_level` (see the hyperparameter table above) produces a discretized input stream —
+currently `"quantize_diff"` — `compute_token_characteristics()` in
+`backend/model/trainers/dataset.py` runs a set of information-theoretic metrics on it and merges
+them into that run's `preprocessed_characteristics`, alongside the existing structural indicators
+(Hurst exponent, spectral periodicity, etc.). This is what lets `/model/compare`'s "Data × Model
+Analysis" scatter plot Validation Loss against *how complex the input representation actually is*
+(e.g. "Token: Effective vocabulary") instead of only against training row count — two
+`token_level`s or `n_bins` choices that consume the same number of rows can still differ hugely in
+how much structure the model actually has to learn. Unlike the OHLC-level structural indicators,
+these are computed fresh every run (never reused from a `PreprocessedDataset` recipe's cache),
+since they depend on this run's own `token_level`/`n_bins`, not just the underlying dataset.
+
+| Metric | What it measures |
+|---|---|
+| `token_entropy.bits` / `.normalized` | Shannon entropy of the unigram token distribution, in bits, and normalized by `log2(vocab_size)` (1.0 = perfectly uniform usage) so it's comparable across different vocab sizes. |
+| `effective_vocab_size` | `2^entropy` — the "equivalent number of equally-likely tokens." Can be well below the nominal `vocab_size` (`n_bins`) if usage is skewed. |
+| `token_zipf.alpha` / `.r2` | Power-law exponent and fit quality of the rank-frequency curve (Zipf's law). High `r2` means token usage looks "language-like"; low `r2` means it doesn't follow a clean power law (e.g. near-uniform or bimodal). |
+| `token_mutual_information` | I(Xₜ; Xₜ₊₁) in bits — how much the current token tells you about the next one. 0 means adjacent tokens are independent (nothing short-range for a model to exploit); higher means real short-range structure exists. |
+| `ngram_entropy.block_entropy` / `.conditional_rates` | Block entropy H(n) for n=1..3 and the derived conditional rates h(n) = H(n) − H(n−1) — "bits of surprise in the next token given n−1 tokens of context." A falling h(n) as n grows means longer context keeps helping; a flat h(n) means n−1 tokens of context already captures everything predictable. |
+| `lz_compression_ratio` | zlib-compressed size ÷ raw size of the token stream (uint8-encoded). A generic LZ-family compressibility proxy — highly repetitive or low-entropy streams compress well, high-entropy/near-random ones don't. |
+
+Every metric is best-effort (wrapped individually, same pattern as `compute_effective_characteristics`)
+— one failing (e.g. too few distinct tokens for a stable Zipf fit on a very short series) never
+blanks the rest.
+
 ---
 
 ## Preprocessed Datasets

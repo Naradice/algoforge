@@ -133,3 +133,94 @@ class TestTokenLevel:
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         with pytest.raises(ValueError, match="Unknown token_level"):
             OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, token_level="bogus")
+
+    def test_quantize_diff_populates_token_stream_for_characteristics(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="quantize_diff", n_bins=7,
+        )
+
+        assert ds.token_stream is not None
+        assert ds.token_stream.ndim == 1
+        assert ds.token_stream.min() >= 0 and ds.token_stream.max() < 7
+
+    def test_diff_and_none_leave_token_stream_unset(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        assert OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5).token_stream is None
+        assert OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, token_level="diff").token_stream is None
+
+
+class TestComputeTokenCharacteristics:
+    def test_uniform_random_tokens_have_near_max_entropy_and_low_mutual_information(self):
+        from model.trainers.dataset import compute_token_characteristics
+
+        rng = np.random.default_rng(0)
+        vocab_size = 8
+        tokens = rng.integers(0, vocab_size, size=20_000)
+
+        result = compute_token_characteristics(tokens, vocab_size)
+
+        assert result["token_entropy"]["normalized"] > 0.95  # near-uniform usage
+        assert result["effective_vocab_size"] > vocab_size * 0.9
+        assert abs(result["token_mutual_information"]) < 0.05  # iid -> ~0 bits shared with next token
+        # 8 symbols is 3 bits/token of true entropy packed into 8-bit bytes, so the theoretical
+        # floor is ~0.375; zlib doesn't hit the entropy bound exactly, but this should land well
+        # above the near-zero ratio a truly compressible (e.g. constant) stream gets.
+        assert result["lz_compression_ratio"] > 0.3
+
+    def test_constant_token_stream_has_zero_entropy_and_compresses_well(self):
+        from model.trainers.dataset import compute_token_characteristics
+
+        tokens = np.zeros(5000, dtype=np.int64)
+        result = compute_token_characteristics(tokens, vocab_size=8)
+
+        assert result["token_entropy"]["bits"] == pytest.approx(0.0, abs=1e-9)
+        assert result["effective_vocab_size"] == pytest.approx(1.0, abs=1e-6)
+        assert result["lz_compression_ratio"] < 0.05  # trivially compressible
+
+    def test_periodic_pattern_has_low_conditional_entropy_rate_at_its_own_period(self):
+        from model.trainers.dataset import compute_token_characteristics
+
+        # period-3 pattern repeated many times -- fully predictable given 2 tokens of context.
+        pattern = np.array([0, 1, 2], dtype=np.int64)
+        tokens = np.tile(pattern, 2000)
+
+        result = compute_token_characteristics(tokens, vocab_size=3)
+
+        rates = result["ngram_entropy"]["conditional_rates"]
+        assert rates[max(rates)] < 0.05  # near-zero surprise once context captures the period
+        assert result["token_mutual_information"] > 1.0  # strong adjacent-token structure
+
+    def test_zipf_distributed_tokens_recover_a_positive_alpha_with_good_fit(self):
+        from model.trainers.dataset import compute_token_characteristics
+
+        rng = np.random.default_rng(1)
+        vocab_size = 50
+        # Construct an explicit Zipf-like frequency table (rank^-1) and sample from it.
+        ranks = np.arange(1, vocab_size + 1)
+        weights = 1.0 / ranks
+        probs = weights / weights.sum()
+        tokens = rng.choice(vocab_size, size=50_000, p=probs)
+
+        result = compute_token_characteristics(tokens, vocab_size)
+
+        zipf = result["token_zipf"]
+        assert zipf["alpha"] is not None
+        assert 0.5 < zipf["alpha"] < 2.0
+        assert zipf["r2"] > 0.8
+
+    def test_best_effort_does_not_raise_on_pathological_input(self):
+        from model.trainers.dataset import compute_token_characteristics
+
+        # A single repeated token: too few distinct tokens for a stable Zipf fit, but the call
+        # must still succeed and report the degenerate case per-metric rather than raising.
+        tokens = np.array([0, 0, 0], dtype=np.int64)
+        result = compute_token_characteristics(tokens, vocab_size=1)
+
+        assert "token_entropy" in result
+        assert result["token_zipf"]["alpha"] is None
