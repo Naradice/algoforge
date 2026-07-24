@@ -714,6 +714,8 @@ async def _train_model(training_run_id: int) -> dict:
                 max_rows=hp.get("max_rows"),
                 token_level=hp.get("token_level"),
                 n_bins=hp.get("n_bins", 7),
+                cluster_window=hp.get("cluster_window", 20),
+                n_clusters=hp.get("n_clusters", 20),
             )
             # Override input_dim/output_dim from actual dataset so the model layer sizes
             # always match the number of selected feature columns. Also sync obs_len/pred_len

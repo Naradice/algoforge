@@ -28,6 +28,10 @@ val_loss alone. See docs/model-layer.md, "Comparing training runs" / token_level
                        Quantile, not equal-width, bins matter here: a differenced periodic signal's
                        histogram is typically U-shaped (density concentrated at the extremes, not
                        at zero), so equal-width bins produce wildly unbalanced token frequencies.
+    "cluster"        — src = pattern/shape tokens: k-means (k=`n_clusters`) over sliding, per-window
+                       z-scored shapes of `cluster_window` consecutive differences, fit on the
+                       training split only. Groups short movement patterns (e.g. "uptrend",
+                       "range", "sharp drop") into a token per shape rather than per raw value.
 Only single-feature (`feature_cols` of length 1) datasets support token_level -- multi-feature
 tokenized input isn't implemented.
 """
@@ -61,6 +65,8 @@ class OHLCWindowDataset:
         max_rows: int | None = None,
         token_level: str | None = None,
         n_bins: int = 7,
+        cluster_window: int = 20,
+        n_clusters: int = 20,
     ) -> None:
         df, feature_cols = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         raw = df[feature_cols].values.astype(np.float32)
@@ -76,6 +82,7 @@ class OHLCWindowDataset:
         self.vocab_size: int | None = None
         self.token_bin_edges: np.ndarray | None = None
         self.token_stream: np.ndarray | None = None  # flat, pre-windowing -- see compute_token_characteristics
+        self.cluster_centroids: np.ndarray | None = None  # only set for token_level="cluster"
 
         if token_level is None:
             src_data = tgt_data
@@ -104,6 +111,47 @@ class OHLCWindowDataset:
                 self.vocab_size = n_bins
                 src_data = np.digitize(diff_full[:, 0], edges).astype(np.int64).reshape(-1, 1)
                 self.token_stream = src_data.reshape(-1)
+            elif token_level == "cluster":
+                # Pattern tokens: k-means over sliding shape windows of the differenced series
+                # (a "shape" is cluster_window consecutive deltas -- movement over that span, not
+                # a price level, so it stays meaningful regardless of where in a trend/regime the
+                # window sits). Each shape is z-scored *individually* (removes that window's own
+                # scale) before clustering, the standard normalization for shape/shapelet
+                # clustering -- otherwise windows just cluster by volatility, not by pattern
+                # shape. On a periodic signal this should recover something close to a phase
+                # partition of the cycle: sorting centroids by their dominant frequency content
+                # tends to lay them out in cycle order, a useful sanity check that clustering is
+                # doing something structural rather than arbitrary.
+                from sklearn.cluster import KMeans
+
+                w = cluster_window
+                n_diff = len(diff_full)
+                if n_diff < w:
+                    raise ValueError(f"Series too short ({n_diff} diffs) for cluster_window={w}")
+                n_shapes = n_diff - w + 1
+                shape_idx = np.arange(w)[None, :] + np.arange(n_shapes)[:, None]
+                shapes = diff_full[shape_idx, 0]  # [n_shapes, w]
+                mu = shapes.mean(axis=1, keepdims=True)
+                sigma = shapes.std(axis=1, keepdims=True)
+                sigma = np.where(sigma == 0, 1.0, sigma)
+                shapes_norm = (shapes - mu) / sigma
+
+                # Fit on an approximate train-fraction prefix only -- same leakage rationale as
+                # quantize_diff's bin edges above.
+                train_boundary = max(n_clusters, int(n_shapes * (1 - val_split)))
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                kmeans.fit(shapes_norm[:train_boundary])
+                cluster_ids = kmeans.predict(shapes_norm).astype(np.int64)
+
+                self.vocab_size = n_clusters
+                self.cluster_centroids = kmeans.cluster_centers_
+                src_data = cluster_ids.reshape(-1, 1)
+                self.token_stream = cluster_ids
+                # Shape window i covers diff_full[i:i+w], i.e. underlying time range
+                # [i+1, i+w] -- its token represents "the pattern ending at time i+w", which
+                # pairs with tgt_data[i+w-1] ("value at time i+w" after tgt_data's existing
+                # 1-row trim above). Trim the front of tgt_data to match.
+                tgt_data = tgt_data[w - 1:]
             else:
                 raise ValueError(f"Unknown token_level: {token_level!r}")
 

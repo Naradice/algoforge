@@ -155,6 +155,74 @@ class TestTokenLevel:
         assert OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, token_level="diff").token_stream is None
 
 
+class TestClusterTokenLevel:
+    def test_cluster_produces_integer_tokens_within_vocab_and_correct_length(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="cluster", cluster_window=20, n_clusters=5,
+        )
+
+        assert ds.vocab_size == 5
+        assert ds.token_stream is not None
+        assert ds.token_stream.dtype == np.int64
+        assert ds.token_stream.min() >= 0 and ds.token_stream.max() < 5
+        # n=1500 -> diff length 1499 -> n_shapes = 1499 - 20 + 1 = 1480
+        assert len(ds.token_stream) == 1480
+
+    def test_cluster_centroids_have_expected_shape(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="cluster", cluster_window=20, n_clusters=5,
+        )
+
+        assert ds.cluster_centroids is not None
+        assert ds.cluster_centroids.shape == (5, 20)
+
+    def test_cluster_tgt_stays_continuous_and_index_aligned_in_length(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="cluster", cluster_window=20, n_clusters=5,
+        )
+
+        assert ds._train_tgt.dtype == np.float32
+        assert ds._train_src.shape[0] == ds._train_tgt.shape[0]
+
+    def test_cluster_rejects_series_shorter_than_cluster_window(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=30)
+        with pytest.raises(ValueError, match="cluster_window"):
+            OHLCWindowDataset(
+                "ds.parquet", obs_len=5, pred_len=2, token_level="cluster", cluster_window=50,
+            )
+
+    def test_cluster_token_stream_recurs_at_the_signal_period(self, artifact_store):
+        """On a periodic signal, clustering should recover something close to a phase
+        partition of the cycle -- the same shape recurs every `period` steps, so the cluster
+        id sequence should repeat at that lag far more often than chance (1/n_clusters)."""
+        from model.trainers.dataset import OHLCWindowDataset
+
+        period = 60
+        _make_sine_parquet(artifact_store / "ds.parquet", n=3000, period=period)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="cluster", cluster_window=20, n_clusters=8,
+        )
+
+        stream = ds.token_stream
+        match_rate = np.mean(stream[:-period] == stream[period:])
+        assert match_rate > 3 / 8  # well above the 1/n_clusters chance rate
+
+
 class TestComputeTokenCharacteristics:
     def test_uniform_random_tokens_have_near_max_entropy_and_low_mutual_information(self):
         from model.trainers.dataset import compute_token_characteristics
