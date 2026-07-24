@@ -139,6 +139,50 @@ datasets, not as a hard ceiling — raising it is a deliberate per-run opt-in, s
 windows for a multi-million-row dataset costs real time and memory up front (once, at dataset
 load, not per epoch).
 
+### Comparing training runs — methodology
+
+Distilled from a multi-week investigation into why a data-volume sweep on a synthetic,
+perfectly-periodic sine wave showed a large, real-looking improvement from more rows even though
+the data past the first cycle carries no new information. The eventual answer (see below) was a
+confound in how runs were being compared, not a property of any model or optimizer — five
+plausible-looking mechanisms were investigated and ruled out along the way (more gradient steps,
+batch-order resonance, model capacity, a validation-split artifact, batch size/gradient noise,
+the LR scheduler's own epoch-denomination, and finally Adam/AdamW momentum) before the real cause
+surfaced. Apply these whenever comparing architectures, sizes, or datasets against each other —
+not just for data-volume sweeps:
+
+1. **Always seed, and always replicate across a few seeds before trusting a result.** This
+   pipeline has no seed control unless `seed` is set — two "identical" runs can land 2×+ apart on
+   nothing but weight-init/shuffle-order luck. The single most repeated failure mode in the
+   investigation above was treating a clean-looking single-run result (a monotonic trend, a
+   dramatic ablation, a mechanistically satisfying story) as established. Every one of those
+   specific claims — a 5.3× optimizer-driven gap, a non-monotonic "hump" in momentum strength, a
+   tiled dataset outright beating real data — evaporated or reversed under 3-seed replication.
+   Clean and monotonic is not evidence; it just means the noise happened to line up once.
+2. **Match total optimizer steps, not epoch count, when comparing runs whose datasets differ in
+   size.** A fixed `epochs` budget gives a small dataset far fewer gradient updates than a large
+   one, or vice versa depending which side of the comparison you're on — compute each side's
+   `epochs` from the row count and `batch_size` to hit a common step-count target instead.
+3. **Equalize validation/checkpoint frequency, not just step count.** This was the one confound
+   the investigation above almost missed. Ordinary epoch-based training validates once per epoch,
+   so a run with short epochs (small dataset) gets far more validation checks — and therefore far
+   more chances to record a lucky low `val_loss` — than a run with long epochs (large dataset) at
+   the *same total step count*. This is a best-of-N selection effect, unrelated to the models or
+   optimizers being compared, and it was large enough on its own to fully explain a gap that had
+   survived every other control. Use `max_steps` + `val_every_steps` (see above) to give every
+   compared run the same number of validation checks regardless of how many rows its dataset has.
+4. **Keep the LR scheduler and early stopping step-denominated too, or disable them.**
+   `ReduceLROnPlateau` and `early_stop_patience` both act per-epoch — the same asymmetry as point
+   3 applies to them independently. Set `disable_lr_scheduler=true` for step-matched comparisons,
+   and use `early_stop_patience_checks` (step-space) rather than `early_stop_patience` (epoch-space)
+   whenever `max_steps` is in play.
+5. **A result that looks especially clean is a reason for more scrutiny, not less.** In order,
+   the investigation's most "decisive"-looking findings — a 54× improvement from 100× more data,
+   a tiled dataset beating real data outright, a 5.3× gap explained by Adam's momentum, a smooth
+   non-monotonic dose-response curve in β1 — were also, in order, the ones that turned out to be
+   partly or wholly artifacts once checked against seeds and, finally, validation-frequency
+   parity. Treat "this fits a satisfying narrative" as orthogonal to "this is true."
+
 ---
 
 ## Preprocessed Datasets

@@ -260,6 +260,35 @@ We shold proceed with /docs/roadmap.md.
 
 ---
 
+## Comparing model training runs
+
+Full writeup: `docs/model-layer.md` → "Comparing training runs — methodology". Distilled from a
+multi-week investigation where a real-looking, large data-volume effect turned out to be a
+measurement artifact, not a property of any model or optimizer. Apply these whenever comparing
+architectures, model sizes, or datasets against each other:
+
+1. **Seed every run (`seed` hyperparam) and replicate across a few seeds before trusting a
+   result.** Unseeded runs on this pipeline can land 2×+ apart on init/shuffle luck alone — a
+   clean-looking single-run result (monotonic trend, dramatic ablation, tidy mechanism) is not
+   evidence by itself. Several "decisive" single-run findings in the investigation above
+   evaporated or reversed under 3-seed replication.
+2. **Match total optimizer steps, not epoch count**, when compared runs use datasets of different
+   sizes — a fixed `epochs` budget silently gives more or fewer gradient updates to whichever
+   side has fewer rows per epoch.
+3. **Equalize validation/checkpoint frequency, not just step count.** Epoch-based validation
+   checks once per epoch, so a run with short epochs (small dataset) gets far more chances to
+   record a lucky low `val_loss` than a run with long epochs (large dataset) at the *same total
+   step count* — a best-of-N selection effect. Use `max_steps` + `val_every_steps` (see
+   `docs/model-layer.md`) to give every compared run the same number of validation checks
+   regardless of dataset size. This alone fully explained a gap that had survived every other
+   control in the investigation above.
+4. **Keep the LR scheduler and early stopping step-denominated too** (`disable_lr_scheduler=true`,
+   `early_stop_patience_checks` instead of `early_stop_patience`) — both are epoch-keyed by
+   default and carry the same asymmetry as point 3.
+5. **Treat an especially clean result as a reason for more scrutiny, not less.**
+
+---
+
 ## Common tasks
 
 ### Add a new datasource type
