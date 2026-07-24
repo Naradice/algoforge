@@ -42,13 +42,21 @@ class Seq2SeqTransformer(nn.Module):
         dim_feedforward: int = 256,
         dropout: float = 0.1,
         device: str = "cpu",
+        vocab_size: int | None = None,
         **kwargs,
     ) -> None:
         super().__init__()
         self.d_model = d_model
         self.device = device
 
-        self.src_proj = nn.Linear(input_dim, d_model)
+        # vocab_size (opt-in): src is a stream of integer token ids (see OHLCWindowDataset's
+        # token_level) -- embed directly to d_model instead of linearly projecting continuous
+        # features (embedding_dim isn't independently configurable here: unlike the LSTM, every
+        # downstream layer -- positional encoding, attention -- fixes on d_model as the one
+        # working dimension, so there's nothing for a separate embedding size to buy). tgt (the
+        # decoder side) is unaffected; it's always continuous, so tgt_proj stays a Linear.
+        self.src_embed = nn.Embedding(vocab_size, d_model) if vocab_size else None
+        self.src_proj = None if vocab_size else nn.Linear(input_dim, d_model)
         self.tgt_proj = nn.Linear(output_dim, d_model)
         self.pos_enc = PositionalEncoding(d_model, dropout=dropout)
 
@@ -73,11 +81,12 @@ class Seq2SeqTransformer(nn.Module):
         **kwargs,
     ) -> torch.Tensor:
         """
-        src: [batch, obs_len, input_dim]
+        src: [batch, obs_len, input_dim] (or [batch, obs_len, 1] integer token ids if self.src_embed)
         tgt: [batch, pred_len, output_dim]
         Returns: [batch, pred_len, output_dim]
         """
-        src_emb = self.pos_enc(self.src_proj(src))
+        src_proj = self.src_embed(src.long().squeeze(-1)) if self.src_embed is not None else self.src_proj(src)
+        src_emb = self.pos_enc(src_proj)
         tgt_emb = self.pos_enc(self.tgt_proj(tgt))
 
         if mask_tgt is None:

@@ -5,12 +5,31 @@ Compatible with the stocknet trainer interface:
     ds[start : start + batch_size]  →  (src_tensor, tgt_tensor)
 where tensors are [batch, seq_len, features].
 
-Normalisation modes:
+Normalisation modes (apply to the prediction target, tgt, always):
     "returns"  — log returns of each feature column (stationary, recommended)
+    "diff"     — raw first differences (stationary, no log — use when the series isn't
+                 price-like/multiplicative, or when comparing representations that need the
+                 same additive scale as the raw series; see "diff" vs "returns" note below)
     "minmax"   — min-max scale each column to [0, 1]
     "zscore"   — standardize to zero mean and unit variance
     "robust"   — scale by median and IQR (robust to outliers)
     "none"     — raw values
+
+token_level (opt-in, defaults to None): decouples how the model's *input* history (src) is
+represented from `normalize` above, which continues to control the *target* (tgt) exclusively.
+Exists to compare input tokenization schemes (raw continuous / differenced / discretized-symbol)
+without changing what's being predicted or how prediction error is scored — every scheme still
+regresses the same continuous target with the same loss, so results are directly comparable via
+val_loss alone. See docs/model-layer.md, "Comparing training runs" / token_level.
+    None             — src uses the exact same array as tgt (current/default behaviour)
+    "diff"           — src = raw first differences of the underlying series (continuous)
+    "quantize_diff"  — src = raw first differences, discretized into `n_bins` integer token ids
+                       via quantile (equal-frequency) bin edges fit on the training split only.
+                       Quantile, not equal-width, bins matter here: a differenced periodic signal's
+                       histogram is typically U-shaped (density concentrated at the extremes, not
+                       at zero), so equal-width bins produce wildly unbalanced token frequencies.
+Only single-feature (`feature_cols` of length 1) datasets support token_level -- multi-feature
+tokenized input isn't implemented.
 """
 
 from __future__ import annotations
@@ -40,45 +59,65 @@ class OHLCWindowDataset:
         device: str = "cpu",
         preprocessing: dict | None = None,
         max_rows: int | None = None,
+        token_level: str | None = None,
+        n_bins: int = 7,
     ) -> None:
         df, feature_cols = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
-        data = df[feature_cols].values.astype(np.float32)
+        raw = df[feature_cols].values.astype(np.float32)
 
-        # Normalise
-        if normalize == "returns":
-            data = np.log(data + 1e-8)
-            data = np.diff(data, axis=0)
-        elif normalize == "minmax":
-            mn, mx = data.min(axis=0), data.max(axis=0)
-            rng = np.where(mx - mn == 0, 1.0, mx - mn)
-            data = (data - mn) / rng
-        elif normalize == "zscore":
-            mu = data.mean(axis=0)
-            sigma = data.std(axis=0)
-            sigma = np.where(sigma == 0, 1.0, sigma)
-            data = (data - mu) / sigma
-        elif normalize == "robust":
-            median = np.median(data, axis=0)
-            q25 = np.percentile(data, 25, axis=0)
-            q75 = np.percentile(data, 75, axis=0)
-            iqr = np.where(q75 - q25 == 0, 1.0, q75 - q25)
-            data = (data - median) / iqr
+        tgt_data = self._apply_normalize(raw, normalize)
 
         # Store normalisation params for inverse transform at inference
         self._normalize = normalize
-        self._norm_min = data.min(axis=0) if normalize == "minmax" else None
-        self._norm_max = data.max(axis=0) if normalize == "minmax" else None
+        self._norm_min = tgt_data.min(axis=0) if normalize == "minmax" else None
+        self._norm_max = tgt_data.max(axis=0) if normalize == "minmax" else None
+
+        self.token_level = token_level
+        self.vocab_size: int | None = None
+        self.token_bin_edges: np.ndarray | None = None
+
+        if token_level is None:
+            src_data = tgt_data
+        else:
+            if len(feature_cols) != 1:
+                raise ValueError("token_level requires exactly one feature_col (multi-feature tokenized input isn't implemented)")
+            diff_full = np.diff(raw, axis=0)  # length n-1
+            # tgt must stay index-aligned with src regardless of which token_level is used, so
+            # always trim tgt to the same n-1 length as a differenced series -- tgt_data[i]
+            # remains "the value at time i+1", paired with src derived from the transition
+            # ending at time i+1, both knowable as of time i+1 (causally consistent).
+            if len(tgt_data) == len(raw):
+                tgt_data = tgt_data[1:]
+            if token_level == "diff":
+                src_data = diff_full
+            elif token_level == "quantize_diff":
+                # Bin edges fit on an approximate train-fraction prefix only, to avoid leaking
+                # validation-region statistics into the vocabulary -- val_split applied directly
+                # to row count here (not the window-count split below) since edges must exist
+                # before windowing can happen; the resulting boundary differs from the window
+                # split by at most one window's worth of rows, immaterial for quantile estimation.
+                train_boundary = max(1, int(len(diff_full) * (1 - val_split)))
+                qs = np.linspace(0, 1, n_bins + 1)[1:-1]
+                edges = np.quantile(diff_full[:train_boundary, 0], qs)
+                self.token_bin_edges = edges
+                self.vocab_size = n_bins
+                src_data = np.digitize(diff_full[:, 0], edges).astype(np.int64).reshape(-1, 1)
+            else:
+                raise ValueError(f"Unknown token_level: {token_level!r}")
 
         # Build windows
-        n = len(data)
+        n = len(tgt_data)
         total_len = obs_len + pred_len + 1   # +1 for the teacher-forced tgt shift
         n_windows = n - total_len + 1
 
         split_idx = int(n_windows * (1 - val_split))
-        self._train_src, self._train_tgt = self._make_windows(data[:split_idx + total_len - 1], obs_len, pred_len + 1)
-        val_data = data[split_idx:]
-        if len(val_data) >= total_len:
-            self._val_src, self._val_tgt = self._make_windows(val_data, obs_len, pred_len + 1)
+        self._train_src, self._train_tgt = self._make_windows(
+            src_data[:split_idx + total_len - 1], tgt_data[:split_idx + total_len - 1], obs_len, pred_len + 1
+        )
+        val_src_data = src_data[split_idx:]
+        val_tgt_data = tgt_data[split_idx:]
+        if len(val_tgt_data) >= total_len:
+            self._val_src, self._val_tgt = self._make_windows(val_src_data, val_tgt_data, obs_len, pred_len + 1)
         else:
             self._val_src, self._val_tgt = self._train_src, self._train_tgt
 
@@ -87,6 +126,30 @@ class OHLCWindowDataset:
         self.obs_len = obs_len
         self.pred_len = pred_len
         self.n_features = len(feature_cols)
+
+    @staticmethod
+    def _apply_normalize(data: np.ndarray, normalize: str) -> np.ndarray:
+        if normalize == "returns":
+            data = np.log(data + 1e-8)
+            return np.diff(data, axis=0)
+        elif normalize == "diff":
+            return np.diff(data, axis=0)
+        elif normalize == "minmax":
+            mn, mx = data.min(axis=0), data.max(axis=0)
+            rng = np.where(mx - mn == 0, 1.0, mx - mn)
+            return (data - mn) / rng
+        elif normalize == "zscore":
+            mu = data.mean(axis=0)
+            sigma = data.std(axis=0)
+            sigma = np.where(sigma == 0, 1.0, sigma)
+            return (data - mu) / sigma
+        elif normalize == "robust":
+            median = np.median(data, axis=0)
+            q25 = np.percentile(data, 25, axis=0)
+            q75 = np.percentile(data, 75, axis=0)
+            iqr = np.where(q75 - q25 == 0, 1.0, q75 - q25)
+            return (data - median) / iqr
+        return data
 
     @classmethod
     def _load_preprocessed_df(
@@ -143,14 +206,17 @@ class OHLCWindowDataset:
         return df, feature_cols
 
     @staticmethod
-    def _make_windows(data: np.ndarray, obs_len: int, tgt_len: int):
-        n = len(data)
+    def _make_windows(src_data: np.ndarray, tgt_data: np.ndarray, obs_len: int, tgt_len: int):
+        """src_data and tgt_data must be the same length and index-aligned (tgt_data[i] is the
+        value "at" the same point in time src_data[i] is derived from) -- see token_level above
+        for how src can differ in representation (continuous/differenced/tokenized) from tgt."""
+        n = len(src_data)
         total = obs_len + tgt_len
         srcs, tgts = [], []
         for i in range(n - total + 1):
-            srcs.append(data[i : i + obs_len])
-            tgts.append(data[i + obs_len - 1 : i + obs_len - 1 + tgt_len])  # overlapping by 1 for teacher forcing
-        return np.array(srcs, dtype=np.float32), np.array(tgts, dtype=np.float32)
+            srcs.append(src_data[i : i + obs_len])
+            tgts.append(tgt_data[i + obs_len - 1 : i + obs_len - 1 + tgt_len])  # overlapping by 1 for teacher forcing
+        return np.array(srcs, dtype=src_data.dtype), np.array(tgts, dtype=np.float32)
 
     def train(self) -> None:
         self._is_train = True

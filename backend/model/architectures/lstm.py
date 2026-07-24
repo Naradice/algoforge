@@ -21,6 +21,8 @@ class LSTMModel(nn.Module):
         num_layers: int = 2,
         dropout: float = 0.1,
         device: str = "cpu",
+        vocab_size: int | None = None,
+        embedding_dim: int | None = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -28,8 +30,13 @@ class LSTMModel(nn.Module):
         self.pred_len = pred_len
         self.device = device
 
+        # vocab_size (opt-in): src is a stream of integer token ids (see OHLCWindowDataset's
+        # token_level) rather than continuous features -- embed instead of feeding directly into
+        # the LSTM. tgt is unaffected; it's always continuous (see dataset.py's token_level docs).
+        self.embed = nn.Embedding(vocab_size, embedding_dim or hidden_dim) if vocab_size else None
+        lstm_input_size = (embedding_dim or hidden_dim) if vocab_size else input_dim
         self.lstm = nn.LSTM(
-            input_size=input_dim,
+            input_size=lstm_input_size,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
@@ -41,9 +48,11 @@ class LSTMModel(nn.Module):
 
     def forward(self, src: torch.Tensor, tgt: torch.Tensor | None = None, *args, **kwargs) -> torch.Tensor:
         """
-        src: [batch, obs_len, input_dim]
+        src: [batch, obs_len, input_dim] (or [batch, obs_len, 1] integer token ids if self.embed)
         Returns: [batch, pred_len, output_dim]
         """
+        if self.embed is not None:
+            src = self.embed(src.long().squeeze(-1))  # [batch, obs_len] -> [batch, obs_len, embedding_dim]
         out, _ = self.lstm(src)
         last = out[:, -1, :]                         # [batch, hidden_dim]
         pred = self.head(last)                       # [batch, output_dim * pred_len]

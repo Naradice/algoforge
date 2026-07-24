@@ -712,6 +712,8 @@ async def _train_model(training_run_id: int) -> dict:
                 device=device,
                 preprocessing=hp.get("preprocessing"),
                 max_rows=hp.get("max_rows"),
+                token_level=hp.get("token_level"),
+                n_bins=hp.get("n_bins", 7),
             )
             # Override input_dim/output_dim from actual dataset so the model layer sizes
             # always match the number of selected feature columns. Also sync obs_len/pred_len
@@ -723,6 +725,12 @@ async def _train_model(training_run_id: int) -> dict:
                 "obs_len": hp.get("obs_len", 60),
                 "pred_len": hp.get("pred_len", 10),
             }
+            # token_level (see OHLCWindowDataset): when set, src is a stream of integer token
+            # ids rather than continuous features -- pass the fitted vocab size through so the
+            # model builds an embedding front-end instead of its usual continuous input path.
+            if dataset.vocab_size is not None:
+                effective_config["vocab_size"] = dataset.vocab_size
+                effective_config["embedding_dim"] = hp.get("embedding_dim")
             model = build_model(architecture, effective_config, device=device)
         except Exception as e:
             async with factory() as db:
