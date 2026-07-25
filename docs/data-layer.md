@@ -63,10 +63,13 @@ Rule of thumb for row count: `rows ≈ length × tick_time / (timeframe_seconds)
 Example: 50000 ticks × 1s / 60s = ~833 M1 bars.
 
 ### `synthetic_function`
-Generates a simple, deterministic time series from a closed-form formula — no external data, no
-simulation randomness (unless you opt into noise). Useful for sanity-checking whether a model
-(classical baseline or neural net) actually recovers a known periodicity, since you know the
-ground truth exactly.
+Generates a time series from a closed-form formula or simple recurrence — no external data, no
+simulation randomness (unless you opt into noise, or the function itself is bit-driven).
+Originally for sanity-checking whether a model recovers a known periodicity (`sine`/`sine_sum`);
+now also the **dataset axis** of the mechanism-hunt methodology (`docs/model-layer.md`, "Comparing
+training runs"): the same tokenization/training harness applied across generative rules of
+deliberately different character (periodic, chaotic, nonlinear-logical, pseudo-random), to check
+whether a finding generalizes beyond one signal's particular structure.
 
 ```json
 {
@@ -92,12 +95,17 @@ Formulas (`t` = bar index, `0..length-1`):
 |---|---|---|
 | `sine` | `base_price + amplitude * sin(2π·t / period)` | Single clean periodic wave |
 | `sine_sum` | `base_price + sin(2π·t / period) + amplitude * sin(2π·freq_ratio·t / period)` | Base wave plus a second wave `freq_ratio`× faster, scaled by `amplitude` |
+| `delay` | Mackey-Glass DDE: `dx/dt = 0.2·x(t-τ)/(1+x(t-τ)¹⁰) − 0.1·x(t)`, discrete-time | The canonical chaotic-time-series benchmark. Deterministic given `tau` and a fixed initial history, but long-range unpredictable in practice. `tau=17` (default) is the standard mildly-chaotic setting; below ~4.5 the system settles to a fixed point instead. Ignores `amplitude`/`noise`'s usual role — the equation's own scale sets the range. |
+| `xor` | `base_price + amplitude * (2·(a[t-1] XOR a[t-2]) − 1)`, `a` iid Bernoulli(0.5) | "Temporal XOR" — the next value depends nonlinearly (non-additively) on two specific past bits. Not linearly separable from either bit alone; tests whether a model can learn nonlinear temporal combination rather than correlation/periodicity. |
+| `lfsr` | `base_price + amplitude * (2·bit_t − 1)`, `bit_t` from a Fibonacci linear feedback shift register | Deterministic and simple to *generate* (one XOR of a few register bits per step, exact period `2^lfsr_bits − 1`), but its statistical profile (near-uniform bit frequency, near-zero autocorrelation except exactly at the period) looks close to random. `lfsr_bits` (4/5/8/16 supported) sets the register width and therefore the period. |
 
 `period` is in bars, not raw formula units — this reparameterizes the classic "x periodic with
 period T" / "sin(t) + A·sin(T·t)" definitions around a bar count so the result is a usable series
 at any timeframe (raw `sin(t)` with integer `t` oscillates every ~6.3 bars — too fast to be a
 useful comparison signal). `noise` (gaussian std dev) defaults to 0 for a pure deterministic
-signal; set it above 0 to add reproducible (seeded) randomness on top. `open`/`high`/`low`/`close`
+signal; set it above 0 to add reproducible (seeded) randomness on top. `seed` drives the RNG for
+`noise` (all functions) and for bit generation in `xor`/`lfsr`; it's irrelevant to `sine`,
+`sine_sum`, and `delay`, which are fully deterministic from their formula alone. `open`/`high`/`low`/`close`
 are all set to the same value per bar (a flat OHLC candle) since the series is a single point
 value, not a simulated market.
 

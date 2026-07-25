@@ -1,27 +1,54 @@
 """
-Synthetic function collector — generates simple, deterministic time series from closed-form
-formulas, for quickly sanity-checking models against a known ground truth (does AR/ARMA or a
-neural net actually recover a known periodicity, or not?).
+Synthetic function collector — generates simple, deterministic (or pseudo-random-but-simple)
+time series from closed-form formulas/recurrences, for the "dataset axis" of the mechanism-hunt
+methodology (see docs/model-layer.md's "Comparing training runs" section): the same tokenization
+and training harness applied across generative rules of deliberately different character, to
+check whether a finding (an effective representation, a scaling effect) generalizes beyond one
+signal's particular structure or was an artifact of it.
 
 Datasource config shape (stored in datasources.config):
     {
-        "function": "sine" | "sine_sum",
-        "period": 50,        # T -- base period, in bars
-        "amplitude": 1.0,    # A -- wave amplitude ("sine": the only wave; "sine_sum": the 2nd wave)
+        "function": "sine" | "sine_sum" | "delay" | "xor" | "lfsr",
+        "period": 50,        # T -- base period, in bars (sine / sine_sum only)
+        "amplitude": 1.0,    # A -- wave amplitude (sine/sine_sum/xor/lfsr; ignored by delay)
         "freq_ratio": 5,     # sine_sum only -- 2nd wave oscillates this many times faster than the base
+        "tau": 17,           # delay only -- Mackey-Glass delay parameter (see below)
+        "lfsr_bits": 8,      # lfsr only -- shift-register width; supported: 4, 5, 8, 16
         "base_price": 100.0, # vertical offset so the series looks like a price series
         "noise": 0.0,        # gaussian noise std dev added on top; 0 = pure deterministic
         "length": 2000,      # number of bars to generate
         "timeframe": "M5",   # bar spacing
-        "seed": 42,          # noise RNG seed (only used when noise > 0)
+        "seed": 42,          # RNG seed -- noise (all functions), bit generation (xor), initial
+                              # register state (lfsr). Unused (irrelevant) for sine/sine_sum/delay,
+                              # which are fully deterministic from their formula alone.
         "start_ts": "2024-01-01",  # first bar timestamp
     }
 
 Formulas (t = bar index, 0..length-1):
     "sine":     x_t = base_price + amplitude * sin(2*pi * t / period)
     "sine_sum": x_t = base_price + sin(2*pi * t / period) + amplitude * sin(2*pi * freq_ratio * t / period)
+    "delay":    x_t = base_price + (Mackey-Glass delay-differential equation, discrete-time form)
+                dx/dt = 0.2 * x(t-tau) / (1 + x(t-tau)^10) - 0.1 * x(t)
+                The canonical chaotic-time-series benchmark in reservoir-computing/nonlinear
+                dynamics literature (tau=17 is the standard "mildly chaotic" setting). Deterministic
+                given tau and the fixed initial history, but long-range unpredictable in practice
+                (sensitive dependence on initial conditions) -- the "complex, deterministic delay
+                recurrence" point on the dataset axis, contrasting with sine's simple periodicity.
+    "xor":      a_t ~ iid Bernoulli(0.5); x_t = base_price + amplitude * (2*(a_{t-1} XOR a_{t-2}) - 1)
+                Classic "temporal XOR" — the next value depends nonlinearly (non-additively) on two
+                specific past bits. Not linearly separable from either bit alone, a standard
+                benchmark for whether a sequence model can learn nonlinear temporal combination
+                rather than just correlation/periodicity.
+    "lfsr":     x_t = base_price + amplitude * (2*bit_t - 1), where bit_t is a Fibonacci linear
+                feedback shift register's output bit (see _LFSR_TAPS for the primitive-polynomial
+                tap sets used per register width). Deterministic and low-complexity to *generate*
+                (one XOR of a few register bits per step, period exactly 2^bits - 1), but its
+                statistical profile (near-uniform bit frequency, near-zero autocorrelation except
+                exactly at the period) looks close to random -- a direct test of whether a model
+                (or the token-characteristics framework: entropy, LZ compression) can tell "looks
+                complex" apart from "is complex to generate".
 
-Both are a practical reading of "x_t periodic with period T" and "sin(t) + A*sin(T*t)",
+Both sine/sine_sum are a practical reading of "x_t periodic with period T" and "sin(t) + A*sin(T*t)",
 reparameterized around a bar-count period so the result is a usable series at any timeframe --
 raw sin(t) with integer t oscillates every ~6.3 bars, too fast to be a useful comparison signal.
 
@@ -54,13 +81,86 @@ class CollectResult:
     to_ts: datetime
 
 
-def _generate_series(function: str, length: int, period: float, amplitude: float, freq_ratio: float) -> np.ndarray:
+# Fibonacci LFSR tap positions (1-indexed from the LSB) for known maximal-length (period =
+# 2^bits - 1) primitive polynomials. Widths chosen to span "short enough to see the period
+# within a normal dataset length" (4, 5) through "long enough to look genuinely random over a
+# typical window" (16).
+_LFSR_TAPS: dict[int, list[int]] = {
+    4: [4, 3],
+    5: [5, 3],
+    8: [8, 6, 5, 4],
+    16: [16, 15, 13, 4],
+}
+
+
+def _mackey_glass(length: int, tau: float, burn_in: int = 1000) -> np.ndarray:
+    """Discrete-time Mackey-Glass delay recurrence (beta=0.2, gamma=0.1, n=10 -- the standard
+    parameters used throughout the reservoir-computing/chaotic-time-series literature). tau=17 is
+    the canonical "mildly chaotic" setting; below ~tau=4.5 the system settles to a fixed point
+    instead. burn_in discards the initial transient before the trajectory settles onto its
+    attractor, so the returned series doesn't depend on the arbitrary constant initial history."""
+    tau_steps = max(1, int(round(tau)))
+    total = length + burn_in + tau_steps + 1
+    x = np.empty(total, dtype=np.float64)
+    x[: tau_steps + 1] = 1.2  # standard constant initial history
+    beta, gamma, n = 0.2, 0.1, 10
+    for t in range(tau_steps, total - 1):
+        lagged = x[t - tau_steps]
+        x[t + 1] = x[t] + beta * lagged / (1 + lagged ** n) - gamma * x[t]
+    start = burn_in + tau_steps
+    return x[start : start + length]
+
+
+def _temporal_xor(length: int, seed: int) -> np.ndarray:
+    """x_t = a_{t-1} XOR a_{t-2} for iid Bernoulli(0.5) bits a -- returns values in {0, 1}."""
+    rng = np.random.default_rng(seed)
+    bits = rng.integers(0, 2, size=length + 2)
+    return (bits[:length] ^ bits[1 : length + 1]).astype(np.float64)
+
+
+def _lfsr(length: int, bits: int, seed: int) -> np.ndarray:
+    """Fibonacci LFSR output bit stream -- returns values in {0, 1}, period exactly 2^bits - 1."""
+    n = int(bits)
+    taps = _LFSR_TAPS.get(n)
+    if taps is None:
+        raise ValueError(f"Unsupported lfsr_bits={n} (supported: {sorted(_LFSR_TAPS)})")
+    rng = np.random.default_rng(seed)
+    state = int(rng.integers(1, 2 ** n))  # nonzero seed state (all-zero state never changes)
+    mask = (1 << n) - 1
+    out = np.empty(length, dtype=np.float64)
+    for t in range(length):
+        out[t] = state & 1
+        feedback = 0
+        for tap in taps:
+            feedback ^= (state >> (tap - 1)) & 1
+        state = ((state << 1) | feedback) & mask
+    return out
+
+
+def _generate_series(
+    function: str,
+    length: int,
+    period: float,
+    amplitude: float,
+    freq_ratio: float,
+    tau: float = 17.0,
+    lfsr_bits: int = 8,
+    seed: int = 42,
+) -> np.ndarray:
     t = np.arange(length, dtype=np.float64)
     if function == "sine":
         return amplitude * np.sin(2 * np.pi * t / period)
     if function == "sine_sum":
         return np.sin(2 * np.pi * t / period) + amplitude * np.sin(2 * np.pi * freq_ratio * t / period)
-    raise ValueError(f"Unknown synthetic function: {function!r} (expected 'sine' or 'sine_sum')")
+    if function == "delay":
+        return _mackey_glass(length, tau)
+    if function == "xor":
+        return amplitude * (2 * _temporal_xor(length, seed) - 1)
+    if function == "lfsr":
+        return amplitude * (2 * _lfsr(length, lfsr_bits, seed) - 1)
+    raise ValueError(
+        f"Unknown synthetic function: {function!r} (expected 'sine', 'sine_sum', 'delay', 'xor', or 'lfsr')"
+    )
 
 
 def collect(datasource_id: int, config: dict) -> CollectResult:
@@ -69,6 +169,8 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     period = float(config.get("period", 50))
     amplitude = float(config.get("amplitude", 1.0))
     freq_ratio = float(config.get("freq_ratio", 5))
+    tau = float(config.get("tau", 17))
+    lfsr_bits = int(config.get("lfsr_bits", 8))
     base_price = float(config.get("base_price", 100.0))
     noise = float(config.get("noise", 0.0))
     seed = int(config.get("seed", 42))
@@ -80,7 +182,9 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     if period <= 0:
         raise ValueError("period must be positive")
 
-    values = base_price + _generate_series(function, length, period, amplitude, freq_ratio)
+    values = base_price + _generate_series(
+        function, length, period, amplitude, freq_ratio, tau=tau, lfsr_bits=lfsr_bits, seed=seed
+    )
     if noise > 0:
         rng = np.random.default_rng(seed)
         values = values + rng.normal(0, noise, length)
