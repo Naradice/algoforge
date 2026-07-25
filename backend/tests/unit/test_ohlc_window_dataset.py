@@ -297,6 +297,85 @@ class TestDigitsTokenLevel:
             )
 
 
+class TestSaxTokenLevel:
+    def test_sax_produces_integer_tokens_within_vocab(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="sax", sax_paa_size=5, n_bins=7,
+        )
+
+        assert ds.vocab_size == 7
+        assert ds.token_bin_edges is not None
+        assert ds.token_stream.dtype == np.int64
+        assert ds.token_stream.min() >= 0 and ds.token_stream.max() < 7
+        # n=1500 -> diff length 1499 -> n_segments = 1499 // 5 = 299
+        assert len(ds.token_stream) == 299
+
+    def test_sax_bins_are_roughly_balanced_via_quantile_edges(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        # period=63 (not an exact multiple of sax_paa_size=5) avoids the degenerate case where a
+        # purely periodic, noise-free signal PAA-averages down to only a handful of exactly
+        # repeated values -- with period=60 (60/5=12 exactly), np.digitize's strict "<" boundary
+        # against a quantile edge that lands exactly on one of only ~12 distinct repeated values
+        # can leave a bin genuinely empty, which is correct digitize behaviour, not a bug.
+        _make_sine_parquet(artifact_store / "ds.parquet", n=3000, period=63)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="sax", sax_paa_size=5, n_bins=7,
+        )
+
+        counts = np.bincount(ds.token_stream, minlength=7)
+        assert counts.min() > 0
+        assert counts.max() / max(counts.min(), 1) < 5
+
+    def test_sax_tgt_realigns_to_the_last_step_of_each_paa_segment(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        p, obs_len, pred_len = 5, 10, 5
+        _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=obs_len, pred_len=pred_len, normalize="zscore",
+            token_level="sax", sax_paa_size=p, n_bins=7,
+        )
+        raw = pd_read_close(artifact_store / "ds.parquet")
+        zscore = (raw - raw.mean()) / raw.std()
+
+        # First training window's last tgt element (index obs_len-1+pred_len into the
+        # SAX-realigned tgt array) should equal the zscored raw value at time (obs_len+pred_len)*p
+        # -- tgt_data[k] = zscore[(k+1)*p] by construction (segment k covers up to time (k+1)*p).
+        expected = zscore[(obs_len + pred_len) * p]
+        assert ds._train_tgt[0, -1, 0] == pytest.approx(expected, abs=1e-4)
+
+    def test_sax_rejects_series_shorter_than_paa_size(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=10)
+        with pytest.raises(ValueError, match="sax_paa_size"):
+            OHLCWindowDataset(
+                "ds.parquet", obs_len=3, pred_len=1, token_level="sax", sax_paa_size=50,
+            )
+
+    def test_sax_token_stream_recurs_at_the_signal_period_in_paa_units(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        period = 60
+        p = 5
+        _make_sine_parquet(artifact_store / "ds.parquet", n=3000, period=period)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="sax", sax_paa_size=p, n_bins=7,
+        )
+
+        stream = ds.token_stream
+        lag = period // p  # segments per signal period
+        match_rate = np.mean(stream[:-lag] == stream[lag:])
+        assert match_rate > 1 / 7  # well above the 1/n_bins chance rate
+
+
 def pd_read_close(path):
     return pd.read_parquet(path)["close"].values.astype(np.float32)
 

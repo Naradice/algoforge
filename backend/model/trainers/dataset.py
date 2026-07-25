@@ -40,6 +40,11 @@ val_loss alone. See docs/model-layer.md, "Comparing training runs" / token_level
                        multiple token *positions* -- src windows are [obs_len, 1+n_digits], and
                        the model's embedding path flattens this into a length-obs_len*(1+n_digits)
                        sequence before the backbone (see LSTMModel/Seq2SeqTransformer).
+    "sax"            — src = SAX symbols: PAA (non-overlapping segment means, factor
+                       `sax_paa_size`) then the same quantile discretization as quantize_diff,
+                       into `n_bins` symbols. Classic SAX. Each src array position now represents
+                       `sax_paa_size` underlying time steps, not one -- tgt is re-aligned to the
+                       last underlying step of each PAA segment.
 Only single-feature (`feature_cols` of length 1) datasets support token_level -- multi-feature
 tokenized input isn't implemented.
 """
@@ -76,6 +81,7 @@ class OHLCWindowDataset:
         cluster_window: int = 20,
         n_clusters: int = 20,
         n_digits: int = 3,
+        sax_paa_size: int = 5,
     ) -> None:
         df, feature_cols = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         raw = df[feature_cols].values.astype(np.float32)
@@ -216,6 +222,37 @@ class OHLCWindowDataset:
 
                 self.vocab_size = 12  # digits 0-9 + 2 sign tokens
                 self.token_stream = src_data.reshape(-1)
+            elif token_level == "sax":
+                # Symbolic Aggregate approXimation: PAA (non-overlapping segment means, factor
+                # sax_paa_size) then quantile discretization into n_bins symbols -- the same
+                # quantile-bin logic as quantize_diff, reused here after a downsampling step.
+                # Classic SAX uses Gaussian breakpoints, which assumes the underlying values are
+                # normally distributed; a differenced periodic signal's derivative typically
+                # isn't (e.g. arcsine-shaped for a pure sine wave -- see quantize_diff above), so
+                # this uses the same empirical-quantile approach as quantize_diff instead.
+                p = sax_paa_size
+                n_diff = len(diff_full)
+                n_segments = n_diff // p
+                if n_segments < 1:
+                    raise ValueError(f"Series too short ({n_diff} diffs) for sax_paa_size={p}")
+                trimmed = diff_full[: n_segments * p, 0]
+                paa = trimmed.reshape(n_segments, p).mean(axis=1)  # [n_segments]
+
+                train_boundary = max(1, int(n_segments * (1 - val_split)))
+                qs = np.linspace(0, 1, n_bins + 1)[1:-1]
+                edges = np.quantile(paa[:train_boundary], qs)
+                self.token_bin_edges = edges
+                self.vocab_size = n_bins
+                sax_ids = np.digitize(paa, edges).astype(np.int64)
+
+                src_data = sax_ids.reshape(-1, 1)
+                self.token_stream = sax_ids
+                # Segment i covers diff_full[i*p:(i+1)*p], underlying time range
+                # [i*p+1, (i+1)*p] -- its token represents "as of time (i+1)*p", which pairs with
+                # tgt_data[(i+1)*p - 1]. Unlike cluster's contiguous trailing trim, PAA's
+                # non-overlapping segments need a strided index selection, not a slice.
+                tgt_idx = np.arange(1, n_segments + 1) * p - 1
+                tgt_data = tgt_data[tgt_idx]
             else:
                 raise ValueError(f"Unknown token_level: {token_level!r}")
 
