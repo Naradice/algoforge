@@ -223,6 +223,84 @@ class TestClusterTokenLevel:
         assert match_rate > 3 / 8  # well above the 1/n_clusters chance rate
 
 
+class TestDigitsTokenLevel:
+    def test_digits_expand_one_step_into_sign_plus_n_digits_token_positions(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="digits", n_digits=3,
+        )
+
+        assert ds.vocab_size == 12
+        assert ds._train_src.dtype == np.int64
+        # obs_len=10 time steps, each expanding to (1 sign + 3 digits) = 4 token positions
+        assert ds._train_src.shape[1:] == (10, 4)
+
+    def test_digit_tokens_are_0_9_and_sign_tokens_are_10_or_11(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="digits", n_digits=3,
+        )
+
+        sign_col = ds.token_stream.reshape(-1, 4)[:, 0]
+        digit_cols = ds.token_stream.reshape(-1, 4)[:, 1:]
+        assert set(np.unique(sign_col)).issubset({10, 11})
+        assert digit_cols.min() >= 0 and digit_cols.max() <= 9
+
+    def test_digit_decoding_reconstructs_the_true_diff_within_scale_precision(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="digits", n_digits=3,
+        )
+        raw = pd_read_close(artifact_store / "ds.parquet")
+        true_diff = np.diff(raw)
+
+        toks = ds.token_stream.reshape(-1, 4)
+        sign = np.where(toks[:, 0] == 11, -1.0, 1.0)
+        magnitude = toks[:, 1] * 100 + toks[:, 2] * 10 + toks[:, 3]
+        decoded = sign * magnitude / ds.digit_scale
+
+        assert np.allclose(decoded, true_diff, atol=1.0 / ds.digit_scale + 1e-6)
+
+    def test_digits_tgt_stays_continuous_with_the_standard_one_row_trim(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        ds_digits = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore",
+            token_level="digits", n_digits=3,
+        )
+        ds_diff = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="zscore", token_level="diff",
+        )
+
+        assert ds_digits._train_tgt.dtype == np.float32
+        # digits doesn't drop any time steps (unlike cluster's window trim) -- same tgt length as diff.
+        assert ds_digits._train_tgt.shape[0] == ds_diff._train_tgt.shape[0]
+
+    def test_digits_rejects_multiple_feature_cols(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        with pytest.raises(ValueError, match="one feature_col"):
+            OHLCWindowDataset(
+                "ds.parquet", obs_len=10, pred_len=5, feature_cols=["open", "close"],
+                token_level="digits",
+            )
+
+
+def pd_read_close(path):
+    return pd.read_parquet(path)["close"].values.astype(np.float32)
+
+
 class TestComputeTokenCharacteristics:
     def test_uniform_random_tokens_have_near_max_entropy_and_low_mutual_information(self):
         from model.trainers.dataset import compute_token_characteristics

@@ -81,11 +81,17 @@ class Seq2SeqTransformer(nn.Module):
         **kwargs,
     ) -> torch.Tensor:
         """
-        src: [batch, obs_len, input_dim] (or [batch, obs_len, 1] integer token ids if self.src_embed)
+        src: [batch, obs_len, input_dim] continuous, or [batch, obs_len, k] integer token ids if
+             self.src_embed -- k=1 for most token_levels, k=1+n_digits for token_level="digits"
+             (one sign token + one token per digit place, per underlying time step).
         tgt: [batch, pred_len, output_dim]
         Returns: [batch, pred_len, output_dim]
         """
-        src_proj = self.src_embed(src.long().squeeze(-1)) if self.src_embed is not None else self.src_proj(src)
+        if self.src_embed is not None:
+            emb = self.src_embed(src.long())            # [batch, obs_len, k, d_model]
+            src_proj = emb.reshape(emb.size(0), -1, emb.size(-1))  # [batch, obs_len*k, d_model]
+        else:
+            src_proj = self.src_proj(src)
         src_emb = self.pos_enc(src_proj)
         tgt_emb = self.pos_enc(self.tgt_proj(tgt))
 

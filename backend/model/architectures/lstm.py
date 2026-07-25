@@ -48,11 +48,14 @@ class LSTMModel(nn.Module):
 
     def forward(self, src: torch.Tensor, tgt: torch.Tensor | None = None, *args, **kwargs) -> torch.Tensor:
         """
-        src: [batch, obs_len, input_dim] (or [batch, obs_len, 1] integer token ids if self.embed)
+        src: [batch, obs_len, input_dim] continuous, or [batch, obs_len, k] integer token ids if
+             self.embed -- k=1 for most token_levels, k=1+n_digits for token_level="digits"
+             (one sign token + one token per digit place, per underlying time step).
         Returns: [batch, pred_len, output_dim]
         """
         if self.embed is not None:
-            src = self.embed(src.long().squeeze(-1))  # [batch, obs_len] -> [batch, obs_len, embedding_dim]
+            src = self.embed(src.long())               # [batch, obs_len, k, embedding_dim]
+            src = src.reshape(src.size(0), -1, src.size(-1))  # [batch, obs_len*k, embedding_dim]
         out, _ = self.lstm(src)
         last = out[:, -1, :]                         # [batch, hidden_dim]
         pred = self.head(last)                       # [batch, output_dim * pred_len]

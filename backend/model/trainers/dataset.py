@@ -32,6 +32,14 @@ val_loss alone. See docs/model-layer.md, "Comparing training runs" / token_level
                        z-scored shapes of `cluster_window` consecutive differences, fit on the
                        training split only. Groups short movement patterns (e.g. "uptrend",
                        "range", "sharp drop") into a token per shape rather than per raw value.
+    "digits"         — src = recursive/base-10 digit tokens: each step's difference is scaled to
+                       an integer (scale fit from the training split's 99.9th percentile) and
+                       represented as (1 sign token + `n_digits` digit tokens 0-9), so the model
+                       sees numeric *structure* (place value) instead of one opaque symbol per
+                       discretized level. The only token_level that expands one time step into
+                       multiple token *positions* -- src windows are [obs_len, 1+n_digits], and
+                       the model's embedding path flattens this into a length-obs_len*(1+n_digits)
+                       sequence before the backbone (see LSTMModel/Seq2SeqTransformer).
 Only single-feature (`feature_cols` of length 1) datasets support token_level -- multi-feature
 tokenized input isn't implemented.
 """
@@ -67,6 +75,7 @@ class OHLCWindowDataset:
         n_bins: int = 7,
         cluster_window: int = 20,
         n_clusters: int = 20,
+        n_digits: int = 3,
     ) -> None:
         df, feature_cols = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         raw = df[feature_cols].values.astype(np.float32)
@@ -83,6 +92,8 @@ class OHLCWindowDataset:
         self.token_bin_edges: np.ndarray | None = None
         self.token_stream: np.ndarray | None = None  # flat, pre-windowing -- see compute_token_characteristics
         self.cluster_centroids: np.ndarray | None = None  # only set for token_level="cluster"
+        self.digit_scale: float | None = None  # only set for token_level="digits"
+        self.n_digits: int | None = None  # only set for token_level="digits"
 
         if token_level is None:
             src_data = tgt_data
@@ -141,10 +152,29 @@ class OHLCWindowDataset:
                 train_boundary = max(n_clusters, int(n_shapes * (1 - val_split)))
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
                 kmeans.fit(shapes_norm[:train_boundary])
-                cluster_ids = kmeans.predict(shapes_norm).astype(np.int64)
+                cluster_ids_raw = kmeans.predict(shapes_norm).astype(np.int64)
+
+                # k-means cluster labels are arbitrary (unordered) -- two shapes that are
+                # adjacent in the smoothly-evolving underlying signal can land on wildly
+                # different label numbers with nothing relating them. Relabel by sorting
+                # centroids along their first principal component, so temporally-adjacent
+                # tokens (which are usually shape-adjacent too, since consecutive windows
+                # overlap by cluster_window-1 points) get numerically-adjacent ids as well.
+                # An LSTM's recurrent state has to track this sequence step by step; giving it
+                # an ordinal id sequence instead of an arbitrary one measurably reduced how much
+                # the raw id jumps between consecutive tokens (embedding lookup itself doesn't
+                # require this, but gradient descent finding a smooth representation is easier
+                # when the id sequence is already smooth).
+                centered = kmeans.cluster_centers_ - kmeans.cluster_centers_.mean(axis=0)
+                _, _, vt = np.linalg.svd(centered, full_matrices=False)
+                pc1 = centered @ vt[0]
+                order = np.argsort(pc1)
+                relabel = np.empty(n_clusters, dtype=np.int64)
+                relabel[order] = np.arange(n_clusters)
+                cluster_ids = relabel[cluster_ids_raw]
 
                 self.vocab_size = n_clusters
-                self.cluster_centroids = kmeans.cluster_centers_
+                self.cluster_centroids = kmeans.cluster_centers_[order]
                 src_data = cluster_ids.reshape(-1, 1)
                 self.token_stream = cluster_ids
                 # Shape window i covers diff_full[i:i+w], i.e. underlying time range
@@ -152,6 +182,40 @@ class OHLCWindowDataset:
                 # pairs with tgt_data[i+w-1] ("value at time i+w" after tgt_data's existing
                 # 1-row trim above). Trim the front of tgt_data to match.
                 tgt_data = tgt_data[w - 1:]
+            elif token_level == "digits":
+                # Recursive/digit tokens: represent each step's magnitude compositionally (base-10
+                # digits) instead of atomically (one symbol per value, as quantize_diff does) --
+                # the model has to learn the numeric *structure* (place value) rather than treat
+                # each discretized level as an unrelated category. Unlike every other token_level,
+                # this expands one underlying time step into (1 sign token + n_digits digit
+                # tokens) token *positions* -- src windows are [obs_len, 1+n_digits] instead of
+                # [obs_len, 1]; get_step_trainer_fn/LSTMModel/Seq2SeqTransformer's embedding path
+                # flattens this to a length-(obs_len*(1+n_digits)) sequence before the backbone.
+                # tgt alignment is unaffected (still one tgt value per underlying time step, same
+                # 1-row trim as diff/quantize_diff above) since no time steps are dropped, only
+                # each one's src representation is now multi-token.
+                train_boundary = max(1, int(len(diff_full) * (1 - val_split)))
+                train_abs = np.abs(diff_full[:train_boundary, 0])
+                p999 = np.percentile(train_abs, 99.9)
+                max_int = 10 ** n_digits - 1
+                scale = max_int / p999 if p999 > 0 else 1.0
+                self.digit_scale = scale
+                self.n_digits = n_digits
+
+                abs_vals = np.abs(diff_full[:, 0])
+                scaled = np.clip(np.round(abs_vals * scale), 0, max_int).astype(np.int64)
+                digit_toks = np.zeros((len(scaled), n_digits), dtype=np.int64)
+                remainder = scaled.copy()
+                for d in range(n_digits - 1, -1, -1):
+                    digit_toks[:, d] = remainder % 10
+                    remainder //= 10
+                # Sign gets its own token ids (10=non-negative, 11=negative), kept separate from
+                # the 0-9 digit vocabulary rather than folded into it.
+                sign_tok = np.where(diff_full[:, 0] < 0, 11, 10).astype(np.int64)
+                src_data = np.concatenate([sign_tok.reshape(-1, 1), digit_toks], axis=1)  # [n, 1+n_digits]
+
+                self.vocab_size = 12  # digits 0-9 + 2 sign tokens
+                self.token_stream = src_data.reshape(-1)
             else:
                 raise ValueError(f"Unknown token_level: {token_level!r}")
 
