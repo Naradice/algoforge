@@ -28,6 +28,25 @@ ARCHITECTURE_SCHEMAS = {
         },
         "_note": "input_dim and output_dim are set automatically from the selected feature columns at training time.",
     },
+    "decoder_only": {
+        "type": "object",
+        "properties": {
+            "d_model": {"type": "integer", "default": 64},
+            "nhead": {"type": "integer", "default": 4},
+            "num_layers": {"type": "integer", "default": 2},
+            "dim_feedforward": {"type": "integer", "default": 256},
+            "dropout": {"type": "number", "default": 0.1},
+            "use_attention": {
+                "type": "boolean", "default": True,
+                "description": "true = standard causal self-attention (GPT-style). false = self-attention "
+                "replaced by a fixed-shape learned linear mix (CausalLinearMix) -- everything else in the "
+                "block (FFN/LayerNorm/residual/positional encoding) stays identical, isolating attention's "
+                "own contribution to a downstream result.",
+            },
+        },
+        "_note": "input_dim, output_dim, and seq_len are set automatically from the selected feature columns "
+        "and obs_len (adjusted for token_level=\"digits\"'s multi-token-per-step expansion) at training time.",
+    },
     "timegan": {
         "type": "object",
         "properties": {

@@ -4,6 +4,9 @@ Model factory — builds a model instance from architecture name + config dict.
 Supported architectures:
     "lstm"                 → LSTMModel
     "seq2seq_transformer"  → Seq2SeqTransformer
+    "decoder_only"         → DecoderOnlyTransformer -- GPT-style causal decoder; use_attention=False
+                             swaps self-attention for a fixed-shape learned linear mix, an ablation
+                             for isolating attention's contribution (see decoder_only.py)
     "timegan"              → TimeGAN
     "cnn_lstm"             → CNNLSTMModel
     "tcn"                  → TCNModel
@@ -20,6 +23,7 @@ import torch
 
 from .lstm import LSTMModel
 from .transformer import Seq2SeqTransformer
+from .decoder_only import DecoderOnlyTransformer
 from .gan import TimeGAN
 from .cnn_lstm import CNNLSTMModel
 from .tcn import TCNModel
@@ -46,6 +50,24 @@ ARCHITECTURE_DEFAULTS: dict[str, dict] = {
         "num_decoder_layers": 2,
         "dim_feedforward": 256,
         "dropout": 0.1,
+    },
+    "decoder_only": {
+        "input_dim": 1,
+        "output_dim": 1,
+        "seq_len": 60,
+        "pred_len": 10,
+        "d_model": 64,
+        "nhead": 4,
+        "num_layers": 2,
+        "dim_feedforward": 256,
+        "dropout": 0.1,
+        # The ablation switch: True = standard causal self-attention (GPT-style decoder). False =
+        # self-attention replaced by CausalLinearMix, a fixed-shape learned linear mixing layer --
+        # isolates whether attention's content-dependent weighting specifically matters for a
+        # result (e.g. a scaling-law curve), vs. "any learned cross-position mixing at all".
+        # Everything else in the block (FFN, LayerNorm, residual, positional encoding) is
+        # identical between the two settings -- see model/architectures/decoder_only.py.
+        "use_attention": True,
     },
     "timegan": {
         "input_dim": 1,
@@ -105,6 +127,7 @@ ARCHITECTURE_DEFAULTS: dict[str, dict] = {
 TRAINING_DEFAULTS: dict[str, dict] = {
     "lstm": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "seq2seq_transformer": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    "decoder_only": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "timegan": {"obs_len": 60, "pred_len": 60, "epochs": 100, "batch_size": 32, "lr": 0.0002, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "cnn_lstm": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "tcn": {"obs_len": 60, "pred_len": 10, "epochs": 50, "batch_size": 32, "lr": 0.001, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
@@ -126,6 +149,8 @@ def build_model(architecture: str, config: dict, device: str = _DEVICE) -> torch
         return LSTMModel(**merged, device=device)
     elif arch == "seq2seq_transformer":
         return Seq2SeqTransformer(**merged, device=device)
+    elif arch == "decoder_only":
+        return DecoderOnlyTransformer(**merged, device=device)
     elif arch == "timegan":
         return TimeGAN(**merged, device=device)
     elif arch == "cnn_lstm":

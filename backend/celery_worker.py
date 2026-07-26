@@ -735,6 +735,13 @@ async def _train_model(training_run_id: int) -> dict:
             if dataset.vocab_size is not None:
                 effective_config["vocab_size"] = dataset.vocab_size
                 effective_config["embedding_dim"] = hp.get("embedding_dim")
+            # decoder_only's use_attention=False path (CausalLinearMix) is a fixed-shape layer,
+            # unlike attention/LSTM which are sequence-length-agnostic -- it needs the model's
+            # true input sequence length at construction time. token_level="digits" expands one
+            # time step into (1 + n_digits) token positions, so raw obs_len undercounts it for
+            # that case; every other token_level (including None) is 1 token per step.
+            tokens_per_step = (1 + dataset.n_digits) if dataset.n_digits is not None else 1
+            effective_config["seq_len"] = effective_config["obs_len"] * tokens_per_step
             model = build_model(architecture, effective_config, device=device)
         except Exception as e:
             async with factory() as db:

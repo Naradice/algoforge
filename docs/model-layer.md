@@ -33,11 +33,39 @@ RTX 3060 Ti (~25–30×).
 |---|---|---|
 | `lstm` | LSTM autoencoder/predictor | Short-term price forecasting |
 | `seq2seq_transformer` | Transformer encoder-decoder | Multi-step sequence prediction |
+| `decoder_only` | GPT-style causal decoder (no encoder/cross-attention). `use_attention=false` swaps self-attention for a fixed-shape learned linear mix (`CausalLinearMix`), everything else in the block identical — an ablation for isolating how much of a result (e.g. a scaling-law curve) attention's content-dependent weighting specifically accounts for | Measuring attention's own contribution, holding depth/width/FFN/positional-encoding constant |
 | `timegan` | TimeGAN generative model | Synthetic data generation |
 | `rl_agent` | Reinforcement learning agent | Adaptive policy learning |
 | `ar` / `ma` / `arma` | Classical statistical baseline (statsmodels ARIMA) | Sanity-checking whether a neural net beats a naive fit — see "Baseline Models" below |
 
 Configuration schemas: `GET /model-config/architectures/{architecture}`
+
+### `decoder_only` — isolating attention's contribution
+
+Two models built from the exact same class (`backend/model/architectures/decoder_only.py`),
+differing in exactly one sub-layer:
+
+- `use_attention: true` (default) — standard causal self-attention (`nn.MultiheadAttention` with a
+  causal mask), i.e. a GPT-style decoder block.
+- `use_attention: false` — self-attention replaced by `CausalLinearMix`, a fixed-shape, causal
+  learned linear mixing layer: position *t*'s output is a learned linear combination of positions
+  `0..t`. The weights are static (don't depend on input content, unlike attention's per-input
+  dynamic weights) but are still learned during training — this isolates whether attention's
+  *content-dependent* weighting specifically matters for a result, as opposed to "any learned
+  cross-position mixing at all" (a much more extreme, less informative ablation would be removing
+  cross-position mixing entirely).
+
+FFN, LayerNorm, residual connections, and positional encoding are bit-for-bit identical between
+the two settings, so any difference in a downstream result (e.g. a scaling-law curve across model
+size or data volume) is attributable to that one sub-layer swap.
+
+`seq_len` (the fixed sequence length `CausalLinearMix`'s weight matrix is sized to) is computed
+automatically in `celery_worker.py` from `obs_len`, not set directly — it accounts for
+`token_level="digits"` expanding one time step into `1 + n_digits` token positions (every other
+`token_level`, including none, is 1 token per step). Unlike attention/LSTM, this architecture's
+`use_attention=false` path is *not* sequence-length-agnostic, since `CausalLinearMix`'s weights are
+tied to a specific length — a training run's `obs_len`/`token_level` can't change after the model
+config is set without also changing `seq_len`.
 
 ---
 
