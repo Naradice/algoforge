@@ -534,6 +534,13 @@ def compute_long_range_dependence(df: pd.DataFrame) -> dict:
     _, r = _close_and_returns(df)
     if len(r) < 32:
         raise ValueError("Need at least 32 returns")
+    # adfuller's autolag search cost scales with both n and the data's own autocorrelation
+    # structure (not just a clean O(n) or O(n^2)) -- on a 2M-row highly-regular series (e.g.
+    # temporal XOR) it was observed to run for 80+ minutes before the worker got OOM-killed,
+    # while an equally-sized but differently-structured series (LFSR) finished in seconds.
+    # Decimate like every other expensive analysis in this module rather than trust autolag
+    # to stay fast on arbitrary data.
+    r, downsampled = _decimate(r)
     h = _hurst(r)
     nlags = min(200, len(r) // 2 - 1)
     acf_vals = _acf_safe(r, nlags)
@@ -554,6 +561,8 @@ def compute_long_range_dependence(df: pd.DataFrame) -> dict:
         "acf_values": acf_vals,
         "adf_statistic": float(adf_stat),
         "adf_pvalue": float(adf_pvalue),
+        "n_used": int(len(r)),
+        "downsampled": downsampled,
     }
 
 
@@ -622,8 +631,8 @@ def compute_complexity_nonlinearity(df: pd.DataFrame) -> dict:
     _, r = _close_and_returns(df)
     if len(r) < 32:
         raise ValueError("Need at least 32 returns")
-    permutation_entropy = _permutation_entropy(r, order=3, delay=1)
     r_capped, downsampled = _decimate(r)
+    permutation_entropy = _permutation_entropy(r_capped, order=3, delay=1)
     sample_entropy = _sample_entropy(r_capped, m=2)
     try:
         bds_stat, bds_pvalue = _bds(r_capped, max_dim=2)
