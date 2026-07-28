@@ -588,7 +588,15 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     log.info(f"DDM collect done: {trade_count} total trades, {batch_num} batches")
 
     from data.parquet_reader import load_ddm_ticks
-    tick_df = load_ddm_ticks(out_dir)  # capped at _MAX_FILES (100) to avoid OOM on large runs
+    # load_ddm_ticks' default cap (_MAX_FILES=100, ~1M ticks) is sized for interactive
+    # preview reads, not this one-shot materialization step -- for a finite run it silently
+    # evenly-sampled ~2% of the batches just written, which (at typical DDM trade density)
+    # produced only ~500 non-empty OHLC rows for a requested length of 20,000 candles. A
+    # finite collection is a one-time batch job, so read back everything this run wrote.
+    # Endless mode keeps the small default: it grows unboundedly across resumed runs and is
+    # consumed for live preview, where the existing cap is the correct, intentional behavior.
+    max_files = batch_num if not endless else None
+    tick_df = load_ddm_ticks(out_dir) if max_files is None else load_ddm_ticks(out_dir, max_files=max_files)
     tick_series = tick_df["price"]
     ohlc = _ticks_to_ohlc(tick_series, timeframe)
 
