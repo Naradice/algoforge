@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import asyncio
 import logging
+import math
 import os
 from datetime import datetime, timezone
 
@@ -523,6 +524,18 @@ class _TrainingResolutionError(Exception):
         self.code = code
 
 
+def _json_safe(value):
+    """NaN/Inf are valid Python floats but not valid JSON -- Postgres' JSONB column rejects the
+    literal "Infinity"/"NaN" tokens asyncpg's encoder produces for them, crashing the whole
+    training task on the checkpoint-metrics write (seen: an LSTM run diverging on a token
+    representation and writing val_loss=inf). Sanitize right before it goes into a JSONB column;
+    the plain float columns (TrainingRun.val_loss, TrainingRunMetric.val_loss) store inf/nan fine.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
 async def _resolve_training_context(factory, training_run_id: int):
     """Load the TrainingRun + MLModel, resolve preprocessing (recipe or inline) + the dataset
     artifact, snapshot the resolved hyperparams back onto the run, and flip status to
@@ -909,7 +922,7 @@ async def _train_model(training_run_id: int) -> dict:
                     db.add(TrainingCheckpoint(
                         training_run_id=training_run_id,
                         epoch=n_checks,
-                        metrics={"train_loss": train_loss, "val_loss": val_loss, "step": steps_done},
+                        metrics={"train_loss": _json_safe(train_loss), "val_loss": _json_safe(val_loss), "step": steps_done},
                         artifact_path=str(ckpt_path.relative_to(store)),
                     ))
                     db.add(TrainingRunMetric(
@@ -983,7 +996,7 @@ async def _train_model(training_run_id: int) -> dict:
                     db.add(TrainingCheckpoint(
                         training_run_id=training_run_id,
                         epoch=epoch,
-                        metrics={"train_loss": train_loss, "val_loss": val_loss},
+                        metrics={"train_loss": _json_safe(train_loss), "val_loss": _json_safe(val_loss)},
                         artifact_path=str(ckpt_path.relative_to(store)),
                     ))
                     db.add(TrainingRunMetric(
