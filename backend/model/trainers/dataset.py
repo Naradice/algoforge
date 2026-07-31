@@ -60,8 +60,13 @@ import torch
 
 
 class OHLCWindowDataset:
-    # Max tick batch files to load from a DDM directory (100 × 10 000 = 1 M ticks)
+    # Starting point for the adaptive tail-read of a DDM tick directory (see
+    # _load_preprocessed_df) -- grown until enough OHLC rows are produced.
     _MAX_TICK_FILES = 100
+    # Hard ceiling on how many recent tick batch files the adaptive read will ever load,
+    # regardless of how many OHLC rows are still short of the target. Safety valve against
+    # a pathological trade-density config, not expected to be hit in normal use.
+    _MAX_TICK_FILES_HARD_CAP = 50_000
     # Max OHLC rows to keep after loading; keeps window arrays from exceeding ~1 GB RAM
     _MAX_OHLC_ROWS = 50_000
 
@@ -326,13 +331,27 @@ class OHLCWindowDataset:
         full_path = store / artifact_path
 
         if full_path.is_dir():
-            # DDM tick directory: load a capped sample and resample to M1 OHLC
-            from data.parquet_reader import load_ddm_ticks
-            tick_df = load_ddm_ticks(full_path, max_files=cls._MAX_TICK_FILES)
-            ohlc = tick_df["price"].resample("1min").ohlc()
-            ohlc.columns = ["open", "high", "low", "close"]
-            ohlc["volume"] = tick_df["price"].resample("1min").count()
-            df = ohlc.dropna()
+            # DDM tick directory: adaptively load the MOST RECENT tick batches, growing the
+            # read until there are enough OHLC rows to satisfy this run's row cap. This must
+            # be a tail read, not an evenly-sampled cross-section of the whole run (what
+            # load_ddm_ticks does) -- for a large DDM dataset, evenly sampling e.g. 100
+            # fragments out of thousands scatters non-contiguous few-minute clusters across
+            # the whole timeline, which after resample+dropna leaves the tail (= the
+            # validation split, see split_idx below) with too few contiguous rows to fill even
+            # one eval batch -- eval_epoch() then silently returns val_loss=inf every check.
+            from data.parquet_reader import load_ddm_ticks_windowed
+
+            target_rows = max_rows if max_rows is not None else cls._MAX_OHLC_ROWS
+            n_files = cls._MAX_TICK_FILES
+            while True:
+                tick_df, has_more = load_ddm_ticks_windowed(full_path, n_files=n_files)
+                ohlc = tick_df["price"].resample("1min").ohlc()
+                ohlc.columns = ["open", "high", "low", "close"]
+                ohlc["volume"] = tick_df["price"].resample("1min").count()
+                df = ohlc.dropna()
+                if len(df) >= target_rows or not has_more or n_files >= cls._MAX_TICK_FILES_HARD_CAP:
+                    break
+                n_files = min(n_files * 4, cls._MAX_TICK_FILES_HARD_CAP)
         else:
             df = pd.read_parquet(full_path)
 

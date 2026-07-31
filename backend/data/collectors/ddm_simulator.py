@@ -419,6 +419,13 @@ def _write_batch(
     # Update live metadata so the UI can show progress during a running job.
     # Written atomically (temp file + rename) so a mid-write crash never leaves
     # a corrupt _meta.json that would trigger _clear_artifact_dir() on restart.
+    #
+    # The tmp filename is unique per batch_num (not a fixed "_meta.tmp"): on a bind-mounted
+    # Docker Desktop volume (dev on Windows), a fixed name let a still-in-flight write+rename
+    # from one batch collide with the next batch's write, so replace() sometimes found the tmp
+    # file already consumed -- FileNotFoundError. A retry-with-backoff on the rename itself
+    # absorbs any remaining transient filesystem lag from the same bind-mount layer, mirroring
+    # _rmtree's retry above for the equivalent Windows-filesystem-flakiness class of issue.
     from_ts = timestamps[0]
     to_ts = timestamps[-1]
     meta = {
@@ -428,9 +435,18 @@ def _write_batch(
         "batch_num": batch_num,
     }
     meta_path = out_dir / "_meta.json"
-    tmp_path = meta_path.with_suffix(".tmp")
+    tmp_path = out_dir / f"_meta.{batch_num}.tmp"
     tmp_path.write_text(json.dumps(meta))
-    tmp_path.replace(meta_path)  # atomic on POSIX; best-effort on Windows
+    import time as _time
+    for attempt in range(4):
+        try:
+            tmp_path.replace(meta_path)
+            break
+        except OSError:
+            if attempt < 3:
+                _time.sleep(0.2)
+            else:
+                raise
 
     # Push both files to remote object storage (no-op if ARTIFACT_REMOTE_URL unset).
     from data.artifact_store import upload as _upload
