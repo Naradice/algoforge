@@ -392,6 +392,7 @@ def _write_batch(
     tick_times: list[float],
     start_ts: pd.Timestamp,
     total_trades: int = 0,
+    write_meta: bool = True,
 ) -> None:
     """Write one batch of tick prices into a Hive date-partitioned parquet file.
 
@@ -400,6 +401,12 @@ def _write_batch(
 
     Output path: out_dir/year=YYYY/month=MM/day=DD/part-NNNNNN.parquet
     Partition key is derived from the first tick timestamp in the batch.
+
+    write_meta=False skips the _meta.json update (the data parquet is still always written).
+    The caller throttles how often this is True -- see collect()'s _last_meta_write -- since a
+    full meta write+atomic-rename on every single batch (as often as several times a second for
+    a large run) is disproportionately expensive I/O for what's just a progress marker, and on a
+    Windows dev box was observed to help pin the disk at 100% utilization and hang Docker Desktop.
     """
     timestamps = start_ts + pd.to_timedelta(tick_times, unit="s")
     df = pd.DataFrame({"price": prices}, index=timestamps)
@@ -415,6 +422,13 @@ def _write_batch(
     )
     part_dir.mkdir(parents=True, exist_ok=True)
     df.to_parquet(part_dir / f"part-{batch_num:06d}.parquet")
+
+    # Push the data file to remote object storage (no-op if ARTIFACT_REMOTE_URL unset).
+    from data.artifact_store import upload as _upload
+    _upload(part_dir / f"part-{batch_num:06d}.parquet")
+
+    if not write_meta:
+        return
 
     # Update live metadata so the UI can show progress during a running job.
     # Written atomically (temp file + rename) so a mid-write crash never leaves
@@ -448,9 +462,6 @@ def _write_batch(
             else:
                 raise
 
-    # Push both files to remote object storage (no-op if ARTIFACT_REMOTE_URL unset).
-    from data.artifact_store import upload as _upload
-    _upload(part_dir / f"part-{batch_num:06d}.parquet")
     _upload(meta_path)
 
 
@@ -581,20 +592,34 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     ticks_buf: list[float] = []
     trade_count = 0
 
+    # Meta.json is a progress marker, not data -- it doesn't need sub-second freshness, and
+    # rewriting it on every single batch (as often as several times a second on a large finite
+    # run) was disproportionately expensive I/O. Throttle it to at most once per interval;
+    # the data parquet is still written every batch regardless.
+    import time as _time
+    _META_WRITE_INTERVAL_S = 2.0
+    _last_meta_write = 0.0
+
     for price, tick in model.simulate_stream(total_seconds=total_seconds):
         trade_count += 1
         prices_buf.append(price)
         ticks_buf.append(tick)
 
         if len(prices_buf) >= BATCH_TICKS:
-            _write_batch(out_dir, batch_num, prices_buf, ticks_buf, start_ts, total_trades=trade_count_offset + trade_count)
+            now = _time.monotonic()
+            write_meta = (now - _last_meta_write) >= _META_WRITE_INTERVAL_S
+            if write_meta:
+                _last_meta_write = now
+            _write_batch(
+                out_dir, batch_num, prices_buf, ticks_buf, start_ts,
+                total_trades=trade_count_offset + trade_count, write_meta=write_meta,
+            )
             log.info(f"DDM batch {batch_num} written: {BATCH_TICKS} trades, total={trade_count_offset + trade_count}")
             prices_buf.clear()
             ticks_buf.clear()
             batch_num += 1
             if batch_sleep > 0:
-                import time
-                time.sleep(batch_sleep)
+                _time.sleep(batch_sleep)
 
     # Flush remaining ticks (fixed mode always lands here; endless never does).
     if prices_buf:
