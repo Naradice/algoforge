@@ -628,18 +628,23 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
 
     log.info(f"DDM collect done: {trade_count} total trades, {batch_num} batches")
 
-    from data.parquet_reader import load_ddm_ticks
-    # load_ddm_ticks' default cap (_MAX_FILES=100, ~1M ticks) is sized for interactive
-    # preview reads, not this one-shot materialization step -- for a finite run it silently
-    # evenly-sampled ~2% of the batches just written, which (at typical DDM trade density)
-    # produced only ~500 non-empty OHLC rows for a requested length of 20,000 candles. A
-    # finite collection is a one-time batch job, so read back everything this run wrote.
-    # Endless mode keeps the small default: it grows unboundedly across resumed runs and is
-    # consumed for live preview, where the existing cap is the correct, intentional behavior.
-    max_files = batch_num if not endless else None
-    tick_df = load_ddm_ticks(out_dir) if max_files is None else load_ddm_ticks(out_dir, max_files=max_files)
-    tick_series = tick_df["price"]
-    ohlc = _ticks_to_ohlc(tick_series, timeframe)
+    if endless:
+        # Live-preview scoped read: bounded by load_ddm_ticks' default cap (_MAX_FILES=100,
+        # ~1M ticks). Endless mode grows unboundedly across resumed runs, so this cap is
+        # intentional here, not a bug.
+        from data.parquet_reader import load_ddm_ticks
+        tick_df = load_ddm_ticks(out_dir)
+        ohlc = _ticks_to_ohlc(tick_df["price"], timeframe)
+    else:
+        # A finite collection is a one-time batch job, so it needs to read back everything
+        # this run wrote (unlike the preview cap above) -- but concatenating every tick
+        # fragment into one DataFrame first (load_ddm_ticks(out_dir, max_files=batch_num))
+        # OOMs for a large run: hundreds of millions of ticks across tens of thousands of
+        # fragments. resample_ddm_ticks_streaming processes a bounded number of fragments
+        # at a time instead, never holding the full tick history in memory.
+        from data.parquet_reader import resample_ddm_ticks_streaming
+        freq = _PANDAS_OFFSET.get(timeframe, "1min")
+        ohlc = resample_ddm_ticks_streaming(out_dir, freq=freq)
 
     return CollectResult(
         artifact_path=artifact_rel,

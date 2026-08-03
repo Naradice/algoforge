@@ -116,6 +116,62 @@ def load_ddm_ticks_windowed(
     return df, has_more
 
 
+def resample_ddm_ticks_streaming(path: Path, freq: str = "1min", chunk_files: int = 200) -> pd.DataFrame:
+    """Resample DDM tick data to OHLC candles without ever holding the full tick
+    history in memory at once.
+
+    load_ddm_ticks(path, max_files=<all fragments>) -- what collect() used for a
+    finite run's one-time materialization -- concatenates every tick fragment into
+    a single DataFrame before resampling. For a large finite run (hundreds of
+    millions of ticks across tens of thousands of fragments) that OOMs; the crash
+    consistently happened right after "DDM collect done" was logged, i.e. in this
+    exact read-back step, not in the simulation loop itself.
+
+    Processes chunk_files fragments (BATCH_TICKS ticks each) at a time instead. A
+    chunk's last resample bucket may still receive ticks from the next chunk, so
+    its raw ticks (not the partial candle) are carried forward and merged before
+    that bucket is finalized -- fragments are chronologically sorted and
+    non-overlapping, so this never revisits an already-finalized bucket.
+
+    Returns a DataFrame with columns [open, high, low, close, volume], matching
+    _ticks_to_ohlc's output.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"DDM artifact directory not found: {path}")
+
+    fragments = _sorted_fragments(path) if _is_partitioned(path) else sorted(path.glob("batch_*.parquet"))
+    if not fragments:
+        raise ValueError(f"No parquet files found in directory: {path}")
+
+    ohlc_chunks: list[pd.DataFrame] = []
+    carry: pd.DataFrame | None = None
+
+    for i in range(0, len(fragments), chunk_files):
+        batch_paths = fragments[i : i + chunk_files]
+        chunk = pd.concat([pd.read_parquet(f) for f in batch_paths]).sort_index()
+        chunk.index = pd.to_datetime(chunk.index, utc=True)
+        combined = pd.concat([carry, chunk]).sort_index() if carry is not None else chunk
+
+        ohlc = combined["price"].resample(freq).ohlc()
+        ohlc["volume"] = combined["price"].resample(freq).count()
+
+        is_last_chunk = (i + chunk_files) >= len(fragments)
+        if is_last_chunk:
+            ohlc_chunks.append(ohlc)
+            carry = None
+        elif len(ohlc) <= 1:
+            # Whole chunk fell in a single bucket -- can't finalize it yet since
+            # the next chunk might extend it; carry everything forward as-is.
+            carry = combined
+        else:
+            last_bucket_start = ohlc.index[-1]
+            ohlc_chunks.append(ohlc.iloc[:-1])
+            carry = combined[combined.index >= last_bucket_start]
+
+    result = pd.concat(ohlc_chunks) if ohlc_chunks else pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    return result.dropna()
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
