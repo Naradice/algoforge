@@ -49,19 +49,20 @@ def _make_irregular_ticks(n: int, seed: int) -> tuple[np.ndarray, pd.DatetimeInd
     return prices, timestamps
 
 
-@pytest.mark.parametrize("ticks_per_file,chunk_files", [
-    (500, 3),    # many small fragments per chunk -- boundary crossed often
-    (500, 1),    # worst case: one fragment per chunk, boundary logic exercised every step
-    (2000, 5),
+@pytest.mark.parametrize("ticks_per_file,target_ticks_per_chunk", [
+    (500, 1500),    # many small fragments per chunk -- boundary crossed often
+    (500, 500),     # worst case: one fragment per chunk, boundary logic exercised every step
+    (2000, 10000),
+    (500, 50_000),  # chunk target far exceeds total ticks -- everything in one chunk
 ])
-def test_streaming_matches_reference_across_chunk_sizes(ticks_per_file, chunk_files):
+def test_streaming_matches_reference_across_chunk_sizes(ticks_per_file, target_ticks_per_chunk):
     prices, timestamps = _make_irregular_ticks(n=15_000, seed=1)
     reference = _reference_ohlc(prices, timestamps, freq="1min")
 
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         _write_fragments(out_dir, prices, timestamps, ticks_per_file=ticks_per_file)
-        result = resample_ddm_ticks_streaming(out_dir, freq="1min", chunk_files=chunk_files)
+        result = resample_ddm_ticks_streaming(out_dir, freq="1min", target_ticks_per_chunk=target_ticks_per_chunk)
 
     pd.testing.assert_frame_equal(result, reference, check_dtype=False)
 
@@ -83,7 +84,7 @@ def test_streaming_handles_tick_exactly_on_bucket_boundary():
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         _write_fragments(out_dir, prices, timestamps, ticks_per_file=1)  # one tick per file
-        result = resample_ddm_ticks_streaming(out_dir, freq="1min", chunk_files=1)
+        result = resample_ddm_ticks_streaming(out_dir, freq="1min", target_ticks_per_chunk=1)
 
     pd.testing.assert_frame_equal(result, reference, check_dtype=False)
 
@@ -101,7 +102,7 @@ def test_streaming_single_bucket_whole_run():
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         _write_fragments(out_dir, prices, timestamps, ticks_per_file=5)
-        result = resample_ddm_ticks_streaming(out_dir, freq="1min", chunk_files=2)
+        result = resample_ddm_ticks_streaming(out_dir, freq="1min", target_ticks_per_chunk=10)
 
     pd.testing.assert_frame_equal(result, reference, check_dtype=False)
 

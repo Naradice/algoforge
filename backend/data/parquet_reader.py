@@ -116,7 +116,7 @@ def load_ddm_ticks_windowed(
     return df, has_more
 
 
-def resample_ddm_ticks_streaming(path: Path, freq: str = "1min", chunk_files: int = 200) -> pd.DataFrame:
+def resample_ddm_ticks_streaming(path: Path, freq: str = "1min", target_ticks_per_chunk: int = 2_000_000) -> pd.DataFrame:
     """Resample DDM tick data to OHLC candles without ever holding the full tick
     history in memory at once.
 
@@ -127,11 +127,14 @@ def resample_ddm_ticks_streaming(path: Path, freq: str = "1min", chunk_files: in
     consistently happened right after "DDM collect done" was logged, i.e. in this
     exact read-back step, not in the simulation loop itself.
 
-    Processes chunk_files fragments (BATCH_TICKS ticks each) at a time instead. A
-    chunk's last resample bucket may still receive ticks from the next chunk, so
-    its raw ticks (not the partial candle) are carried forward and merged before
-    that bucket is finalized -- fragments are chronologically sorted and
-    non-overlapping, so this never revisits an already-finalized bucket.
+    Chunks by accumulated tick count, not file count -- ddm_simulator.py scales its
+    batch (fragment) size with the requested run length, so a fixed file-count
+    chunk would mean a wildly different (and potentially still-OOMing) amount of
+    data per chunk depending on how the source run was written. A chunk's last
+    resample bucket may still receive ticks from the next chunk, so its raw ticks
+    (not the partial candle) are carried forward and merged before that bucket is
+    finalized -- fragments are chronologically sorted and non-overlapping, so this
+    never revisits an already-finalized bucket.
 
     Returns a DataFrame with columns [open, high, low, close, volume], matching
     _ticks_to_ohlc's output.
@@ -145,17 +148,18 @@ def resample_ddm_ticks_streaming(path: Path, freq: str = "1min", chunk_files: in
 
     ohlc_chunks: list[pd.DataFrame] = []
     carry: pd.DataFrame | None = None
+    buf: list[pd.DataFrame] = []
+    buf_len = 0
 
-    for i in range(0, len(fragments), chunk_files):
-        batch_paths = fragments[i : i + chunk_files]
-        chunk = pd.concat([pd.read_parquet(f) for f in batch_paths]).sort_index()
+    def _flush(is_last_chunk: bool) -> None:
+        nonlocal carry, buf, buf_len
+        chunk = pd.concat(buf).sort_index()
         chunk.index = pd.to_datetime(chunk.index, utc=True)
         combined = pd.concat([carry, chunk]).sort_index() if carry is not None else chunk
 
         ohlc = combined["price"].resample(freq).ohlc()
         ohlc["volume"] = combined["price"].resample(freq).count()
 
-        is_last_chunk = (i + chunk_files) >= len(fragments)
         if is_last_chunk:
             ohlc_chunks.append(ohlc)
             carry = None
@@ -167,6 +171,15 @@ def resample_ddm_ticks_streaming(path: Path, freq: str = "1min", chunk_files: in
             last_bucket_start = ohlc.index[-1]
             ohlc_chunks.append(ohlc.iloc[:-1])
             carry = combined[combined.index >= last_bucket_start]
+        buf = []
+        buf_len = 0
+
+    for i, f in enumerate(fragments):
+        buf.append(pd.read_parquet(f))
+        buf_len += len(buf[-1])
+        is_last_fragment = i == len(fragments) - 1
+        if buf_len >= target_ticks_per_chunk or is_last_fragment:
+            _flush(is_last_chunk=is_last_fragment)
 
     result = pd.concat(ohlc_chunks) if ohlc_chunks else pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
     return result.dropna()

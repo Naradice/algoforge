@@ -592,6 +592,16 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     ticks_buf: list[float] = []
     trade_count = 0
 
+    # Batch size scales with the requested length for finite runs, so total file count stays
+    # roughly constant regardless of run size instead of growing with it. At the fixed default
+    # (10,000 ticks/file), a 2,000,000-candle run produced 400,000+ tiny parquet files -- by
+    # itself, independent of the (already-fixed) meta.json write-per-batch issue, that volume of
+    # small-file writes was enough to pin a bind-mounted dev disk at 100% utilization and hang
+    # Docker Desktop. A 200,000-candle run at the old fixed size produced ~43,000 files and was
+    # fine, so this targets a similar file count at any length. Endless runs keep the small fixed
+    # size: length is unknown (unbounded), and frequent batches matter for live preview there.
+    batch_ticks = BATCH_TICKS if endless else max(BATCH_TICKS, ohlc_length // 4)
+
     # Meta.json is a progress marker, not data -- it doesn't need sub-second freshness, and
     # rewriting it on every single batch (as often as several times a second on a large finite
     # run) was disproportionately expensive I/O. Throttle it to at most once per interval;
@@ -605,7 +615,7 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
         prices_buf.append(price)
         ticks_buf.append(tick)
 
-        if len(prices_buf) >= BATCH_TICKS:
+        if len(prices_buf) >= batch_ticks:
             now = _time.monotonic()
             write_meta = (now - _last_meta_write) >= _META_WRITE_INTERVAL_S
             if write_meta:
@@ -614,7 +624,7 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
                 out_dir, batch_num, prices_buf, ticks_buf, start_ts,
                 total_trades=trade_count_offset + trade_count, write_meta=write_meta,
             )
-            log.info(f"DDM batch {batch_num} written: {BATCH_TICKS} trades, total={trade_count_offset + trade_count}")
+            log.info(f"DDM batch {batch_num} written: {len(prices_buf)} trades, total={trade_count_offset + trade_count}")
             prices_buf.clear()
             ticks_buf.clear()
             batch_num += 1
