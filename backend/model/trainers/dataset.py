@@ -88,7 +88,7 @@ class OHLCWindowDataset:
         n_digits: int = 3,
         sax_paa_size: int = 5,
     ) -> None:
-        df, feature_cols = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
+        df, feature_cols, self.data_provenance = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         raw = df[feature_cols].values.astype(np.float32)
 
         tgt_data = self._apply_normalize(raw, normalize)
@@ -314,7 +314,7 @@ class OHLCWindowDataset:
         feature_cols: list[str] | None,
         preprocessing: dict | None,
         max_rows: int | None = None,
-    ) -> tuple[pd.DataFrame, list[str]]:
+    ) -> tuple[pd.DataFrame, list[str], dict]:
         """Load + preprocess a dataset artifact, up to (but not including) normalization.
 
         Returns the DataFrame with its real DatetimeIndex intact — this is "what will be fed
@@ -325,7 +325,13 @@ class OHLCWindowDataset:
         `max_rows` overrides the default `_MAX_OHLC_ROWS` cap (opt-in per training run via the
         `max_rows` hyperparam) — the default exists to keep window arrays from exceeding ~1 GB
         RAM on typical datasets, not as a hard ceiling; a caller that wants a genuine data-size
-        comparison needs to be able to raise it.
+        comparison needs to be able to raise it. Silently getting this wrong is exactly what
+        happened for the DDM data-volume sweep: every run above ~50K nominal rows was silently
+        capped to its own last 50,000 rows regardless of the dataset's real size, so "200K vs
+        2M" was actually comparing two different tail windows, not two different volumes -- it
+        went undetected for an entire investigation phase because nothing recorded what was
+        actually loaded. The third return value below exists so this class of bug is visible
+        immediately instead of requiring after-the-fact numerical detective work.
         """
         store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
         full_path = store / artifact_path
@@ -363,6 +369,7 @@ class OHLCWindowDataset:
             from model.trainers.preprocessing import apply_preprocessing
             df = apply_preprocessing(df, preprocessing)
 
+        source_rows = len(df)
         effective_cap = max_rows if max_rows is not None else cls._MAX_OHLC_ROWS
         if len(df) > effective_cap:
             df = df.iloc[-effective_cap:]
@@ -373,7 +380,24 @@ class OHLCWindowDataset:
         if not feature_cols:
             feature_cols = [df.columns[-1]]
 
-        return df, feature_cols
+        # Sampling stride is inferred from the actual effective-data timestamps rather than
+        # threaded through as a parameter -- a derived (e.g. subsampled) dataset's true row
+        # spacing should be verifiable from the data itself, not from bookkeeping that could
+        # independently be wrong.
+        if len(df) >= 2:
+            stride_s = pd.Series(df.index).diff().dt.total_seconds().median()
+        else:
+            stride_s = None
+        provenance = {
+            "source_rows": source_rows,
+            "effective_rows": len(df),
+            "max_rows": effective_cap,
+            "first_timestamp": str(df.index[0]) if len(df) else None,
+            "last_timestamp": str(df.index[-1]) if len(df) else None,
+            "sampling_stride_seconds": stride_s,
+        }
+
+        return df, feature_cols, provenance
 
     @staticmethod
     def _make_windows(src_data: np.ndarray, tgt_data: np.ndarray, obs_len: int, tgt_len: int):
@@ -439,7 +463,7 @@ def compute_effective_characteristics(
     """
     from data.characteristics import CHARACTERISTIC_REGISTRY
 
-    df, resolved_feature_cols = OHLCWindowDataset._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
+    df, resolved_feature_cols, _provenance = OHLCWindowDataset._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
     series_df = pd.DataFrame({"close": df[resolved_feature_cols[0]]})
 
     results: dict = {}

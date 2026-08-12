@@ -71,6 +71,13 @@ class TrainingRun(Base):
     eta_seconds: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     num_params: Mapped[int | None] = mapped_column(sa.BigInteger, nullable=True)
     preprocessed_characteristics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # What the dataset loader actually used, captured at load time from the real data rather
+    # than trusted bookkeeping: source_rows, effective_rows, max_rows (resolved cap),
+    # first_timestamp, last_timestamp, sampling_stride_seconds. See
+    # OHLCWindowDataset._load_preprocessed_df -- this exists specifically so a silent row-cap
+    # truncation (a real bug that went undetected through an entire DDM data-volume investigation
+    # phase) shows up immediately instead of requiring after-the-fact numerical detective work.
+    data_provenance: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     stop_requested: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="false")
     artifact_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -170,6 +177,7 @@ class TrainingRunRead(BaseModel):
     eta_seconds: int | None
     num_params: int | None
     preprocessed_characteristics: dict[str, Any] | None
+    data_provenance: dict[str, Any] | None
     artifact_path: str | None
     started_at: datetime | None
     ended_at: datetime | None

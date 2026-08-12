@@ -28,6 +28,7 @@ import os
 from datetime import datetime, timezone
 
 from celery_app import celery_app
+from webhooks.dispatcher import dispatch
 
 logger = logging.getLogger("celery_worker")
 
@@ -196,6 +197,9 @@ async def _run_collection_job(job_id: int) -> dict:
                         status="error", last_error=str(e), last_run_at=datetime.now(timezone.utc)
                     )
                 )
+                await dispatch(db, "collection.error", {
+                    "collection_job_id": job_id, "datasource_id": source.id, "error": str(e),
+                })
                 await db.commit()
             return {"error": str(e)}
         except BaseException as e:
@@ -207,6 +211,9 @@ async def _run_collection_job(job_id: int) -> dict:
                             status="error", last_error=str(e), last_run_at=datetime.now(timezone.utc)
                         )
                     )
+                    await dispatch(db, "collection.error", {
+                        "collection_job_id": job_id, "datasource_id": source.id, "error": str(e),
+                    })
                     if incremental_context is not None:
                         await db.execute(
                             update(Dataset).where(Dataset.id == incremental_context["dataset_id"]).values(
@@ -318,6 +325,10 @@ async def _run_collection_job(job_id: int) -> dict:
                     next_run_at=next_run_at,
                 )
             )
+            await dispatch(db, "collection.completed", {
+                "collection_job_id": job_id, "datasource_id": source.id, "dataset_id": dataset_id,
+                "row_count": collect_result.row_count,
+            })
             await db.commit()
 
         logger.info(f"Collection job {job_id} completed: dataset {dataset_id}, {collect_result.row_count} rows")
@@ -618,10 +629,16 @@ async def _run_arima_training(factory, training_run_id: int, model_id: int, arch
 
     try:
         order = order_from_config(architecture, model_config)
-        train_series, val_series = load_series_for_arima(
+        train_series, val_series, data_provenance = load_series_for_arima(
             dataset_artifact, hp.get("feature_cols", ["close"]), hp.get("preprocessing"),
             hp.get("normalize", "returns"), hp.get("val_split", 0.2),
         )
+        logger.info(f"Training run {training_run_id} data_provenance: {data_provenance}")
+        async with factory() as db:
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                data_provenance=data_provenance
+            ))
+            await db.commit()
         fit_result = await asyncio.get_event_loop().run_in_executor(
             None, fit_and_evaluate_arima, train_series, val_series, order, hp.get("pred_len", 10)
         )
@@ -630,6 +647,9 @@ async def _run_arima_training(factory, training_run_id: int, model_id: int, arch
             await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
                 status="error", ended_at=datetime.now(timezone.utc)
             ))
+            await dispatch(db, "training.error", {
+                "training_run_id": training_run_id, "model_id": model_id, "error": str(e),
+            })
             await db.commit()
         return {"error": str(e)}
 
@@ -660,6 +680,9 @@ async def _run_arima_training(factory, training_run_id: int, model_id: int, arch
             artifact_path=str(artifact_path.relative_to(store)), ended_at=datetime.now(timezone.utc), eta_seconds=0,
         ))
         await db.execute(update(MLModel).where(MLModel.id == model_id).values(status="trained"))
+        await dispatch(db, "training.completed", {
+            "training_run_id": training_run_id, "model_id": model_id, "val_loss": metrics["mse"], "best_epoch": 1,
+        })
         await db.commit()
 
     logger.info(f"Training run {training_run_id} ({architecture}) completed. val_loss(mse): {metrics['mse']:.6f}")
@@ -732,6 +755,16 @@ async def _train_model(training_run_id: int) -> dict:
                 n_digits=hp.get("n_digits", 3),
                 sax_paa_size=hp.get("sax_paa_size", 5),
             )
+            # Persisted (not just logged) immediately after construction, before any training
+            # happens, so it's visible even if the run later fails or gets orphaned -- exactly
+            # the situation that let a silent row-cap truncation go undetected through an entire
+            # DDM data-volume investigation phase (see data_provenance's definition).
+            logger.info(f"Training run {training_run_id} data_provenance: {dataset.data_provenance}")
+            async with factory() as db:
+                await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                    data_provenance=dataset.data_provenance
+                ))
+                await db.commit()
             # Override input_dim/output_dim from actual dataset so the model layer sizes
             # always match the number of selected feature columns. Also sync obs_len/pred_len
             # so architectures that bake those into layer sizes (nbeats, lstm) stay consistent.
@@ -761,6 +794,9 @@ async def _train_model(training_run_id: int) -> dict:
                 await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
                     status="error", ended_at=datetime.now(timezone.utc)
                 ))
+                await dispatch(db, "training.error", {
+                    "training_run_id": training_run_id, "model_id": model_id, "error": str(e),
+                })
                 await db.commit()
             return {"error": str(e)}
 
@@ -1037,6 +1073,10 @@ async def _train_model(training_run_id: int) -> dict:
                 artifact_path=best_artifact, eta_seconds=0,
             ))
             await db.execute(update(MLModel).where(MLModel.id == model_id).values(status="trained"))
+            await dispatch(db, "training.completed", {
+                "training_run_id": training_run_id, "model_id": model_id,
+                "val_loss": best_val_loss, "best_epoch": best_epoch,
+            })
             await db.commit()
 
         logger.info(f"Training run {training_run_id} completed. Best epoch: {best_epoch}, val_loss: {best_val_loss:.6f}")

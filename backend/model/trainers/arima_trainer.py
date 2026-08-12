@@ -53,7 +53,7 @@ def load_series_for_arima(
     preprocessing: dict | None,
     normalize: str,
     val_split: float,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, dict]:
     """Load + preprocess + normalize the primary feature column, split by time into
     (train, val) flat 1-D arrays.
 
@@ -62,8 +62,13 @@ def load_series_for_arima(
     rather than sliding windows, so there's nothing to window here. The normalize branch below
     is intentionally a copy of that logic (on a 1-D array instead of 2-D) rather than a shared
     helper, to avoid touching the well-tested neural-net loading path for this.
+
+    No max_rows parameter here (unlike OHLCWindowDataset) -- every ARIMA-family run is subject
+    to _load_preprocessed_df's default 50,000-row cap with no way to override it, on top of
+    MAX_ARIMA_TRAIN_POINTS below. The returned provenance dict records both cuts so this is
+    visible rather than silently assumed.
     """
-    df, feature_cols = OHLCWindowDataset._load_preprocessed_df(artifact_path, feature_cols, preprocessing)
+    df, feature_cols, provenance = OHLCWindowDataset._load_preprocessed_df(artifact_path, feature_cols, preprocessing)
     data = df[feature_cols[0]].values.astype(np.float64)
 
     if normalize == "returns":
@@ -86,9 +91,12 @@ def load_series_for_arima(
     n = len(data)
     split_idx = int(n * (1 - val_split))
     train, val = data[:split_idx], data[split_idx:]
+    provenance["arima_train_points_cap"] = MAX_ARIMA_TRAIN_POINTS
+    provenance["arima_train_points_before_cap"] = len(train)
     if len(train) > MAX_ARIMA_TRAIN_POINTS:
         train = train[-MAX_ARIMA_TRAIN_POINTS:]
-    return train, val
+    provenance["arima_train_points_used"] = len(train)
+    return train, val, provenance
 
 
 def fit_and_evaluate_arima(train: np.ndarray, val: np.ndarray, order: tuple[int, int, int], pred_len: int) -> dict:
