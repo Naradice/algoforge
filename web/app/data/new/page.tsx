@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CsvUploadForm, type ColMap, type UploadOptions } from "@/components/csv-upload-form";
+import { CustomStepsEditor } from "@/components/web-report-custom-editor";
 import { apiFetch } from "@/lib/fetcher";
-import { TYPE_FIELD_DEFS, TYPE_DEFAULTS, TYPE_DESCRIPTIONS } from "@/lib/datasource-types";
+import { TYPE_FIELD_DEFS, TYPE_DEFAULTS, TYPE_DESCRIPTIONS, WebReportCustomStep } from "@/lib/datasource-types";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ export default function NewDatasourcePage() {
   const [values, setValues] = useState<Record<string, string>>(TYPE_DEFAULTS["ohlc_download"]);
   const [runForever, setRunForever] = useState(false);
   const [lengthValue, setLengthValue] = useState("1000");
-  const [webReportCustom, setWebReportCustom] = useState("");
+  const [customSteps, setCustomSteps] = useState<WebReportCustomStep[]>([]);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testPassed, setTestPassed] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
@@ -59,7 +60,7 @@ export default function NewDatasourcePage() {
     setValues(TYPE_DEFAULTS[t] ?? {});
     setRunForever(false);
     setLengthValue("1000");
-    setWebReportCustom("");
+    setCustomSteps([]);
     setTestResult(null);
     setTestPassed(false);
   }
@@ -89,14 +90,23 @@ export default function NewDatasourcePage() {
         if (!values["subfolder"]) {
           setValues((prev) => ({ ...prev, subfolder: autoSubfolder(url) }));
         }
-        // Auto-configure link_parse if matching links found (transparent to user)
+        // Auto-configure a single link_parse target matching all files of the chosen extension
+        // (transparent to user) — only on first successful test, so a re-test doesn't clobber
+        // manual edits (e.g. splitting into multiple per-file-type targets like the Sony example).
         const matches = (result.links ?? []).filter((l: any) => l.matches_ext);
-        if (matches.length > 0) {
+        if (matches.length > 0 && customSteps.length === 0) {
           const linkFetchType = fetch_type === "goto_load" ? "goto_download" : fetch_type;
-          const steps = [{ type: "link_parse", targets: [{ value: `.*\\.${ext ?? "pdf"}`, ext: ext ?? "pdf", filename: `{YYYYMMDD}_{filename}`, type: linkFetchType, unique: "text", interval_days: Number(values["interval_days"] ?? 1) || 1 }] }];
-          setWebReportCustom(JSON.stringify(steps));
-        } else {
-          setWebReportCustom("");
+          setCustomSteps([{
+            type: "link_parse",
+            targets: [{
+              value: `.*\\.${ext ?? "pdf"}`,
+              ext: ext ?? "pdf",
+              filename: `{YYYYMMDD}_{filename}`,
+              type: linkFetchType,
+              unique: "text",
+              interval_days: Number(values["interval_days"] ?? 1) || 1,
+            }],
+          }]);
         }
       }
     } finally {
@@ -110,7 +120,7 @@ export default function NewDatasourcePage() {
       // Changing URL/ext/method invalidates the test
       setTestResult(null);
       setTestPassed(false);
-      setWebReportCustom("");
+      setCustomSteps([]);
     }
   }
 
@@ -130,7 +140,7 @@ export default function NewDatasourcePage() {
       if (values["subfolder"]) cfg["subfolder"] = values["subfolder"];
       if (values["filename"]) cfg["filename"] = values["filename"];
       if (values["download_time"]) cfg["download_time"] = values["download_time"];
-      if (webReportCustom) cfg["custom"] = JSON.parse(webReportCustom);
+      if (customSteps.length > 0) cfg["custom"] = customSteps;
       return cfg;
     }
     const fields = TYPE_FIELD_DEFS[type] ?? [];
@@ -445,6 +455,25 @@ export default function NewDatasourcePage() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Step 3 — Custom targets (multiple regex-matched download rules) */}
+            {testPassed && (
+              <div className="rounded border border-gray-800 bg-gray-900 p-4 space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">3 — Custom Targets (optional)</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Split matching into several rules — e.g. daily HTML reports vs. weekly/monthly/quarterly PDFs on the
+                    same page — each with its own regex, filename template, and interval.
+                  </p>
+                </div>
+                <CustomStepsEditor
+                  steps={customSteps}
+                  onChange={setCustomSteps}
+                  defaultExt={values["ext"] || "pdf"}
+                  defaultType={values["type"] || "load"}
+                />
               </div>
             )}
           </div>

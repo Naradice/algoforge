@@ -7,7 +7,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { useParams } from "next/navigation";
 import { useToast } from "@/lib/toast";
 import { CsvUploadForm, type ColMap, type UploadOptions } from "@/components/csv-upload-form";
-import { TYPE_FIELD_DEFS } from "@/lib/datasource-types";
+import { CustomStepsEditor } from "@/components/web-report-custom-editor";
+import { TYPE_FIELD_DEFS, WebReportCustomStep } from "@/lib/datasource-types";
 
 type TestResult = {
   success: boolean;
@@ -68,7 +69,7 @@ export default function DatasourceDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editValues, setEditValues] = useState<Record<string, string>>({});
-  const [webReportCustom, setWebReportCustom] = useState("");
+  const [customSteps, setCustomSteps] = useState<WebReportCustomStep[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [pollUntil, setPollUntil] = useState(0);
@@ -136,10 +137,8 @@ export default function DatasourceDetailPage() {
     const storedLength = ds?.config?.length;
     setRunForever(storedLength == null);
     setLengthValue(storedLength != null ? String(storedLength) : "1000");
-    setWebReportCustom(
-      ds?.type === "web_report" && ds?.config?.custom != null
-        ? JSON.stringify(ds.config.custom, null, 2)
-        : ""
+    setCustomSteps(
+      ds?.type === "web_report" && Array.isArray(ds?.config?.custom) ? ds.config.custom : []
     );
     setEditing(true);
   }
@@ -149,14 +148,11 @@ export default function DatasourceDetailPage() {
   }
 
   async function saveEdit() {
-    if (ds?.type === "web_report" && webReportCustom.trim()) {
-      try { JSON.parse(webReportCustom); } catch { toast("Custom Steps JSON is invalid", "error"); return; }
-    }
     setSaving(true);
     try {
       const baseConfig = valuesToConfig(ds?.type ?? "", editValues);
-      if (ds?.type === "web_report" && webReportCustom.trim()) {
-        baseConfig["custom"] = JSON.parse(webReportCustom);
+      if (ds?.type === "web_report" && customSteps.length > 0) {
+        baseConfig["custom"] = customSteps;
       }
       if (ds?.type === "ddm_simulation") {
         if (!runForever) {
@@ -333,10 +329,14 @@ export default function DatasourceDetailPage() {
                   </div>
                 );
               })}
-              {ds.type === "web_report" && ds.config.custom != null && (
+              {ds.type === "web_report" && Array.isArray(ds.config.custom) && ds.config.custom.length > 0 && (
                 <div className="col-span-2">
                   <p className="text-xs text-gray-500 uppercase">Link following</p>
-                  <p className="text-sm text-green-400">✓ Configured to follow and download matching links</p>
+                  <p className="text-sm text-green-400">
+                    ✓ {ds.config.custom.length} step{ds.config.custom.length !== 1 ? "s" : ""},{" "}
+                    {ds.config.custom.reduce((n: number, s: any) => n + (s.targets?.length ?? 0), 0)} target
+                    {ds.config.custom.reduce((n: number, s: any) => n + (s.targets?.length ?? 0), 0) !== 1 ? "s" : ""} configured
+                  </p>
                 </div>
               )}
             </div>
@@ -419,6 +419,21 @@ export default function DatasourceDetailPage() {
                   />
                 </div>
               )}
+            </div>
+          )}
+          {ds?.type === "web_report" && (
+            <div className="space-y-2 pt-2 border-t border-gray-800">
+              <label className="text-xs text-gray-400 uppercase">Custom Targets (optional)</label>
+              <p className="text-xs text-gray-500">
+                Split matching into several rules — e.g. daily HTML reports vs. weekly/monthly/quarterly PDFs on the
+                same page — each with its own regex, filename template, and interval.
+              </p>
+              <CustomStepsEditor
+                steps={customSteps}
+                onChange={setCustomSteps}
+                defaultExt={editValues["ext"] || "pdf"}
+                defaultType={editValues["type"] || "load"}
+              />
             </div>
           )}
           {fields.length === 0 && ds?.type !== "ddm_simulation" && ds?.type !== "web_report" && (

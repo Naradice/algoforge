@@ -21,6 +21,46 @@ export interface FieldDef {
 
 export const TIMEFRAME_OPTIONS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
 
+// web_report "custom" step schema — mirrors cyclic_downloader's link_parse/element_parse
+// mechanism as ported in backend/data/collectors/web_report.py (_process_custom/_handle_target).
+// A single web_report datasource can declare several steps, each matching a different set of
+// links on the page and downloading them under its own filename template / fetch method /
+// dedup strategy / interval — e.g. daily HTML reports vs weekly/monthly/quarterly PDFs on the
+// same landing page, each needing a different regex and interval_days.
+export const WEB_REPORT_FETCH_TYPES = ["load", "goto_load", "goto_download", "load_rep"];
+export const WEB_REPORT_UNIQUE_TYPES = ["segment", "checksum", "text"];
+
+export interface WebReportTarget {
+  value: string; // regex tested against the full absolute href of each matched link/element
+  filename: string; // placeholders: {YYYYMMDD} {YYMMDD} {YYYYMM} {YYMM} {filename} {basefilename}
+  ext: string;
+  type: string; // load | goto_load | goto_download | load_rep
+  unique: string; // segment | checksum | text
+  interval_days: number | null; // null = download once only, never re-check
+}
+
+export interface WebReportCustomStep {
+  type: "link_parse" | "element_parse";
+  selector?: string; // element_parse only — CSS selector to scan instead of <a href>
+  targets: WebReportTarget[];
+}
+
+export function newWebReportTarget(defaults: Partial<WebReportTarget> = {}): WebReportTarget {
+  return {
+    value: "",
+    filename: "{filename}",
+    ext: "pdf",
+    type: "load",
+    unique: "segment",
+    interval_days: 1,
+    ...defaults,
+  };
+}
+
+export function newWebReportStep(defaults: Partial<WebReportTarget> = {}): WebReportCustomStep {
+  return { type: "link_parse", targets: [newWebReportTarget(defaults)] };
+}
+
 export const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
   ohlc_download: [
     {
