@@ -12,6 +12,7 @@ _meta.json
 tsconfig.tsbuildinfo
 backend/alembic/
 backend/artifacts/
+/artifacts/
 tsconfig.tsbuildinfo
 docs
 .github
