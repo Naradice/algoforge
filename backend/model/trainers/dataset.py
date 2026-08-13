@@ -337,24 +337,29 @@ class OHLCWindowDataset:
         full_path = store / artifact_path
 
         if full_path.is_dir():
-            # DDM tick directory: adaptively load the MOST RECENT tick batches, growing the
-            # read until there are enough OHLC rows to satisfy this run's row cap. This must
-            # be a tail read, not an evenly-sampled cross-section of the whole run (what
-            # load_ddm_ticks does) -- for a large DDM dataset, evenly sampling e.g. 100
+            # DDM tick directory: adaptively select the MOST RECENT tick fragments, growing
+            # the selection until there are enough OHLC rows to satisfy this run's row cap.
+            # This must be a tail read, not an evenly-sampled cross-section of the whole run
+            # (what load_ddm_ticks does) -- for a large DDM dataset, evenly sampling e.g. 100
             # fragments out of thousands scatters non-contiguous few-minute clusters across
             # the whole timeline, which after resample+dropna leaves the tail (= the
             # validation split, see split_idx below) with too few contiguous rows to fill even
             # one eval batch -- eval_epoch() then silently returns val_loss=inf every check.
-            from data.parquet_reader import load_ddm_ticks_windowed
+            #
+            # The actual resample is done by _resample_fragments_streaming (chunked, bounded
+            # memory) rather than concatenating every selected fragment into one DataFrame --
+            # a caller that genuinely raises max_rows to use a large dataset (the whole point
+            # of that parameter, see below) can end up selecting hundreds of millions of raw
+            # ticks here, and a single unchunked concat+resample of that OOMs. This is the
+            # training-time counterpart to the same fix already applied to collect()'s
+            # one-time materialization step -- both now share one chunked implementation.
+            from data.parquet_reader import _select_recent_fragments, _resample_fragments_streaming
 
             target_rows = max_rows if max_rows is not None else cls._MAX_OHLC_ROWS
             n_files = cls._MAX_TICK_FILES
             while True:
-                tick_df, has_more = load_ddm_ticks_windowed(full_path, n_files=n_files)
-                ohlc = tick_df["price"].resample("1min").ohlc()
-                ohlc.columns = ["open", "high", "low", "close"]
-                ohlc["volume"] = tick_df["price"].resample("1min").count()
-                df = ohlc.dropna()
+                fragments, has_more = _select_recent_fragments(full_path, n_files)
+                df = _resample_fragments_streaming(fragments, freq="1min") if fragments else pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
                 if len(df) >= target_rows or not has_more or n_files >= cls._MAX_TICK_FILES_HARD_CAP:
                     break
                 n_files = min(n_files * 4, cls._MAX_TICK_FILES_HARD_CAP)

@@ -82,6 +82,26 @@ def load_ddm_ticks_recent(path: Path, n_files: int = 20) -> pd.DataFrame:
     return df
 
 
+def _select_recent_fragments(path: Path, n_files: int) -> tuple[list[Path], bool]:
+    """Return the most-recent n_files fragment paths (chronologically last), without
+    loading any of them, plus has_more=True if older fragments exist beyond that
+    window. Shared by load_ddm_ticks_windowed (which loads them directly -- fine at
+    the small n_files it's called with for live preview) and
+    _load_preprocessed_df's adaptive tail-read (which needs the path list only, so
+    it can hand it to the memory-safe streaming resampler instead of concatenating
+    everything into one DataFrame)."""
+    if not path.exists():
+        return [], False
+
+    all_fragments = _sorted_fragments(path) if _is_partitioned(path) else sorted(path.glob("batch_*.parquet"))
+    if not all_fragments:
+        return [], False
+
+    has_more = len(all_fragments) > n_files
+    recent = all_fragments[-n_files:] if has_more else all_fragments
+    return recent, has_more
+
+
 def load_ddm_ticks_windowed(
     path: Path,
     n_files: int = 20,
@@ -90,21 +110,14 @@ def load_ddm_ticks_windowed(
     """Load the most-recent n_files fragments, optionally capped at to_ts.
 
     Returns (df, has_more) where has_more=True means older fragments exist
-    beyond the loaded window.
+    beyond the loaded window. Only used for small, bounded n_files (live preview) --
+    for anything that might need a large/unbounded window, use
+    _select_recent_fragments + _resample_fragments_streaming instead, which never
+    concatenates the whole selection into one DataFrame.
     """
-    if not path.exists():
+    recent, has_more = _select_recent_fragments(path, n_files)
+    if not recent:
         return pd.DataFrame(columns=["price"]), False
-
-    if _is_partitioned(path):
-        all_fragments = _sorted_fragments(path)
-    else:
-        all_fragments = sorted(path.glob("batch_*.parquet"))
-
-    if not all_fragments:
-        return pd.DataFrame(columns=["price"]), False
-
-    has_more = len(all_fragments) > n_files
-    recent = all_fragments[-n_files:] if len(all_fragments) > n_files else all_fragments
 
     df = pd.concat([pd.read_parquet(f) for f in recent]).sort_index()
     df.index = pd.to_datetime(df.index, utc=True)
@@ -117,27 +130,9 @@ def load_ddm_ticks_windowed(
 
 
 def resample_ddm_ticks_streaming(path: Path, freq: str = "1min", target_ticks_per_chunk: int = 2_000_000) -> pd.DataFrame:
-    """Resample DDM tick data to OHLC candles without ever holding the full tick
-    history in memory at once.
-
-    load_ddm_ticks(path, max_files=<all fragments>) -- what collect() used for a
-    finite run's one-time materialization -- concatenates every tick fragment into
-    a single DataFrame before resampling. For a large finite run (hundreds of
-    millions of ticks across tens of thousands of fragments) that OOMs; the crash
-    consistently happened right after "DDM collect done" was logged, i.e. in this
-    exact read-back step, not in the simulation loop itself.
-
-    Chunks by accumulated tick count, not file count -- ddm_simulator.py scales its
-    batch (fragment) size with the requested run length, so a fixed file-count
-    chunk would mean a wildly different (and potentially still-OOMing) amount of
-    data per chunk depending on how the source run was written. A chunk's last
-    resample bucket may still receive ticks from the next chunk, so its raw ticks
-    (not the partial candle) are carried forward and merged before that bucket is
-    finalized -- fragments are chronologically sorted and non-overlapping, so this
-    never revisits an already-finalized bucket.
-
-    Returns a DataFrame with columns [open, high, low, close, volume], matching
-    _ticks_to_ohlc's output.
+    """Resample an entire DDM tick directory to OHLC candles without ever holding the
+    full tick history in memory at once. See _resample_fragments_streaming for the
+    underlying chunking logic, shared with the tail-only training-time loader.
     """
     if not path.exists():
         raise FileNotFoundError(f"DDM artifact directory not found: {path}")
@@ -146,6 +141,39 @@ def resample_ddm_ticks_streaming(path: Path, freq: str = "1min", target_ticks_pe
     if not fragments:
         raise ValueError(f"No parquet files found in directory: {path}")
 
+    return _resample_fragments_streaming(fragments, freq, target_ticks_per_chunk)
+
+
+def _resample_fragments_streaming(
+    fragments: list[Path], freq: str = "1min", target_ticks_per_chunk: int = 2_000_000
+) -> pd.DataFrame:
+    """Resample a given list of tick fragment files to OHLC candles, without ever
+    holding more than ~target_ticks_per_chunk raw ticks in memory at once.
+
+    load_ddm_ticks(path, max_files=<all fragments>) -- what collect() used for a
+    finite run's one-time materialization, and what _load_preprocessed_df's adaptive
+    tail-read used for training-time loading -- both concatenated every selected tick
+    fragment into a single DataFrame before resampling. For a large finite run
+    (hundreds of millions of ticks across tens of thousands of fragments) that OOMs.
+    The collect()-time crash was fixed by switching to this function; the
+    training-time one (triggered by explicitly raising max_rows to genuinely use a
+    large dataset instead of silently truncating it) was not caught until the same
+    OOM showed up in _load_preprocessed_df -- both callers now share this helper so
+    there's only one place a memory-safety fix like this needs to be made.
+
+    Chunks by accumulated tick count, not file count -- ddm_simulator.py scales its
+    batch (fragment) size with the requested run length, so a fixed file-count
+    chunk would mean a wildly different (and potentially still-OOMing) amount of
+    data per chunk depending on how the source run was written. A chunk's last
+    resample bucket may still receive ticks from the next chunk, so its raw ticks
+    (not the partial candle) are carried forward and merged before that bucket is
+    finalized -- fragments are assumed chronologically sorted and non-overlapping
+    (true both for a full directory and for a tail slice of one), so this never
+    revisits an already-finalized bucket.
+
+    Returns a DataFrame with columns [open, high, low, close, volume], matching
+    _ticks_to_ohlc's output.
+    """
     ohlc_chunks: list[pd.DataFrame] = []
     carry: pd.DataFrame | None = None
     buf: list[pd.DataFrame] = []
