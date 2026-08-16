@@ -754,6 +754,8 @@ async def _train_model(training_run_id: int) -> dict:
                 n_clusters=hp.get("n_clusters", 20),
                 n_digits=hp.get("n_digits", 3),
                 sax_paa_size=hp.get("sax_paa_size", 5),
+                tgt_feature_cols=hp.get("tgt_feature_cols"),
+                src_normalize=hp.get("src_normalize"),
             )
             # Persisted (not just logged) immediately after construction, before any training
             # happens, so it's visible even if the run later fails or gets orphaned -- exactly

@@ -87,11 +87,21 @@ class OHLCWindowDataset:
         n_clusters: int = 20,
         n_digits: int = 3,
         sax_paa_size: int = 5,
+        tgt_feature_cols: list[str] | None = None,
+        src_normalize: str | None = None,
     ) -> None:
         df, feature_cols, self.data_provenance = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         raw = df[feature_cols].values.astype(np.float32)
 
-        tgt_data = self._apply_normalize(raw, normalize)
+        # tgt_feature_cols lets the prediction target come from a different column than the
+        # model's input history (src) -- e.g. src=returns, tgt=realized volatility, to test
+        # whether a signal is predictable at all before comparing how different src
+        # representations (token_level) expose it. Defaults to feature_cols, which combined with
+        # src_normalize defaulting to normalize below, makes every existing call site behave
+        # exactly as before (src_data is literally tgt_data, same object).
+        same_column = tgt_feature_cols is None or tgt_feature_cols == feature_cols
+        tgt_raw = raw if same_column else df[tgt_feature_cols].values.astype(np.float32)
+        tgt_data = self._apply_normalize(tgt_raw, normalize)
 
         # Store normalisation params for inverse transform at inference
         self._normalize = normalize
@@ -107,7 +117,17 @@ class OHLCWindowDataset:
         self.n_digits: int | None = None  # only set for token_level="digits"
 
         if token_level is None:
-            src_data = tgt_data
+            if same_column:
+                src_data = tgt_data
+            else:
+                src_data = self._apply_normalize(raw, src_normalize if src_normalize is not None else normalize)
+                # src and tgt may now come from independently-normalized columns with different
+                # diff-induced lengths (e.g. src="returns" drops 1 row, tgt="zscore" doesn't) --
+                # trim both to a common length from the front, keeping the tail aligned, so
+                # src_data[i] and tgt_data[i] refer to the same underlying row position.
+                min_len = min(len(src_data), len(tgt_data))
+                src_data = src_data[-min_len:]
+                tgt_data = tgt_data[-min_len:]
         else:
             if len(feature_cols) != 1:
                 raise ValueError("token_level requires exactly one feature_col (multi-feature tokenized input isn't implemented)")

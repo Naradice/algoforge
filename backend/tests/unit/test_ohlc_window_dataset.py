@@ -54,6 +54,60 @@ class TestNormalizeDiff:
         assert abs(ds_diff._train_tgt.mean()) < abs(ds_none._train_tgt.mean())
 
 
+def _make_sine_parquet_with_vol(path, n=600, period=60, amplitude=0.5, base=100.0):
+    """Like _make_sine_parquet, but with an extra 'vol' column independent of close, for
+    exercising tgt_feature_cols (predicting a different column than the model's input)."""
+    t = np.arange(n)
+    close = base + amplitude * np.sin(2 * np.pi * t / period)
+    vol = 1.0 + 0.2 * np.cos(2 * np.pi * t / period)  # always positive, different phase/shape
+    idx = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC")
+    df = pd.DataFrame({
+        "open": close, "high": close, "low": close, "close": close,
+        "volume": np.ones(n, dtype=int), "vol": vol,
+    }, index=idx)
+    df.index.name = "datetime"
+    df.to_parquet(path)
+    return path
+
+
+class TestCrossColumnTarget:
+    def test_omitted_tgt_feature_cols_preserves_src_equals_tgt(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet_with_vol(artifact_store / "ds.parquet", n=600)
+        ds = OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, normalize="diff")
+        # Same overlap check as TestTokenLevel's default-None case: src/tgt windows share one
+        # element by construction (teacher forcing) when built from the same underlying array.
+        assert np.allclose(ds._train_src[:, -1, :], ds._train_tgt[:, 0, :])
+
+    def test_tgt_feature_cols_predicts_a_different_column_than_src(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet_with_vol(artifact_store / "ds.parquet", n=600)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5,
+            feature_cols=["close"], tgt_feature_cols=["vol"],
+            src_normalize="diff", normalize="none",
+        )
+        # src is obs_len long, tgt is pred_len+1 long (unaffected by tgt_feature_cols).
+        assert ds._train_src.shape[1:] == (10, 1)
+        assert ds._train_tgt.shape[1:] == (6, 1)
+        # With src and tgt now drawn from different columns, the teacher-forcing overlap element
+        # should NOT match (would only coincide by chance) -- the clearest sign src != tgt here.
+        assert not np.allclose(ds._train_src[:, -1, :], ds._train_tgt[:, 0, :])
+
+        raw_vol = pd.read_parquet(artifact_store / "ds.parquet")["vol"].values.astype(np.float32)
+        raw_close = pd.read_parquet(artifact_store / "ds.parquet")["close"].values.astype(np.float32)
+        expected_src_flat = np.diff(raw_close)  # length n-1, src_normalize="diff"
+        # tgt (normalize="none") has length n, one longer than src_flat -- the front-trim drops
+        # tgt's first element so both end up tail-aligned at the same length.
+        expected_tgt_flat = raw_vol[-len(expected_src_flat):]
+        first_src = ds._train_src[0, :, 0]
+        first_tgt = ds._train_tgt[0, :, 0]
+        assert np.allclose(first_src, expected_src_flat[: len(first_src)], atol=1e-4)
+        assert np.allclose(first_tgt, expected_tgt_flat[ds.obs_len - 1: ds.obs_len - 1 + len(first_tgt)], atol=1e-4)
+
+
 class TestTokenLevel:
     def test_default_none_preserves_src_equals_tgt(self, artifact_store):
         from model.trainers.dataset import OHLCWindowDataset
