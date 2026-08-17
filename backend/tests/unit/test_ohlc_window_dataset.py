@@ -107,6 +107,29 @@ class TestCrossColumnTarget:
         assert np.allclose(first_src, expected_src_flat[: len(first_src)], atol=1e-4)
         assert np.allclose(first_tgt, expected_tgt_flat[ds.obs_len - 1: ds.obs_len - 1 + len(first_tgt)], atol=1e-4)
 
+    def test_token_level_combined_with_tgt_feature_cols_predicts_different_column(self, artifact_store):
+        """The token-representation comparison (§07's next step) needs token_level (src
+        representation) and tgt_feature_cols (cross-column target) to compose correctly --
+        token_level's own tgt-length-alignment logic (line ~119 in dataset.py) was written before
+        tgt_feature_cols existed, so this checks they don't silently misalign."""
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet_with_vol(artifact_store / "ds.parquet", n=600)
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5,
+            feature_cols=["close"], tgt_feature_cols=["vol"],
+            token_level="diff", normalize="none",
+        )
+        raw_close = pd.read_parquet(artifact_store / "ds.parquet")["close"].values.astype(np.float32)
+        raw_vol = pd.read_parquet(artifact_store / "ds.parquet")["vol"].values.astype(np.float32)
+        expected_src_flat = np.diff(raw_close)          # token_level="diff": src = diff of close
+        expected_tgt_flat = raw_vol[1:]                  # normalize="none", trimmed to align with the diff
+
+        first_src = ds._train_src[0, :, 0]
+        first_tgt = ds._train_tgt[0, :, 0]
+        assert np.allclose(first_src, expected_src_flat[: len(first_src)], atol=1e-4)
+        assert np.allclose(first_tgt, expected_tgt_flat[ds.obs_len - 1: ds.obs_len - 1 + len(first_tgt)], atol=1e-4)
+
 
 class TestTokenLevel:
     def test_default_none_preserves_src_equals_tgt(self, artifact_store):
