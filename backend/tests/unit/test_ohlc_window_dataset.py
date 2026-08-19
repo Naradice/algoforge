@@ -498,6 +498,68 @@ class TestComputeTokenCharacteristics:
         assert rates[max(rates)] < 0.05  # near-zero surprise once context captures the period
         assert result["token_mutual_information"] > 1.0  # strong adjacent-token structure
 
+    def test_mi_curve_is_high_at_every_lag_for_a_periodic_pattern(self):
+        """A period-3 tiled sequence is a deterministic function of position mod 3, so knowing
+        the token at t fully determines the token at t+lag for *any* lag (not just lag=1) --
+        this is the case §07's next step needs to distinguish from "only next-step structure"."""
+        from model.trainers.dataset import compute_token_characteristics
+
+        pattern = np.array([0, 1, 2], dtype=np.int64)
+        tokens = np.tile(pattern, 2000)
+
+        result = compute_token_characteristics(tokens, vocab_size=3, mi_lags=[1, 2, 4, 8])
+
+        curve = result["token_mi_curve"]
+        for lag in [1, 2, 4, 8]:
+            assert curve[lag] > 1.5  # near log2(3) ~ 1.585 bits at every lag
+
+    def test_mi_curve_is_near_zero_at_every_lag_for_iid_tokens(self):
+        from model.trainers.dataset import compute_token_characteristics
+
+        rng = np.random.default_rng(0)
+        tokens = rng.integers(0, 8, size=20_000)
+
+        result = compute_token_characteristics(tokens, vocab_size=8, mi_lags=[1, 2, 4, 8, 16])
+
+        curve = result["token_mi_curve"]
+        for lag in [1, 2, 4, 8, 16]:
+            assert abs(curve[lag]) < 0.05
+
+    def test_token_target_mi_detects_a_predictive_relationship_only_at_the_true_horizon(self):
+        """target[i] = tokens[i-1] by construction, so a token fully determines the target
+        exactly one step ahead and carries no information about it at any other horizon (i.i.d.
+        tokens otherwise) -- the clean synthetic case for "does token_target_mi actually find
+        the horizon where the relationship lives, and only that one"."""
+        from model.trainers.dataset import compute_token_characteristics
+
+        rng = np.random.default_rng(2)
+        vocab_size = 4
+        tokens = rng.integers(0, vocab_size, size=5000)
+        target = np.empty(5000)
+        target[0] = 0.0
+        target[1:] = tokens[:-1].astype(np.float64)
+
+        result = compute_token_characteristics(
+            tokens, vocab_size, target=target, target_horizons=[1, 2, 4], n_target_bins=vocab_size
+        )
+
+        tmi = result["token_target_mi"]
+        assert tmi[1] > 1.5  # near log2(4) = 2 bits -- token fully determines target one step ahead
+        assert abs(tmi[2]) < 0.3  # independent draws at any other horizon
+        assert abs(tmi[4]) < 0.3
+
+    def test_omitting_mi_lags_and_target_leaves_existing_keys_unaffected(self):
+        """Both extensions are opt-in -- confirms the default call (no mi_lags, no target) is
+        byte-for-byte the same result shape as before this feature existed."""
+        from model.trainers.dataset import compute_token_characteristics
+
+        rng = np.random.default_rng(0)
+        tokens = rng.integers(0, 8, size=2000)
+        result = compute_token_characteristics(tokens, vocab_size=8)
+
+        assert "token_mi_curve" not in result
+        assert "token_target_mi" not in result
+
     def test_zipf_distributed_tokens_recover_a_positive_alpha_with_good_fit(self):
         from model.trainers.dataset import compute_token_characteristics
 

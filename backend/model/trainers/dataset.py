@@ -500,7 +500,14 @@ def compute_effective_characteristics(
     return results
 
 
-def compute_token_characteristics(tokens: np.ndarray, vocab_size: int) -> dict:
+def compute_token_characteristics(
+    tokens: np.ndarray,
+    vocab_size: int,
+    mi_lags: list[int] | None = None,
+    target: np.ndarray | None = None,
+    target_horizons: list[int] | None = None,
+    n_target_bins: int = 8,
+) -> dict:
     """Information-theoretic structure of a discretized token stream (OHLCWindowDataset's
     token_stream, produced by token_level="quantize_diff" or future discrete token_levels).
 
@@ -508,6 +515,20 @@ def compute_token_characteristics(tokens: np.ndarray, vocab_size: int) -> dict:
     is (effective vocabulary, entropy rate, compressibility, ...) instead of against training row
     count alone — two token_levels or vocab sizes that use the same number of rows can still
     differ hugely in how much structure the model actually has to learn.
+
+    Three optional, independently-gated extensions decompose "token complexity" further (see
+    docs/model-layer.md):
+      mi_lags          — sequential complexity: I(token_t; token_{t+k}) for each k in mi_lags,
+                          returned as "token_mi_curve" keyed by lag. Separates a representation
+                          with only next-step structure from one with longer-range dependence,
+                          or none at all.
+      target/target_horizons — target information: I(token_t; target_{t+h}) for each h in
+                          target_horizons, returned as "token_target_mi" keyed by horizon.
+                          Needs the *unwindowed* downstream target series (e.g. realized
+                          volatility), aligned to the same time axis as tokens. Both must be
+                          provided together (a horizon list with no target array is a no-op).
+      n_target_bins     — quantile bins used to discretize target for token_target_mi (ignored
+                          if target is not provided).
 
     Best-effort per metric, same pattern as compute_effective_characteristics — one metric
     failing (e.g. too few tokens for a stable n-gram estimate) never blanks the rest.
@@ -546,6 +567,25 @@ def compute_token_characteristics(tokens: np.ndarray, vocab_size: int) -> dict:
     except Exception as e:
         results["lz_compression_ratio"] = {"error": str(e)}
 
+    if mi_lags:
+        curve: dict[int, float | dict] = {}
+        for lag in mi_lags:
+            try:
+                curve[lag] = _mutual_information_at_lag(tokens, vocab_size, lag)
+            except Exception as e:
+                curve[lag] = {"error": str(e)}
+        results["token_mi_curve"] = curve
+
+    if target is not None and target_horizons:
+        target = np.asarray(target).reshape(-1)
+        tmi: dict[int, float | dict] = {}
+        for horizon in target_horizons:
+            try:
+                tmi[horizon] = _token_target_mutual_information(tokens, target, vocab_size, horizon, n_target_bins)
+            except Exception as e:
+                tmi[horizon] = {"error": str(e)}
+        results["token_target_mi"] = tmi
+
     return results
 
 
@@ -579,13 +619,12 @@ def _token_zipf_fit(tokens: np.ndarray) -> dict:
     return {"alpha": float(-slope), "r2": float(r2)}
 
 
-def _adjacent_mutual_information(tokens: np.ndarray, vocab_size: int) -> float:
-    """I(X_t; X_{t+1}) in bits, from the empirical joint distribution of consecutive tokens --
-    how much knowing the current token reduces uncertainty about the next one. 0 means adjacent
-    tokens are statistically independent (pure noise, from the model's point of view); higher
-    values mean there's short-range structure a model could in principle exploit."""
-    x, y = tokens[:-1], tokens[1:]
-    joint = np.zeros((vocab_size, vocab_size))
+def _discrete_mutual_information(x: np.ndarray, y: np.ndarray, x_card: int, y_card: int) -> float:
+    """I(X; Y) in bits between two aligned discrete sequences of the same length, from their
+    empirical joint distribution. Shared core of both the token-token lag MI and the
+    token-target MI below -- both are "mutual information between two discrete series", they
+    just differ in what X and Y are and how they're aligned."""
+    joint = np.zeros((x_card, y_card))
     np.add.at(joint, (x, y), 1)
     joint /= joint.sum()
     px = joint.sum(axis=1, keepdims=True)
@@ -595,6 +634,48 @@ def _adjacent_mutual_information(tokens: np.ndarray, vocab_size: int) -> float:
         ratio = np.where((joint > 0) & (outer > 0), joint / outer, 1.0)
         terms = np.where(joint > 0, joint * np.log2(ratio), 0.0)
     return float(terms.sum())
+
+
+def _mutual_information_at_lag(tokens: np.ndarray, vocab_size: int, lag: int) -> float:
+    """I(X_t; X_{t+lag}) in bits -- how much knowing the token at time t reduces uncertainty
+    about the token `lag` steps later. lag=1 is the classic adjacent-token case (short-range
+    structure); tracing this across a range of lags (1, 2, 4, 8, ...) separates a
+    representation that only has next-step structure from one with longer-range sequential
+    dependence, or none at all (near-zero at every lag -- e.g. i.i.d.-like quantile tokens)."""
+    if lag < 1 or lag >= len(tokens):
+        raise ValueError(f"lag must be in [1, len(tokens)), got {lag} for {len(tokens)} tokens")
+    return _discrete_mutual_information(tokens[:-lag], tokens[lag:], vocab_size, vocab_size)
+
+
+def _adjacent_mutual_information(tokens: np.ndarray, vocab_size: int) -> float:
+    """I(X_t; X_{t+1}) in bits -- the lag=1 case of _mutual_information_at_lag. 0 means adjacent
+    tokens are statistically independent (pure noise, from the model's point of view); higher
+    values mean there's short-range structure a model could in principle exploit."""
+    return _mutual_information_at_lag(tokens, vocab_size, lag=1)
+
+
+def _token_target_mutual_information(
+    tokens: np.ndarray, target: np.ndarray, vocab_size: int, horizon: int, n_target_bins: int = 8
+) -> float:
+    """I(Token_t; Target_{t+horizon}) in bits -- how much a single token at time t reveals about
+    a continuous downstream target `horizon` steps ahead (e.g. realized volatility), independent
+    of any token-to-token sequential structure. The target is quantile-binned into
+    `n_target_bins` equal-frequency bins so both sides of the MI computation are discrete;
+    quantile (not equal-width) binning matters here for the same reason it does for
+    quantize_diff's src tokens -- a skewed target distribution would otherwise concentrate most
+    mass in one or two bins and understate the true dependence.
+
+    This is the metric that separates "this representation carries target-relevant information"
+    from "this representation has rich internal structure" -- a token scheme can score high on
+    one and low on the other (see docs/model-layer.md's token-complexity decomposition)."""
+    if horizon < 1 or horizon >= len(tokens):
+        raise ValueError(f"horizon must be in [1, len(tokens)), got {horizon} for {len(tokens)} tokens")
+    n = min(len(tokens) - horizon, len(target) - horizon)
+    x = tokens[:n]
+    future_target = target[horizon: horizon + n]
+    bin_edges = np.quantile(future_target, np.linspace(0, 1, n_target_bins + 1)[1:-1])
+    y = np.searchsorted(bin_edges, future_target).astype(np.int64)
+    return _discrete_mutual_information(x, y, vocab_size, n_target_bins)
 
 
 def _ngram_entropy_rates(tokens: np.ndarray, vocab_size: int, max_n: int = 3) -> dict:
