@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from loger import StructuredLogger, current_strategy_run_id
+from webhooks.dispatcher import dispatch
 
 logger = StructuredLogger("strategy.executor")
 
@@ -60,6 +61,10 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
                     status="error", message="Dataset not found or has no artifact"
                 )
             )
+            await dispatch(db, "run.error", {
+                "run_id": run_id, "strategy_id": run.strategy_id, "mode": run.mode,
+                "error": "dataset_required_for_backtest",
+            })
             await db.commit()
             return {"error": "dataset_required_for_backtest"}
 
@@ -91,6 +96,10 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
                     status="error", message="Live broker execution not yet implemented"
                 )
             )
+            await dispatch(db, "run.error", {
+                "run_id": run_id, "strategy_id": run.strategy_id, "mode": run.mode,
+                "error": "live_not_implemented",
+            })
             await db.commit()
         return {"error": "live_not_implemented"}
 
@@ -101,6 +110,10 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
                     status="error", message=f"Unknown mode: {run.mode!r}"
                 )
             )
+            await dispatch(db, "run.error", {
+                "run_id": run_id, "strategy_id": run.strategy_id, "mode": run.mode,
+                "error": "unknown_mode",
+            })
             await db.commit()
         return {"error": "unknown_mode"}
 
@@ -158,6 +171,9 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
                     status="error", message=str(e), ended_at=datetime.now(timezone.utc)
                 )
             )
+            await dispatch(db, "run.error", {
+                "run_id": run_id, "strategy_id": run.strategy_id, "mode": run.mode, "error": str(e),
+            })
             await db.commit()
         return {"error": str(e)}
     finally:
@@ -198,6 +214,10 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
                 equity_curve=equity_curve,
             )
         )
+        await dispatch(db, "run.completed", {
+            "run_id": run_id, "strategy_id": run.strategy_id, "mode": run.mode,
+            "trades": len(raw_trades), "metrics": metrics,
+        })
         await db.commit()
 
     await logger.info(

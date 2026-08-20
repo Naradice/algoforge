@@ -175,6 +175,11 @@ async def run_paper(
                 message=f"{metrics.get('total_trades', 0)} trades, PnL {metrics.get('total_pnl', 0):.4f}",
             )
         )
+        from webhooks.dispatcher import dispatch
+        await dispatch(db, "run.completed", {
+            "run_id": run_id, "strategy_id": run.strategy_id if run is not None else None,
+            "mode": "paper", "trades": len(trade_records), "metrics": metrics,
+        })
         await db.commit()
 
     logger.info(f"Paper run {run_id} completed: {metrics}")
