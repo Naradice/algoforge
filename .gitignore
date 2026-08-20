@@ -14,6 +14,5 @@ backend/alembic/
 backend/artifacts/
 /artifacts/
 tsconfig.tsbuildinfo
-docs
 .github
 .vscode
