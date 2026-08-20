@@ -25,6 +25,7 @@ from data.router import router as data_router
 from logs_router import router as logs_router
 from ws_router import ws_router
 from mcp_server import mcp
+from mcp_server.auth_middleware import MCPAuthMiddleware
 from webhooks.router import webhook_router
 
 # Configure Python logging (console output in development)
@@ -67,7 +68,8 @@ for _attr in ("get_asgi_app", "http_app", "sse_app", "asgi_app"):
     _fn = getattr(mcp, _attr, None)
     if _fn is not None:
         try:
-            app.mount("/mcp", _fn() if callable(_fn) else _fn)
+            _mcp_asgi = _fn() if callable(_fn) else _fn
+            app.mount("/mcp", MCPAuthMiddleware(_mcp_asgi))
             _mcp_mounted = True
             break
         except Exception:
