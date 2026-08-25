@@ -1086,6 +1086,24 @@ async def _train_model(training_run_id: int) -> dict:
 
         logger.info(f"Training run {training_run_id} completed. Best epoch: {best_epoch}, val_loss: {best_val_loss:.6f}")
         return {"best_epoch": best_epoch, "val_loss": best_val_loss, "artifact_path": best_artifact}
+    except Exception as e:
+        # Catch-all for anything that escapes the training loop itself (as opposed to the
+        # narrower try/except around model construction above) -- without this, an exception
+        # raised mid-training (e.g. an architecture-specific ValueError like PairLagModel's
+        # pool_size-vs-obs_len check) leaves the TrainingRun permanently stuck at status
+        # "running": Celery logs the task as failed, but nothing ever updates the DB row, so it
+        # never shows up as an error to poll against and blocks any "all done" check keyed off
+        # pending/running counts. Observed live during the lag-distance sweep (2026-08-26).
+        logger.exception(f"Training run {training_run_id} failed during training")
+        async with factory() as db:
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                status="error", ended_at=datetime.now(timezone.utc)
+            ))
+            await dispatch(db, "training.error", {
+                "training_run_id": training_run_id, "model_id": model_id, "error": str(e),
+            })
+            await db.commit()
+        return {"error": str(e)}
     finally:
         await engine.dispose()
         _release_lock("train_model", training_run_id)
