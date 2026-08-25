@@ -89,9 +89,24 @@ class OHLCWindowDataset:
         sax_paa_size: int = 5,
         tgt_feature_cols: list[str] | None = None,
         src_normalize: str | None = None,
+        split_mode: str = "chronological",
+        split_seed: int = 42,
+        require_contiguous: bool = False,
     ) -> None:
         df, feature_cols, self.data_provenance = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         raw = df[feature_cols].values.astype(np.float32)
+
+        self.split_mode = split_mode
+        self.require_contiguous = require_contiguous
+        # Full-length (len(raw)) contiguity mask, sliced to match whatever length tgt_data/
+        # src_data end up at just before windowing (see "Build windows" below) -- every
+        # token_level branch that require_contiguous supports only ever *front-trims* rows
+        # (tail-aligned), so slicing this mask's own tail by the same final length keeps it
+        # correctly aligned regardless of which branch ran.
+        raw_gap_mask_full = (
+            self._compute_gap_mask(df.index, self.data_provenance.get("sampling_stride_seconds"))
+            if require_contiguous else None
+        )
 
         # tgt_feature_cols lets the prediction target come from a different column than the
         # model's input history (src) -- e.g. src=returns, tgt=realized volatility, to test
@@ -281,27 +296,90 @@ class OHLCWindowDataset:
             else:
                 raise ValueError(f"Unknown token_level: {token_level!r}")
 
-        # Build windows
+        # Build windows -- always materialize every candidate window first (needed regardless of
+        # split_mode once require_contiguous is on, since gap-filtering has to see the whole
+        # candidate set before any split decision), then filter and split.
         n = len(tgt_data)
         total_len = obs_len + pred_len + 1   # +1 for the teacher-forced tgt shift
-        n_windows = n - total_len + 1
+        all_src, all_tgt = self._make_windows(src_data, tgt_data, obs_len, pred_len + 1)
+        n_windows = len(all_src)
 
-        split_idx = int(n_windows * (1 - val_split))
-        self._train_src, self._train_tgt = self._make_windows(
-            src_data[:split_idx + total_len - 1], tgt_data[:split_idx + total_len - 1], obs_len, pred_len + 1
-        )
-        val_src_data = src_data[split_idx:]
-        val_tgt_data = tgt_data[split_idx:]
-        if len(val_tgt_data) >= total_len:
-            self._val_src, self._val_tgt = self._make_windows(val_src_data, val_tgt_data, obs_len, pred_len + 1)
+        if require_contiguous:
+            if token_level not in (None, "quantize_diff"):
+                raise NotImplementedError(
+                    f"require_contiguous=True is only supported for token_level in "
+                    f"(None, 'quantize_diff'), got {token_level!r}"
+                )
+            gap_mask = raw_gap_mask_full[-n:]  # bool, length n; True = row doesn't follow the previous one by exactly one stride
+            # window starting at position i spans rows [i, i+total_len-1] -- valid iff none of
+            # its total_len-1 internal row-to-row transitions (gap_mask[i+1 .. i+total_len-1])
+            # is a gap. Prefix-sum lets every window's check run in O(1).
+            bad_prefix = np.concatenate([[0], np.cumsum(gap_mask.astype(np.int64))])
+            starts = np.arange(n_windows)
+            gap_sum = bad_prefix[starts + total_len - 1] - bad_prefix[starts]
+            window_ok = gap_sum == 0
+            all_src, all_tgt = all_src[window_ok], all_tgt[window_ok]
+            n_windows = len(all_src)
+
+        if split_mode == "chronological":
+            split_idx = int(n_windows * (1 - val_split))
+            self._train_src, self._train_tgt = all_src[:split_idx], all_tgt[:split_idx]
+            if n_windows - split_idx > 0:
+                self._val_src, self._val_tgt = all_src[split_idx:], all_tgt[split_idx:]
+            else:
+                self._val_src, self._val_tgt = self._train_src, self._train_tgt
+        elif split_mode == "regime_controlled":
+            # Stratify by each window's own target level (mean over its pred_len horizon) into
+            # decile bins, then split (1 - val_split)/val_split *within* each bin -- train and
+            # val end up with matched target distributions by construction, removing the
+            # chronological split's mean-shift confound (see docs/model-layer.md, "Comparing
+            # training runs" -- regime drift) at the cost of no longer being a genuine
+            # forward-in-time forecast evaluation.
+            window_level = all_tgt[:, 1:, 0].mean(axis=1)
+            n_bins_regime = 10
+            bin_edges = np.quantile(window_level, np.linspace(0, 1, n_bins_regime + 1))
+            bin_ids = np.clip(np.digitize(window_level, bin_edges[1:-1]), 0, n_bins_regime - 1)
+            rng = np.random.default_rng(split_seed)
+            train_idx, val_idx = [], []
+            for b in range(n_bins_regime):
+                idx = np.where(bin_ids == b)[0]
+                rng.shuffle(idx)
+                split = int(len(idx) * (1 - val_split))
+                train_idx.append(idx[:split])
+                val_idx.append(idx[split:])
+            train_idx = np.concatenate(train_idx)
+            val_idx = np.concatenate(val_idx)
+            rng.shuffle(train_idx)
+            rng.shuffle(val_idx)
+            self._train_src, self._train_tgt = all_src[train_idx], all_tgt[train_idx]
+            if len(val_idx) > 0:
+                self._val_src, self._val_tgt = all_src[val_idx], all_tgt[val_idx]
+            else:
+                self._val_src, self._val_tgt = self._train_src, self._train_tgt
         else:
-            self._val_src, self._val_tgt = self._train_src, self._train_tgt
+            raise ValueError(f"Unknown split_mode: {split_mode!r}")
 
         self._is_train = True
         self.device = device
         self.obs_len = obs_len
         self.pred_len = pred_len
         self.n_features = len(feature_cols)
+
+    @staticmethod
+    def _compute_gap_mask(index, stride_seconds: float | None) -> np.ndarray:
+        """bool array, length len(index); True at position i means row i does not follow row
+        i-1 by exactly one sampling stride -- a real market-closed gap (weekend/holiday) or a
+        hole left by a preceding .dropna() (e.g. a derived-dataset column that's NaN wherever
+        its own upstream computation wasn't valid). Position 0 is always False (no predecessor
+        to compare against, so trivially not a gap)."""
+        n = len(index)
+        gap = np.zeros(n, dtype=bool)
+        if n < 2 or not stride_seconds or stride_seconds <= 0:
+            return gap
+        deltas = pd.Series(index).diff().dt.total_seconds().values
+        tol = max(1e-6, stride_seconds * 1e-6)
+        gap[1:] = np.abs(deltas[1:] - stride_seconds) > tol
+        return gap
 
     @staticmethod
     def _apply_normalize(data: np.ndarray, normalize: str) -> np.ndarray:

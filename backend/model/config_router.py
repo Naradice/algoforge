@@ -107,6 +107,17 @@ ARCHITECTURE_SCHEMAS = {
         },
         "_note": "input_dim and output_dim are set automatically from the selected feature columns at training time.",
     },
+    "pair_lag": {
+        "type": "object",
+        "properties": {
+            "lag":       {"type": "integer", "default": 1, "description": "Distance (in tokens) between the two compared positions"},
+            "pool_size": {"type": "integer", "default": 20, "description": "Number of (token_i, token_{i+lag}) pairs mean-pooled per window, resampled every forward call"},
+            "hidden":    {"type": "integer", "default": 32},
+        },
+        "_note": "Requires token_level=\"quantize_diff\" (or another integer-token src) -- has no "
+        "embedding layer, works directly on raw ordinal token ids. input_dim and output_dim are "
+        "set automatically from the selected feature columns at training time.",
+    },
     "ar": {
         "type": "object",
         "properties": {

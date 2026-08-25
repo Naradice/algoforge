@@ -588,3 +588,114 @@ class TestComputeTokenCharacteristics:
 
         assert "token_entropy" in result
         assert result["token_zipf"]["alpha"] is None
+
+
+def _make_regime_shift_parquet(path, n=2000, period=20):
+    """First half oscillates near level 0, second half near level 100 -- a sharp regime shift
+    partway through, so a chronological (last-20%) split lands val entirely in one regime while
+    train is mostly the other, and a regime-controlled split should erase that gap."""
+    t = np.arange(n)
+    level = np.where(t < n // 2, 0.0, 100.0)
+    close = level + 5.0 * np.sin(2 * np.pi * t / period)
+    idx = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC")
+    df = pd.DataFrame({
+        "open": close, "high": close, "low": close, "close": close,
+        "volume": np.ones(n, dtype=int),
+    }, index=idx)
+    df.index.name = "datetime"
+    df.to_parquet(path)
+    return path
+
+
+class TestRegimeControlledSplit:
+    def test_regime_controlled_matches_train_val_target_means_better_than_chronological(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_regime_shift_parquet(artifact_store / "ds.parquet", n=2000)
+        ds_chrono = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="none", val_split=0.2,
+            split_mode="chronological",
+        )
+        ds_regime = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="none", val_split=0.2,
+            split_mode="regime_controlled", split_seed=42,
+        )
+
+        chrono_gap = abs(float(ds_chrono._train_tgt.mean()) - float(ds_chrono._val_tgt.mean()))
+        regime_gap = abs(float(ds_regime._train_tgt.mean()) - float(ds_regime._val_tgt.mean()))
+        assert regime_gap < chrono_gap * 0.1
+
+    def test_regime_controlled_split_is_reproducible_via_split_seed(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_regime_shift_parquet(artifact_store / "ds.parquet", n=2000)
+        ds1 = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="none",
+            split_mode="regime_controlled", split_seed=7,
+        )
+        ds2 = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="none",
+            split_mode="regime_controlled", split_seed=7,
+        )
+        assert np.array_equal(ds1._train_tgt, ds2._train_tgt)
+        assert np.array_equal(ds1._val_tgt, ds2._val_tgt)
+
+    def test_unknown_split_mode_raises(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        with pytest.raises(ValueError):
+            OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, split_mode="bogus")
+
+
+def _make_gapped_parquet(path, n=200, gap_start=100, gap_len=30):
+    """A regular 1-minute series with a contiguous block of rows removed -- final df has n rows
+    total, with a single real timestamp gap immediately before row `gap_start` (0-indexed in the
+    final, post-removal frame)."""
+    idx_full = pd.date_range("2024-01-01", periods=n + gap_len, freq="1min", tz="UTC")
+    keep = np.ones(n + gap_len, dtype=bool)
+    keep[gap_start:gap_start + gap_len] = False
+    idx = idx_full[keep]
+    t = np.arange(len(idx))
+    close = 100.0 + 0.5 * np.sin(2 * np.pi * t / 20)
+    df = pd.DataFrame({
+        "open": close, "high": close, "low": close, "close": close,
+        "volume": np.ones(len(idx), dtype=int),
+    }, index=idx)
+    df.index.name = "datetime"
+    df.to_parquet(path)
+    return path
+
+
+class TestRequireContiguous:
+    def test_windows_spanning_a_gap_are_excluded(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_gapped_parquet(artifact_store / "ds.parquet", n=200, gap_start=100, gap_len=30)
+        obs_len, pred_len = 10, 5
+        total_len = obs_len + pred_len + 1
+        ds_filtered = OHLCWindowDataset(
+            "ds.parquet", obs_len=obs_len, pred_len=pred_len, normalize="none", val_split=0.2,
+            require_contiguous=True,
+        )
+        ds_unfiltered = OHLCWindowDataset(
+            "ds.parquet", obs_len=obs_len, pred_len=pred_len, normalize="none", val_split=0.2,
+            require_contiguous=False,
+        )
+
+        n_unfiltered = len(ds_unfiltered._train_tgt) + len(ds_unfiltered._val_tgt)
+        n_filtered = len(ds_filtered._train_tgt) + len(ds_filtered._val_tgt)
+        # Exactly total_len - 1 candidate window start positions have the gap somewhere in
+        # their span (see dataset.py's prefix-sum window filter) -- everything else is untouched.
+        assert n_unfiltered - n_filtered == total_len - 1
+
+    def test_require_contiguous_raises_for_unsupported_token_level(self, artifact_store):
+        from model.trainers.dataset import OHLCWindowDataset
+
+        _make_sine_parquet(artifact_store / "ds.parquet", n=600)
+        with pytest.raises(NotImplementedError):
+            OHLCWindowDataset(
+                "ds.parquet", obs_len=10, pred_len=5,
+                token_level="cluster", cluster_window=5, n_clusters=4,
+                require_contiguous=True,
+            )
