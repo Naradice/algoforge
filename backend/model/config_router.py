@@ -43,6 +43,19 @@ ARCHITECTURE_SCHEMAS = {
                 "block (FFN/LayerNorm/residual/positional encoding) stays identical, isolating attention's "
                 "own contribution to a downstream result.",
             },
+            "token_coverage_k": {
+                "type": ["integer", "null"], "default": None,
+                "description": "If set, the model attends over only this many of the seq_len observation "
+                "positions (always including the most recent one) instead of all of them -- an ablation for "
+                "whether attention's advantage is about seeing more of the window or selecting well from it. "
+                "Requires use_attention=true.",
+            },
+            "token_coverage_mode": {
+                "type": "string", "enum": ["contiguous", "uniform", "random"], "default": "contiguous",
+                "description": "Which token_coverage_k positions survive: 'contiguous' = most recent k "
+                "(deterministic), 'uniform' = evenly spaced across the window (deterministic), 'random' = "
+                "resampled every forward call (mirrors pair_lag's pool_size convention).",
+            },
         },
         "_note": "input_dim, output_dim, and seq_len are set automatically from the selected feature columns "
         "and obs_len (adjusted for token_level=\"digits\"'s multi-token-per-step expansion) at training time.",

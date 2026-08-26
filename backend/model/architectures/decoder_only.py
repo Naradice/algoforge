@@ -15,10 +15,13 @@ Output: [batch, pred_len, output_dim], read off the last sequence position's rep
 
 from __future__ import annotations
 
+import numpy as np
 import torch
 import torch.nn as nn
 
 from .transformer import PositionalEncoding
+
+_COVERAGE_MODES = ("contiguous", "uniform", "random")
 
 
 class CausalLinearMix(nn.Module):
@@ -83,6 +86,8 @@ class DecoderOnlyTransformer(nn.Module):
         dim_feedforward: int = 256,
         dropout: float = 0.1,
         use_attention: bool = True,
+        token_coverage_k: int | None = None,
+        token_coverage_mode: str = "contiguous",
         device: str = "cpu",
         vocab_size: int | None = None,
         **kwargs,
@@ -93,27 +98,77 @@ class DecoderOnlyTransformer(nn.Module):
         self.output_dim = output_dim
         self.device = device
 
+        # token_coverage_k (opt-in): instead of attending over every one of the seq_len positions,
+        # keep only k of them (always including seq_len-1, the most recent observed step, so no
+        # strategy is handicapped by losing the single most informative position as a side effect
+        # of sampling) -- see model/architectures/pair_lag.py's PairLagModel for the analogous
+        # "random" convention (resampled every forward call). Requires use_attention=True:
+        # CausalLinearMix's weight is a fixed [seq_len, seq_len] table of learned, absolute-
+        # position-indexed entries with no coherent sparse-subset semantic, unlike
+        # nn.MultiheadAttention which is shape-agnostic.
+        if token_coverage_k is not None:
+            if not use_attention:
+                raise ValueError("token_coverage_k requires use_attention=True")
+            if token_coverage_mode not in _COVERAGE_MODES:
+                raise ValueError(f"token_coverage_mode must be one of {_COVERAGE_MODES}, got {token_coverage_mode!r}")
+            if not (1 <= token_coverage_k <= seq_len):
+                raise ValueError(f"token_coverage_k must be in [1, {seq_len}], got {token_coverage_k}")
+        self.token_coverage_k = token_coverage_k
+        self.token_coverage_mode = token_coverage_mode
+        self.seq_len = seq_len
+
         # vocab_size (opt-in): src is a stream of integer token ids (see OHLCWindowDataset's
         # token_level) -- embed directly to d_model, same convention as Seq2SeqTransformer.
         self.embed = nn.Embedding(vocab_size, d_model) if vocab_size else None
         self.src_proj = None if vocab_size else nn.Linear(input_dim, d_model)
         self.pos_enc = PositionalEncoding(d_model, dropout=dropout)
 
+        effective_len = token_coverage_k or seq_len
         self.blocks = nn.ModuleList(
             [
-                DecoderBlock(d_model, nhead, dim_feedforward, dropout, seq_len, use_attention)
+                DecoderBlock(d_model, nhead, dim_feedforward, dropout, effective_len, use_attention)
                 for _ in range(num_layers)
             ]
         )
         if use_attention:
             self.register_buffer(
-                "causal_mask", nn.Transformer.generate_square_subsequent_mask(seq_len), persistent=False
+                "causal_mask", nn.Transformer.generate_square_subsequent_mask(effective_len), persistent=False
             )
         else:
             self.causal_mask = None
 
+        # Fixed index buffers for the deterministic modes -- computed once, reused every forward
+        # call. "random" is resampled per call instead (see forward()), so it has no buffer here.
+        if token_coverage_k is not None and token_coverage_k < seq_len:
+            if token_coverage_mode == "contiguous":
+                idx = np.arange(seq_len - token_coverage_k, seq_len)
+            elif token_coverage_mode == "uniform":
+                idx = np.unique(np.round(np.linspace(0, seq_len - 1, token_coverage_k)).astype(int))
+                if len(idx) != token_coverage_k:
+                    raise ValueError(
+                        f"uniform token_coverage_k={token_coverage_k} at seq_len={seq_len} produced "
+                        f"{len(idx)} unique positions after rounding -- pick a k that spaces out cleanly"
+                    )
+            else:
+                idx = None  # random: computed fresh in forward()
+            if idx is not None:
+                self.register_buffer("_coverage_idx", torch.as_tensor(idx, dtype=torch.long), persistent=False)
+            else:
+                self._coverage_idx = None
+        else:
+            self._coverage_idx = None
+
         self.head = nn.Linear(d_model, output_dim * pred_len)
         self.to(device)
+
+    def _select_positions(self, batch_device: torch.device) -> torch.Tensor:
+        """Returns a 1D LongTensor of the token_coverage_k positions to keep, sorted ascending,
+        always including seq_len-1."""
+        if self.token_coverage_mode == "random":
+            rest = np.random.choice(self.seq_len - 1, size=self.token_coverage_k - 1, replace=False)
+            idx = np.sort(np.append(rest, self.seq_len - 1))
+            return torch.as_tensor(idx, dtype=torch.long, device=batch_device)
+        return self._coverage_idx.to(batch_device)
 
     def forward(self, src: torch.Tensor, tgt: torch.Tensor | None = None, *args, **kwargs) -> torch.Tensor:
         """
@@ -131,7 +186,15 @@ class DecoderOnlyTransformer(nn.Module):
             x = x.reshape(x.size(0), -1, x.size(-1))  # [batch, seq_len, d_model]
         else:
             x = self.src_proj(src)
-        x = self.pos_enc(x)
+
+        if self.token_coverage_k is not None and self.token_coverage_k < self.seq_len:
+            positions = self._select_positions(x.device)
+            x = x[:, positions, :]
+            x = x + self.pos_enc.pe[:, positions, :]
+            x = self.pos_enc.dropout(x)
+        else:
+            x = self.pos_enc(x)
+
         for block in self.blocks:
             x = block(x, self.causal_mask)
         last = x[:, -1, :]

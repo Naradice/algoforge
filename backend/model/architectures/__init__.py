@@ -72,6 +72,14 @@ ARCHITECTURE_DEFAULTS: dict[str, dict] = {
         # Everything else in the block (FFN, LayerNorm, residual, positional encoding) is
         # identical between the two settings -- see model/architectures/decoder_only.py.
         "use_attention": True,
+        # Coverage-controlled attention ablation: instead of attending over every seq_len
+        # position, keep only token_coverage_k of them (None = full window, today's default
+        # behavior). token_coverage_mode picks which positions survive -- "contiguous" (last k,
+        # deterministic), "uniform" (evenly spaced, deterministic), or "random" (resampled every
+        # forward call, mirrors pair_lag's pool_size convention). Requires use_attention=True --
+        # see model/architectures/decoder_only.py.
+        "token_coverage_k": None,
+        "token_coverage_mode": "contiguous",
     },
     "timegan": {
         "input_dim": 1,

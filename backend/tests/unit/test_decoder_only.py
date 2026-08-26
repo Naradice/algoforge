@@ -1,6 +1,7 @@
 """Unit tests for model/architectures/decoder_only.py — the attention-ablation vehicle."""
 from __future__ import annotations
 
+import numpy as np
 import torch
 
 from model.architectures.decoder_only import CausalLinearMix, DecoderOnlyTransformer
@@ -98,3 +99,98 @@ class TestDecoderOnlyTransformer:
         out_with_tgt = model(src, tgt)
         out_without_tgt = model(src)
         assert torch.allclose(out_with_tgt, out_without_tgt)
+
+
+class TestTokenCoverage:
+    def _build(self, token_coverage_k=None, token_coverage_mode="contiguous", use_attention=True, seq_len=10):
+        return DecoderOnlyTransformer(
+            input_dim=1, output_dim=1, seq_len=seq_len, pred_len=3,
+            d_model=16, nhead=2, num_layers=2, dim_feedforward=32,
+            dropout=0.0, use_attention=use_attention, device="cpu",
+            token_coverage_k=token_coverage_k, token_coverage_mode=token_coverage_mode,
+        )
+
+    def test_none_reproduces_exact_baseline(self):
+        torch.manual_seed(0)
+        model_a = DecoderOnlyTransformer(
+            input_dim=1, output_dim=1, seq_len=10, pred_len=3,
+            d_model=16, nhead=2, num_layers=2, dim_feedforward=32, dropout=0.0, device="cpu",
+        )
+        torch.manual_seed(0)
+        model_b = self._build(token_coverage_k=None)
+        src = torch.randn(4, 10, 1)
+        assert torch.allclose(model_a(src), model_b(src))
+
+    def test_output_shape_per_mode(self):
+        for mode in ("contiguous", "uniform", "random"):
+            for k in (4, 7, 10):
+                model = self._build(token_coverage_k=k, token_coverage_mode=mode)
+                src = torch.randn(5, 10, 1)
+                out = model(src)
+                assert out.shape == (5, 3, 1), f"mode={mode} k={k}"
+
+    def test_last_position_always_used(self):
+        # Perturbing the most recent step (seq_len-1) must change the output under every mode --
+        # if it didn't, that mode silently dropped the anchor position. For "random", pin the
+        # RNG seed before each forward call so both calls sample the identical position set --
+        # otherwise resampling noise alone would make the outputs differ, masking the thing this
+        # test is actually checking.
+        torch.manual_seed(0)
+        for mode in ("contiguous", "uniform", "random"):
+            model = self._build(token_coverage_k=4, token_coverage_mode=mode)
+            model.eval()
+            src = torch.randn(2, 10, 1)
+            np.random.seed(123)
+            out1 = model(src)
+            src2 = src.clone()
+            src2[:, -1, :] = torch.randn(2, 1)
+            np.random.seed(123)
+            out2 = model(src2)
+            assert not torch.allclose(out1, out2), f"mode={mode} did not use seq_len-1"
+
+    def test_contiguous_and_uniform_are_deterministic_across_calls(self):
+        for mode in ("contiguous", "uniform"):
+            model = self._build(token_coverage_k=4, token_coverage_mode=mode)
+            model.eval()
+            src = torch.randn(3, 10, 1)
+            out1 = model(src)
+            out2 = model(src)
+            assert torch.allclose(out1, out2)
+
+    def test_random_mode_varies_across_calls(self):
+        model = self._build(token_coverage_k=4, token_coverage_mode="random")
+        model.eval()
+        src = torch.randn(3, 10, 1)
+        outs = [model(src) for _ in range(8)]
+        assert not all(torch.allclose(outs[0], o) for o in outs[1:])
+
+    def test_raises_with_use_attention_false(self):
+        try:
+            self._build(token_coverage_k=4, use_attention=False)
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+    def test_raises_on_invalid_mode(self):
+        try:
+            self._build(token_coverage_k=4, token_coverage_mode="bogus")
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+    def test_raises_on_out_of_range_k(self):
+        for bad_k in (0, -1, 11):
+            try:
+                self._build(token_coverage_k=bad_k)
+                assert False, f"expected ValueError for k={bad_k}"
+            except ValueError:
+                pass
+
+    def test_gradients_flow_with_coverage(self):
+        for mode in ("contiguous", "uniform", "random"):
+            model = self._build(token_coverage_k=4, token_coverage_mode=mode)
+            src = torch.randn(4, 10, 1)
+            out = model(src)
+            out.sum().backward()
+            for name, p in model.named_parameters():
+                assert p.grad is not None, f"no gradient reached {name} (mode={mode})"
