@@ -56,6 +56,13 @@ ARCHITECTURE_SCHEMAS = {
                 "(deterministic), 'uniform' = evenly spaced across the window (deterministic), 'random' = "
                 "resampled every forward call (mirrors pair_lag's pool_size convention).",
             },
+            "attn_window": {
+                "type": ["integer", "null"], "default": None,
+                "description": "If set, each query position can only attend to keys within this many steps "
+                "behind it (attn_window >= seq_len recovers plain causal attention) -- every position stays "
+                "in the sequence, unlike token_coverage_k which removes positions entirely. Requires "
+                "use_attention=true.",
+            },
         },
         "_note": "input_dim, output_dim, and seq_len are set automatically from the selected feature columns "
         "and obs_len (adjusted for token_level=\"digits\"'s multi-token-per-step expansion) at training time.",

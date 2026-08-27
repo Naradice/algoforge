@@ -88,6 +88,7 @@ class DecoderOnlyTransformer(nn.Module):
         use_attention: bool = True,
         token_coverage_k: int | None = None,
         token_coverage_mode: str = "contiguous",
+        attn_window: int | None = None,
         device: str = "cpu",
         vocab_size: int | None = None,
         **kwargs,
@@ -117,6 +118,21 @@ class DecoderOnlyTransformer(nn.Module):
         self.token_coverage_mode = token_coverage_mode
         self.seq_len = seq_len
 
+        # attn_window (opt-in): unlike token_coverage_k (which drops entire positions from the
+        # whole model), every position stays in the sequence here -- each query position i is
+        # instead restricted to keys j with i-attn_window+1 <= j <= i, on top of the existing
+        # causal constraint j <= i (attn_window >= seq_len recovers plain causal attention
+        # exactly). Not combined with token_coverage_k in practice: a window over a coverage-
+        # compressed index space wouldn't correspond to true temporal locality. Requires
+        # use_attention=True for the same reason token_coverage_k does -- CausalLinearMix's
+        # weight is a fixed table with no natural windowing extension.
+        if attn_window is not None:
+            if not use_attention:
+                raise ValueError("attn_window requires use_attention=True")
+            if not (1 <= attn_window <= seq_len):
+                raise ValueError(f"attn_window must be in [1, {seq_len}], got {attn_window}")
+        self.attn_window = attn_window
+
         # vocab_size (opt-in): src is a stream of integer token ids (see OHLCWindowDataset's
         # token_level) -- embed directly to d_model, same convention as Seq2SeqTransformer.
         self.embed = nn.Embedding(vocab_size, d_model) if vocab_size else None
@@ -131,9 +147,17 @@ class DecoderOnlyTransformer(nn.Module):
             ]
         )
         if use_attention:
-            self.register_buffer(
-                "causal_mask", nn.Transformer.generate_square_subsequent_mask(effective_len), persistent=False
-            )
+            if attn_window is not None:
+                i_idx = torch.arange(effective_len).unsqueeze(1)
+                j_idx = torch.arange(effective_len).unsqueeze(0)
+                allowed = (j_idx <= i_idx) & (j_idx >= i_idx - attn_window + 1)
+                mask = torch.zeros(effective_len, effective_len)
+                mask.masked_fill_(~allowed, float("-inf"))
+                self.register_buffer("causal_mask", mask, persistent=False)
+            else:
+                self.register_buffer(
+                    "causal_mask", nn.Transformer.generate_square_subsequent_mask(effective_len), persistent=False
+                )
         else:
             self.causal_mask = None
 

@@ -80,6 +80,11 @@ ARCHITECTURE_DEFAULTS: dict[str, dict] = {
         # see model/architectures/decoder_only.py.
         "token_coverage_k": None,
         "token_coverage_mode": "contiguous",
+        # Local-window attention ablation: instead of removing positions from the model
+        # (token_coverage_k), restrict each query to keys within attn_window steps behind it
+        # (attn_window >= seq_len recovers plain causal attention). None = unrestricted causal,
+        # today's default. Requires use_attention=True -- see decoder_only.py.
+        "attn_window": None,
     },
     "timegan": {
         "input_dim": 1,

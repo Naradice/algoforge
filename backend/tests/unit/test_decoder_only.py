@@ -194,3 +194,91 @@ class TestTokenCoverage:
             out.sum().backward()
             for name, p in model.named_parameters():
                 assert p.grad is not None, f"no gradient reached {name} (mode={mode})"
+
+
+class TestAttentionWindow:
+    def _build(self, attn_window=None, use_attention=True, seq_len=10):
+        return DecoderOnlyTransformer(
+            input_dim=1, output_dim=1, seq_len=seq_len, pred_len=3,
+            d_model=16, nhead=2, num_layers=2, dim_feedforward=32,
+            dropout=0.0, use_attention=use_attention, device="cpu",
+            attn_window=attn_window,
+        )
+
+    def test_none_reproduces_exact_baseline(self):
+        torch.manual_seed(0)
+        model_a = DecoderOnlyTransformer(
+            input_dim=1, output_dim=1, seq_len=10, pred_len=3,
+            d_model=16, nhead=2, num_layers=2, dim_feedforward=32, dropout=0.0, device="cpu",
+        )
+        torch.manual_seed(0)
+        model_b = self._build(attn_window=None)
+        src = torch.randn(4, 10, 1)
+        assert torch.allclose(model_a(src), model_b(src))
+
+    def test_full_window_reproduces_plain_causal(self):
+        # attn_window == seq_len should behave identically to attn_window=None (both allow
+        # every j <= i), even though the mask is built via a different code path.
+        torch.manual_seed(0)
+        model_a = self._build(attn_window=None)
+        torch.manual_seed(0)
+        model_b = self._build(attn_window=10)
+        src = torch.randn(4, 10, 1)
+        assert torch.allclose(model_a(src), model_b(src))
+
+    def test_output_shape(self):
+        for w in (1, 2, 5, 10):
+            model = self._build(attn_window=w)
+            src = torch.randn(5, 10, 1)
+            out = model(src)
+            assert out.shape == (5, 3, 1), f"window={w}"
+
+    def test_query_unaffected_by_input_outside_its_window(self):
+        # Query position i=7 with attn_window=3 can see keys {5,6,7} -- perturbing position 3
+        # (outside that window) must leave the model's output completely unaffected, since the
+        # model only ever reads from the last position (i=9 here) -- so use seq_len small enough
+        # that the *last* position's own window excludes an early position.
+        torch.manual_seed(0)
+        model = self._build(attn_window=3, seq_len=10)
+        model.eval()
+        src = torch.randn(2, 10, 1)
+        out1 = model(src)
+        src2 = src.clone()
+        src2[:, 0, :] = torch.randn(2, 1)  # position 0 is outside the last position's window {7,8,9}
+        out2 = model(src2)
+        assert torch.allclose(out1, out2, atol=1e-6)
+
+    def test_query_affected_by_input_inside_its_window(self):
+        torch.manual_seed(0)
+        model = self._build(attn_window=3, seq_len=10)
+        model.eval()
+        src = torch.randn(2, 10, 1)
+        out1 = model(src)
+        src2 = src.clone()
+        src2[:, 8, :] = torch.randn(2, 1)  # position 8 is inside the last position's window {7,8,9}
+        out2 = model(src2)
+        assert not torch.allclose(out1, out2, atol=1e-6)
+
+    def test_raises_with_use_attention_false(self):
+        try:
+            self._build(attn_window=3, use_attention=False)
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+    def test_raises_on_out_of_range_window(self):
+        for bad_w in (0, -1, 11):
+            try:
+                self._build(attn_window=bad_w)
+                assert False, f"expected ValueError for attn_window={bad_w}"
+            except ValueError:
+                pass
+
+    def test_gradients_flow_with_window(self):
+        for w in (1, 3, 10):
+            model = self._build(attn_window=w)
+            src = torch.randn(4, 10, 1)
+            out = model(src)
+            out.sum().backward()
+            for name, p in model.named_parameters():
+                assert p.grad is not None, f"no gradient reached {name} (attn_window={w})"
