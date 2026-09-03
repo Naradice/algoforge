@@ -74,11 +74,6 @@ def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None
             "code": "COLAB_INVALID_TOKEN_LEVEL",
             "message": f"token_level must be one of {sorted(_VALID_TOKEN_LEVELS)} or omitted, got {token_level!r}",
         })
-    if hyperparams.get("preprocessing") is not None:
-        raise HTTPException(status_code=422, detail={
-            "code": "COLAB_UNSUPPORTED_PREPROCESSING",
-            "message": "execution_target='colab' doesn't support an inline preprocessing recipe yet",
-        })
     split_mode = hyperparams.get("split_mode", "chronological")
     if split_mode not in ("chronological", "regime_controlled"):
         raise HTTPException(status_code=422, detail={

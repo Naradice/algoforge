@@ -60,6 +60,7 @@ DEFAULT_HYPERPARAMS = {
     "n_digits": 3,
     "sax_paa_size": 5,
     "embedding_dim": None,
+    "preprocessing": None,
     "seed": 42,
 }
 
@@ -155,6 +156,21 @@ inside Colab) and register them with algoforge — see the last cell of this not
         cells.append(nbf.v4.new_code_cell(
             '!pip install -q scikit-learn  # only needed for token_level="cluster" (KMeans)'
         ))
+    if hp.get("preprocessing"):
+        # A preprocessing recipe (indicators/clustering) is applied via
+        # model_core.trainers.preprocessing.apply_preprocessing, which itself imports the
+        # separate finance_client package (its indicator implementations) -- not one of
+        # model_core's own dependencies, so it needs its own install here. --no-deps: skips
+        # finance_client's own declared deps (a couple aren't needed just to compute
+        # indicators, e.g. Windows-only MetaTrader5, which fails outright on Colab's Linux
+        # runtime); the packages actually needed to import it are listed explicitly instead,
+        # mirroring algoforge/backend/requirements.txt's own comment on why.
+        cells.append(nbf.v4.new_code_cell(
+            "# preprocessing recipe support needs finance_client (its indicator implementations)\n"
+            "!pip install -q scipy python-dotenv PyYAML websocket-client google-auth-oauthlib "
+            "pandas_datareader statsmodels yfinance matplotlib\n"
+            '!pip install -q --no-deps "git+https://github.com/Naradice/finance_client.git"'
+        ))
 
     cells.append(nbf.v4.new_code_cell(f"""import hashlib
 import os
@@ -223,6 +239,7 @@ print("device:", device)
     normalize=HYPERPARAMS["normalize"],
     val_split=HYPERPARAMS["val_split"],
     split_mode=HYPERPARAMS["split_mode"],
+    preprocessing=HYPERPARAMS["preprocessing"],
     token_level=HYPERPARAMS["token_level"],
     n_bins=HYPERPARAMS["n_bins"],
     cluster_window=HYPERPARAMS["cluster_window"],
