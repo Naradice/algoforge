@@ -315,7 +315,11 @@ async def get_preprocessed_dataset(preprocessed_dataset_id: int) -> dict:
 @mcp.tool()
 async def get_training_status(training_run_id: int) -> dict:
     """
-    Get the current status of a training run.
+    Get the current status of a training run, including epoch/ETA and, for a Colab run, its
+    configured timeout and whether the current pace is on track to finish before it (there is
+    no API -- colab-cli's or Google's -- that reports remaining Colab compute quota directly,
+    so this time-budget comparison is the closest available signal for "will this run be cut
+    off before it's done").
     Call repeatedly until status is "completed" or "error".
 
     Args:
@@ -325,14 +329,7 @@ async def get_training_status(training_run_id: int) -> dict:
     from model.service import model_service
 
     async with async_session_factory() as db:
-        run = await model_service.get_training_run_by_id(db, training_run_id)
-    return {
-        "status": run.status,
-        "current_epoch": run.current_epoch,
-        "best_epoch": run.best_epoch,
-        "val_loss": run.val_loss,
-        "stop_requested": run.stop_requested,
-    }
+        return await model_service.get_training_progress(db, training_run_id)
 
 
 @mcp.tool()

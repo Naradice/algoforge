@@ -35,27 +35,7 @@ async def start_hyperparameter_search(body: HyperparamSearchCreate, db: AsyncSes
 
 @tr_router.get("/{run_id}/status")
 async def get_training_status(run_id: int, db: AsyncSession = Depends(get_db)):
-    from datetime import datetime, timezone
-    run = await model_service.get_training_run_by_id(db, run_id)
-    elapsed = None
-    eta = None
-    if run.started_at:
-        elapsed = (datetime.now(timezone.utc) - run.started_at).total_seconds()
-        total_epochs = run.hyperparams.get("epochs") if run.hyperparams else None
-        if elapsed and run.current_epoch and total_epochs:
-            rate = elapsed / max(run.current_epoch, 1)
-            remaining = total_epochs - run.current_epoch
-            eta = rate * remaining
-    return DataResponse(data={
-        "status": run.status,
-        "current_epoch": run.current_epoch,
-        "total_epochs": run.hyperparams.get("epochs") if run.hyperparams else None,
-        "best_epoch": run.best_epoch,
-        "val_loss": run.val_loss,
-        "elapsed_seconds": elapsed,
-        "eta_seconds": eta,
-        "stop_requested": run.stop_requested,
-    })
+    return DataResponse(data=await model_service.get_training_progress(db, run_id))
 
 
 @tr_router.get("/{run_id}/metrics", response_model=DataResponse[list[TrainingRunMetricRead]])

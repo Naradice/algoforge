@@ -227,6 +227,30 @@ Verified live end to end: a 300-epoch run, `stop_requested` set mid-run, stopped
 cycle at epoch ~236 and registered as `completed` with `best_epoch=229` and
 `hyperparams._external_ref.stopped_early=true`.
 
+### Timeout budget instead of quota
+
+Neither colab-cli nor Google Colab itself exposes an API for remaining compute quota — confirmed
+by reading colab-cli's own `--help` and source, and there is no equivalent on Colab's side either.
+What *is* known is the `colab_timeout_seconds` this run was started with (passed to `colab exec
+--timeout`; defaults to `_DEFAULT_TIMEOUT_SECONDS` in `model/colab_trainer.py` if not set in
+`hyperparams`) and, from the same epoch-rate math `eta_seconds` already uses, how long the run is
+likely to still take. `GET /training-runs/{id}/status` (and the MCP tool `get_training_status`,
+which now calls the same `ModelService.get_training_progress` instead of duplicating the
+computation) combines these for a `execution_target="colab"` run into:
+
+- `colab_timeout_seconds` — the configured timeout for this run.
+- `colab_timeout_remaining_seconds` — `colab_timeout_seconds - elapsed_seconds`.
+- `likely_to_finish_before_timeout` — `eta_seconds <= colab_timeout_remaining_seconds`, or `null`
+  until there's enough progress to estimate a rate.
+
+This isn't a quota check — it can't tell you the account is about to be throttled independent of
+this one run — but it does answer "at the current pace, will this run finish before its own
+timeout kicks it off," which is the practical version of the same question. The training-run
+detail page shows this as a "Colab timeout budget" line once a run has started; an MCP-driven
+agent gets the same three fields back from `get_training_status` and can decide to lower
+`epochs`/raise `colab_timeout_seconds` on the next attempt if `likely_to_finish_before_timeout`
+comes back `false`.
+
 ## Known limitations (be aware before relying on this unattended)
 
 - No push notification from Colab back to algoforge or this session for anything *other* than

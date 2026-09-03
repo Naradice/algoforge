@@ -182,6 +182,16 @@ export default function TrainingRunDetailPage() {
           {runStatus?.val_loss != null && (
             <div className="text-xs text-gray-400">Best val loss: <span className="text-white">{runStatus.val_loss.toFixed(6)}</span></div>
           )}
+          {runStatus?.execution_target === "colab" && runStatus?.colab_timeout_remaining_seconds != null && (
+            <div className="text-xs text-gray-400">
+              Colab timeout budget: <span className="text-white">{Math.max(0, Math.round(runStatus.colab_timeout_remaining_seconds))}s left</span>
+              {runStatus.likely_to_finish_before_timeout != null && (
+                <span className={runStatus.likely_to_finish_before_timeout ? "text-green-400" : "text-yellow-400"}>
+                  {" "}· {runStatus.likely_to_finish_before_timeout ? "on track to finish in time" : "may not finish before timeout"}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 

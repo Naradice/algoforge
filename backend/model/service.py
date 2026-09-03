@@ -173,6 +173,62 @@ class ModelService:
             raise HTTPException(status_code=404, detail=TRAINING_RUN_NOT_FOUND)
         return run
 
+    async def get_training_progress(self, db: AsyncSession, run_id: int) -> dict:
+        """Single source of truth for "how is this run doing right now" -- used by both the
+        REST status endpoint (training_runs_router.get_training_status) and the MCP tool of the
+        same name, so an AI agent polling over MCP sees exactly what a human watching the UI
+        sees. Epoch-rate ETA math works the same for a "local" and a "colab" run: both update
+        started_at/current_epoch the same way (see celery_worker._train_model and
+        colab_trainer._poll_and_maybe_stop), so no execution_target branch is needed for that
+        part.
+
+        For a "colab" run, also surfaces colab_timeout_seconds (the value passed to `colab exec
+        --timeout`, stored in hyperparams -- see colab_trainer.py's _DEFAULT_TIMEOUT_SECONDS
+        comment) alongside how much of it is left and whether the epoch-rate ETA fits inside
+        that remainder, so a caller can tell "will this finish before Colab kicks it off for
+        idling/quota" without separately knowing the timeout value it was started with -- there
+        is no API (colab-cli or Google's) that reports remaining Colab compute quota directly,
+        so this time-budget comparison is the closest available proxy.
+        """
+        from datetime import datetime, timezone
+
+        run = await self.get_training_run_by_id(db, run_id)
+        hyperparams = run.hyperparams or {}
+        total_epochs = hyperparams.get("epochs")
+
+        elapsed = None
+        eta = None
+        if run.started_at:
+            elapsed = (datetime.now(timezone.utc) - run.started_at).total_seconds()
+            if run.current_epoch and total_epochs:
+                rate = elapsed / max(run.current_epoch, 1)
+                eta = rate * (total_epochs - run.current_epoch)
+
+        result = {
+            "status": run.status,
+            "execution_target": run.execution_target,
+            "current_epoch": run.current_epoch,
+            "total_epochs": total_epochs,
+            "best_epoch": run.best_epoch,
+            "val_loss": run.val_loss,
+            "elapsed_seconds": elapsed,
+            "eta_seconds": eta,
+            "stop_requested": run.stop_requested,
+        }
+
+        if run.execution_target == "colab":
+            timeout_seconds = hyperparams.get("colab_timeout_seconds")
+            timeout_remaining = (
+                timeout_seconds - elapsed if timeout_seconds is not None and elapsed is not None else None
+            )
+            result["colab_timeout_seconds"] = timeout_seconds
+            result["colab_timeout_remaining_seconds"] = timeout_remaining
+            result["likely_to_finish_before_timeout"] = (
+                eta <= timeout_remaining if eta is not None and timeout_remaining is not None else None
+            )
+
+        return result
+
     async def list_epoch_metrics(self, db: AsyncSession, run_id: int) -> list:
         await self.get_training_run_by_id(db, run_id)
         return await model_repo.get_epoch_metrics(db, run_id)
