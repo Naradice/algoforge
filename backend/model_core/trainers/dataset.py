@@ -469,7 +469,7 @@ class OHLCWindowDataset:
 
         # Apply indicators and clustering before row cap so indicators have full history
         if preprocessing:
-            from model.trainers.preprocessing import apply_preprocessing
+            from model_core.trainers.preprocessing import apply_preprocessing
             df = apply_preprocessing(df, preprocessing)
 
         source_rows = len(df)

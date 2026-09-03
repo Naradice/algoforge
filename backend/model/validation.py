@@ -21,8 +21,8 @@ import numpy as np
 import pandas as pd
 import torch
 
-from model.architectures import build_model
-from model.trainers.dataset import OHLCWindowDataset
+from model_core.architectures import build_model
+from model_core.trainers.dataset import OHLCWindowDataset
 
 
 def _hurst(r: np.ndarray) -> float:

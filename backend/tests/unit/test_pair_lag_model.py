@@ -1,8 +1,8 @@
 """Unit tests for model/architectures/pair_lag.py — PairLagModel."""
 import torch
 
-from model.architectures import build_model
-from model.architectures.pair_lag import PairLagModel
+from model_core.architectures import build_model
+from model_core.architectures.pair_lag import PairLagModel
 
 
 class TestPairLagModel:

@@ -34,7 +34,7 @@ def order_from_config(architecture: str, config: dict) -> tuple[int, int, int]:
     Pick a preprocessed-dataset recipe with normalize="returns" (or raise d) if your primary
     feature column is a raw, non-stationary price series.
     """
-    from model.architectures import ARCHITECTURE_DEFAULTS
+    from model_core.architectures import ARCHITECTURE_DEFAULTS
 
     merged = {**ARCHITECTURE_DEFAULTS.get(architecture, {}), **config}
     d = int(merged.get("d", 0))

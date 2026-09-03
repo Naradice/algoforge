@@ -14,10 +14,11 @@ Related design docs: [data-layer.md](data-layer.md) (dataset artifacts),
 ```
 ┌─────────────┐   ① export+upload    ┌──────────────┐   ② generate   ┌─────────────────┐
 │  algoforge   │ ───────────────────▶ │ Google Drive │ ─────────────▶ │ notebooks/*.ipynb │
-│  dataset     │  snapshot (hash-     │  (public dl  │   (embeds real │ (Git-tracked)     │
-│  (mutable)   │  stamped, immutable) │   link)      │   algoforge    │                   │
-└─────────────┘                      └──────────────┘   source code) └────────┬──────────┘
-                                                                                │ ③ run
+│  dataset     │  snapshot (hash-     │  (public dl  │   (a thin      │ (Git-tracked)     │
+│  (mutable)   │  stamped, immutable) │   link)      │   driver that  │                   │
+└─────────────┘                      └──────────────┘   pip installs └────────┬──────────┘
+                                                          model_core at        │
+                                                          this commit)         │ ③ run
                                                                                 ▼
 ┌──────────────┐   ⑤ registers as     ┌──────────────────┐   downloads   ┌───────────────┐
 │  algoforge    │ ◀──────────────────  │ best.pt +         │ ◀───────────  │  Colab CPU    │
@@ -26,6 +27,13 @@ Related design docs: [data-layer.md](data-layer.md) (dataset artifacts),
 │   compare)    │
 └──────────────┘
 ```
+
+`model_core` (`backend/model_core/`) is algoforge's model architectures + training loop,
+packaged standalone (no FastAPI/SQLAlchemy/Celery dependency — see its own `__init__.py`). Both
+this backend's own celery worker and a generated notebook `pip install` and `import` the exact
+same package at the exact same git commit — not a copy of its source text — so a local run and a
+Colab run are guaranteed to execute identical code, not just code that looked the same when the
+notebook was generated.
 
 Everything on the left runs on this machine (or in the `colab-cli` container); everything on
 the right runs on Google's infrastructure. Nothing in between requires this machine to stay on
@@ -56,9 +64,11 @@ under a few hundred thousand rows is squarely in range; a multi-million-row `seq
 sweep is not (send that to this machine's GPU worker instead, via the normal
 `start_training_run` MCP tool / `/models/{id}/training-runs` API).
 
-**Current generator scope**: only `architecture="lstm"` on the default `OHLCWindowDataset` path
-(no `token_level`, no preprocessing recipe) is supported — see `model/notebook_export.py`'s
-docstring for what extending this to another architecture requires.
+**Current generator scope**: only `architecture="lstm"` is verified against this generator's
+training-loop wiring (see `model/notebook_export.py`'s `_SUPPORTED_ARCHITECTURES`). `token_level`
+/ a preprocessing recipe / `split_mode` are technically reachable now that the notebook imports
+the real `OHLCWindowDataset` unmodified, but `model/colab_trainer.py`'s `check_colab_supported`
+doesn't expose them yet — that hasn't been verified end-to-end.
 
 ## Step 1 — Export a dataset snapshot
 
@@ -77,16 +87,21 @@ see model-layer.md's "Comparing training runs" methodology notes).
 
 ```
 python -m scripts.generate_colab_notebook \
-    --architecture lstm --model-name <MODEL_NAME> \
+    --model-id <MODEL_ID> --model-name <MODEL_NAME> \
     --snapshot-id <SNAPSHOT_ID> \
-    --hyperparams-json '{"obs_len":60,"pred_len":10,"epochs":30,"hidden_dim":32,"lr":0.001}' \
+    --hyperparams-json '{"obs_len":60,"pred_len":10,"epochs":30,"lr":0.001}' \
     --out ../notebooks/<MODEL_NAME>.ipynb
 ```
 
-Commit the resulting `.ipynb` — it's self-contained (embeds the actual `LSTMModel` /
-`_apply_normalize` / `_make_windows` / `train_epoch`/`eval_epoch` source via
-`inspect.getsource()`, not a reimplementation) and records the algoforge git commit it was
-generated from, so it's independently reproducible from GitHub alone: anyone can open
+`--model-id` loads the architecture and its structural config (`hidden_dim`, `num_layers`, ...)
+straight from the `MLModel` record — kept deliberately separate from `--hyperparams-json`
+(`obs_len`/`epochs`/`lr`/etc.), the same split `celery_worker.py`'s own `_train_model` keeps
+between `model_config` and `hp`. If you don't have (or want) a DB record, pass
+`--architecture`/`--model-config-json` directly instead.
+
+The resulting `.ipynb` records the algoforge commit it was generated from and installs
+`model_core` from that exact commit at run time (Step 3) — not a copy of its source — so commit
+the notebook and it's independently reproducible from GitHub alone: anyone can open
 `https://colab.research.google.com/github/<org>/algoforge/blob/<ref>/notebooks/<MODEL_NAME>.ipynb`
 directly in a browser too, no `colab-cli` needed, if a human wants to just click through it.
 

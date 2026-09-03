@@ -109,6 +109,7 @@ async def run_colab_training(training_run_id: int) -> dict:
                 return {"error": "DATASET_NOT_FOUND"}
 
             architecture = model_rec.architecture
+            model_config = dict(model_rec.config)
             model_id = run.model_id
             dataset_id = run.dataset_id
             hyperparams = dict(run.hyperparams)
@@ -142,6 +143,7 @@ async def run_colab_training(training_run_id: int) -> dict:
         nb = build_notebook(
             architecture=architecture,
             model_name=session_name,
+            model_config=model_config,
             dataset_id=dataset_id,
             snapshot_id=snapshot.id,
             snapshot_url=snapshot.export_ref["url"],

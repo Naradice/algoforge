@@ -3,38 +3,37 @@ Generate a self-contained Google Colab notebook that reproduces an algoforge tra
 dataset snapshot (data/snapshot_service.py) — runnable on a bare Colab CPU runtime, no algoforge
 backend connection required.
 
-Rather than hand-copying model/dataset logic into the notebook (which would silently drift from
-algoforge's own implementation over time), this embeds the *actual current source* of:
-  - the requested architecture's model class (model/architectures/{arch}.py)
-  - OHLCWindowDataset's core numeric methods, `_apply_normalize` and `_make_windows`
-    (model/trainers/dataset.py) — the two methods that actually determine a run's numbers
-  - the training/eval loop (model/trainers/supervised.py)
-via `inspect.getsource()`, so the notebook's numerics match algoforge's pipeline exactly as of
-the commit it was generated from (recorded in the notebook's first cell) — not a
-reimplementation that could quietly diverge.
+Installs and imports the ACTUAL model_core package (backend/model_core/ — see that package's
+own __init__.py for why it has no backend dependencies) at execution time, from the exact git
+commit this notebook was generated from:
 
-Scope: only architecture="lstm" on the default (non-tokenized, no preprocessing recipe, no
-clustering, chronological split) OHLCWindowDataset path — see SimpleWindowDataset in the
-generated notebook. This covers the common case for a tiny from-scratch model check. Extend
-_SUPPORTED_ARCHITECTURES only after checking the new architecture's forward()/training-loop
-usage actually matches what this generator wires up — e.g. Seq2SeqTransformer's teacher-forcing
-call shape needs verifying before being added here, it isn't automatically compatible just
-because train_epoch/eval_epoch are shared by both.
+    pip install "git+https://github.com/<org>/algoforge.git@<commit>#subdirectory=backend/model_core"
+
+Both this backend's own celery worker (`from model_core.architectures import build_model`, see
+celery_worker.py) and a Colab notebook generated here import the SAME package — not a
+hand-copied snapshot of its source — so there is no possibility of drift between what a local
+run and a Colab run actually execute. (An earlier version of this generator used
+inspect.getsource() to embed source text directly; that only guaranteed textual identity at
+generation time, not that both paths ran the same code — see docs/colab-workflow.md's history
+for why this changed.)
+
+Scope: architecture="lstm" is the only one verified against this generator's training-loop
+wiring so far — see _SUPPORTED_ARCHITECTURES. Extending it only requires confirming the new
+architecture's forward()/train_epoch call shape matches (build_model/OHLCWindowDataset/
+train_epoch/eval_epoch themselves need no changes, since they're imported from model_core, not
+regenerated here). token_level / a preprocessing recipe / split_mode are technically reachable
+now that OHLCWindowDataset itself runs unmodified (see the dataset cell below) but are NOT
+exposed by model/colab_trainer.py's check_colab_supported yet — that restriction hasn't been
+lifted because it hasn't been verified end-to-end, not because of a generator limitation.
 """
 from __future__ import annotations
 
-import inspect
 import json
 import subprocess
-import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 
 import nbformat as nbf
-
-from model.architectures.lstm import LSTMModel
-from model.trainers.dataset import OHLCWindowDataset
-from model.trainers.supervised import _split_tgt, eval_epoch, train_epoch
 
 _SUPPORTED_ARCHITECTURES = {"lstm"}
 
@@ -44,22 +43,11 @@ DEFAULT_HYPERPARAMS = {
     "epochs": 20,
     "batch_size": 32,
     "lr": 0.001,
-    "hidden_dim": 32,
-    "num_layers": 2,
-    "dropout": 0.1,
     "val_split": 0.2,
     "normalize": "returns",
     "feature_cols": ["close"],
     "seed": 42,
 }
-
-
-def _dedent_source(obj) -> str:
-    """inspect.getsource() on a @staticmethod includes the decorator line and the class's
-    indentation; strip both so the result stands alone as a top-level def."""
-    src = textwrap.dedent(inspect.getsource(obj))
-    lines = [ln for ln in src.splitlines() if ln.strip() != "@staticmethod"]
-    return "\n".join(lines)
 
 
 def _git_commit(repo_root: Path) -> str:
@@ -71,15 +59,45 @@ def _git_commit(repo_root: Path) -> str:
         return "unknown"
 
 
+def _git_remote_url(repo_root: Path) -> str:
+    """HTTPS URL (ending in .git) of this repo's remote — prefers "origin", falls back to
+    whatever remote exists (this repo's is named "remote", not "origin"). Used to build the
+    `pip install git+...` URL model_core is installed from; a notebook that can't specify where
+    to install model_core from can't run, so this raises rather than silently generating a
+    broken notebook."""
+    try:
+        remotes = subprocess.check_output(
+            ["git", "remote"], cwd=repo_root, text=True, stderr=subprocess.DEVNULL
+        ).split()
+    except Exception as exc:
+        raise RuntimeError("could not list git remotes -- is this running inside a git repo?") from exc
+    if not remotes:
+        raise RuntimeError("no git remote configured -- can't build a pip install URL for model_core")
+    remote_name = "origin" if "origin" in remotes else remotes[0]
+    url = subprocess.check_output(
+        ["git", "remote", "get-url", remote_name], cwd=repo_root, text=True, stderr=subprocess.DEVNULL
+    ).strip()
+    if not url.endswith(".git"):
+        url += ".git"
+    return url
+
+
 def build_notebook(
     architecture: str,
     model_name: str,
+    model_config: dict,
     dataset_id: int,
     snapshot_id: int,
     snapshot_url: str,
     snapshot_sha256: str,
     hyperparams: dict,
 ) -> nbf.NotebookNode:
+    """*model_config* is the MLModel's own config (architecture-shape params like hidden_dim/
+    num_layers — see model_core/architectures/__init__.py's ARCHITECTURE_DEFAULTS) — kept
+    separate from *hyperparams* (obs_len/epochs/lr/etc.) the same way celery_worker.py's
+    _train_model keeps model_config and hp separate, so a Colab run builds the model with the
+    same shape as the MLModel record actually specifies, not whatever a hyperparams default
+    happens to be."""
     if architecture not in _SUPPORTED_ARCHITECTURES:
         raise ValueError(
             f"Unsupported architecture for notebook export: {architecture!r} "
@@ -90,6 +108,8 @@ def build_notebook(
     # backend/model/notebook_export.py -> backend/model -> backend -> algoforge/
     repo_root = Path(__file__).resolve().parent.parent.parent
     commit = _git_commit(repo_root)
+    remote_url = _git_remote_url(repo_root)
+    install_url = f"git+{remote_url}@{commit}#subdirectory=backend/model_core"
     generated_at = datetime.now(timezone.utc).isoformat()
 
     cells = []
@@ -103,26 +123,30 @@ Self-contained: runs on a bare Colab CPU runtime, no algoforge backend connectio
 - **Snapshot sha256**: `{snapshot_sha256}`
 - **Generated**: {generated_at} from algoforge commit `{commit}`
 
-The model/dataset/training-loop code below is copied verbatim (via Python's `inspect.getsource`,
-at notebook-generation time) from the algoforge backend at the commit above — not a
-reimplementation — so results should match what algoforge itself produces training the same
-hyperparams on the same snapshot.
+This notebook installs and imports algoforge's actual `model_core` package
+(`{install_url}`) rather than embedding a copy of its source — so it runs the exact same
+model/dataset/training-loop code this backend's own training worker would, not a
+reimplementation that could quietly drift from it.
 
 After training, download `best.pt` and `metrics.json` (the last cell does this automatically
 inside Colab) and register them with algoforge — see the last cell of this notebook.
 """))
 
-    cells.append(nbf.v4.new_code_cell(
-        "!pip install -q pyarrow  # torch/numpy/pandas already present on Colab runtimes"
-    ))
+    cells.append(nbf.v4.new_code_cell(f'!pip install -q "{install_url}"'))
 
     cells.append(nbf.v4.new_code_cell(f"""import hashlib
+import os
 import urllib.request
 
 DATASET_ID = {dataset_id}
 GIT_COMMIT = {commit!r}
 SNAPSHOT_URL = {snapshot_url!r}
 SNAPSHOT_SHA256 = {snapshot_sha256!r}
+
+# OHLCWindowDataset resolves artifact_path as Path(ARTIFACT_STORE_PATH) / artifact_path (same
+# convention the backend uses) -- point it at the current directory so the downloaded snapshot's
+# plain filename resolves directly.
+os.environ["ARTIFACT_STORE_PATH"] = "."
 LOCAL_PATH = "dataset_snapshot.parquet"
 
 urllib.request.urlretrieve(SNAPSHOT_URL, LOCAL_PATH)
@@ -140,14 +164,20 @@ print("snapshot OK:", _actual)
 """))
 
     hp_json = json.dumps(hp, indent=4)
+    model_config_json = json.dumps(model_config, indent=4)
     cells.append(nbf.v4.new_code_cell(f"""import random
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 
+from model_core.architectures import build_model
+from model_core.trainers.dataset import OHLCWindowDataset
+from model_core.trainers.supervised import train_epoch, eval_epoch
+
+ARCHITECTURE = {architecture!r}
 HYPERPARAMS = {hp_json}
+MODEL_CONFIG = {model_config_json}
 
 _seed = HYPERPARAMS.get("seed")
 if _seed is not None:
@@ -159,75 +189,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print("device:", device)
 """))
 
-    model_src = _dedent_source(LSTMModel)
-    cells.append(nbf.v4.new_code_cell(f"# --- model/architectures/lstm.py (verbatim, commit {commit}) ---\n{model_src}"))
-
-    normalize_src = _dedent_source(OHLCWindowDataset._apply_normalize)
-    make_windows_src = _dedent_source(OHLCWindowDataset._make_windows)
-    cells.append(nbf.v4.new_code_cell(f"""# --- model/trainers/dataset.py: OHLCWindowDataset's core numeric methods (verbatim) ---
-# Only the default path is reproduced here: no token_level, no preprocessing recipe, no
-# clustering, chronological split only — see notebook_export.py's module docstring.
-{normalize_src}
-
-
-{make_windows_src}
-
-
-class SimpleWindowDataset:
-    \"\"\"Minimal re-creation of OHLCWindowDataset's default path: load a single Parquet
-    snapshot, normalize, window, chronological train/val split. _apply_normalize and
-    _make_windows above are algoforge's own code, copied verbatim — not reimplemented.\"\"\"
-
-    def __init__(self, parquet_path, obs_len, pred_len, feature_cols, normalize, val_split, device):
-        df = pd.read_parquet(parquet_path)
-        raw = df[feature_cols].values.astype(np.float32)
-        data = _apply_normalize(raw, normalize)
-
-        all_src, all_tgt = _make_windows(data, data, obs_len, pred_len + 1)
-        n_windows = len(all_src)
-        split_idx = int(n_windows * (1 - val_split))
-        self._train_src, self._train_tgt = all_src[:split_idx], all_tgt[:split_idx]
-        if n_windows - split_idx > 0:
-            self._val_src, self._val_tgt = all_src[split_idx:], all_tgt[split_idx:]
-        else:
-            self._val_src, self._val_tgt = self._train_src, self._train_tgt
-
-        self._is_train = True
-        self.device = device
-        self.obs_len = obs_len
-        self.pred_len = pred_len
-        self.n_features = len(feature_cols)
-
-    def train(self):
-        self._is_train = True
-
-    def eval(self):
-        self._is_train = False
-
-    def __len__(self):
-        return len(self._train_src) if self._is_train else len(self._val_src)
-
-    def __getitem__(self, key):
-        src_arr = self._train_src if self._is_train else self._val_src
-        tgt_arr = self._train_tgt if self._is_train else self._val_tgt
-        return torch.tensor(src_arr[key], device=self.device), torch.tensor(tgt_arr[key], device=self.device)
-
-
-# train_epoch/eval_epoch below are copied from a module that imports the real OHLCWindowDataset
-# only for a type hint (`ds: OHLCWindowDataset`) -- that module also has
-# `from __future__ import annotations`, deferring the hint to a string there, but that pragma
-# doesn't carry over into this notebook's cells. Alias it so the hint still resolves here too.
-OHLCWindowDataset = SimpleWindowDataset
-"""))
-
-    split_tgt_src = _dedent_source(_split_tgt)
-    train_epoch_src = _dedent_source(train_epoch)
-    eval_epoch_src = _dedent_source(eval_epoch)
-    cells.append(nbf.v4.new_code_cell(
-        f"# --- model/trainers/supervised.py (verbatim) ---\n{split_tgt_src}\n\n{train_epoch_src}\n\n{eval_epoch_src}"
-    ))
-
-    cells.append(nbf.v4.new_code_cell("""dataset = SimpleWindowDataset(
+    cells.append(nbf.v4.new_code_cell("""dataset = OHLCWindowDataset(
     LOCAL_PATH,
     obs_len=HYPERPARAMS["obs_len"],
     pred_len=HYPERPARAMS["pred_len"],
@@ -237,13 +199,14 @@ OHLCWindowDataset = SimpleWindowDataset
     device=device,
 )
 
-model = LSTMModel(
-    input_dim=len(HYPERPARAMS["feature_cols"]),
-    hidden_dim=HYPERPARAMS["hidden_dim"],
-    output_dim=len(HYPERPARAMS["feature_cols"]),
-    pred_len=HYPERPARAMS["pred_len"],
-    num_layers=HYPERPARAMS["num_layers"],
-    dropout=HYPERPARAMS["dropout"],
+model = build_model(
+    ARCHITECTURE,
+    {
+        **MODEL_CONFIG,
+        "input_dim": dataset.n_features,
+        "output_dim": dataset.n_features,
+        "pred_len": HYPERPARAMS["pred_len"],
+    },
     device=device,
 )
 num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -272,6 +235,7 @@ for epoch in range(1, HYPERPARAMS["epochs"] + 1):
 metadata = {
     "dataset_id": DATASET_ID,
     "hyperparams": HYPERPARAMS,
+    "model_config": MODEL_CONFIG,
     "epoch_metrics": epoch_metrics,
     "best_epoch": best_epoch,
     "val_loss": best_val_loss,

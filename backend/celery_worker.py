@@ -560,7 +560,7 @@ async def _resolve_training_context(factory, training_run_id: int):
     """
     from sqlalchemy import select, update
     from model.models import MLModel, TrainingRun
-    from model.architectures import TRAINING_DEFAULTS
+    from model_core.architectures import TRAINING_DEFAULTS
 
     async with factory() as db:
         result = await db.execute(select(TrainingRun).where(TrainingRun.id == training_run_id))
@@ -625,7 +625,7 @@ async def _run_arima_training(factory, training_run_id: int, model_id: int, arch
     covers this path."""
     from sqlalchemy import update
     from model.models import MLModel, TrainingRun, TrainingRunMetric
-    from model.trainers import order_from_config, load_series_for_arima, fit_and_evaluate_arima, compute_effective_characteristics
+    from model_core.trainers import order_from_config, load_series_for_arima, fit_and_evaluate_arima, compute_effective_characteristics
 
     try:
         order = order_from_config(architecture, model_config)
@@ -694,9 +694,9 @@ async def _train_model(training_run_id: int) -> dict:
     import numpy as np
     from sqlalchemy import update
     from model.models import MLModel, TrainingRun, TrainingCheckpoint, TrainingRunMetric
-    from model.architectures import build_model
-    from model.trainers import get_trainer_fns, get_step_trainer_fn, OHLCWindowDataset, compute_effective_characteristics
-    from model.trainers.arima_trainer import ARIMA_ARCHITECTURES
+    from model_core.architectures import build_model
+    from model_core.trainers import get_trainer_fns, get_step_trainer_fn, OHLCWindowDataset, compute_effective_characteristics
+    from model_core.trainers.arima_trainer import ARIMA_ARCHITECTURES
     from celery_app import _get_redis
 
     # Training tasks can legitimately run for hours, well past a broker's default message
@@ -825,7 +825,7 @@ async def _train_model(training_run_id: int) -> dict:
         # only depends on the recipe (dataset/preprocessing/feature_cols).
         if dataset.vocab_size is not None and dataset.token_stream is not None:
             try:
-                from model.trainers.dataset import compute_token_characteristics
+                from model_core.trainers.dataset import compute_token_characteristics
                 preprocessed_characteristics = {
                     **preprocessed_characteristics,
                     **compute_token_characteristics(dataset.token_stream, dataset.vocab_size),
@@ -1211,7 +1211,7 @@ async def _compute_preprocessed_characteristics(preprocessed_dataset_id: int) ->
     from sqlalchemy import select, update
     from model.models import PreprocessedDataset
     from data.models import Dataset
-    from model.trainers.dataset import compute_effective_characteristics
+    from model_core.trainers.dataset import compute_effective_characteristics
 
     logger.info(f"compute_preprocessed_characteristics started for {preprocessed_dataset_id}")
     factory, engine = _make_db()

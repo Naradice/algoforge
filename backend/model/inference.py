@@ -39,8 +39,8 @@ def predict(
     features: list of rows, length must be >= obs_len
     Returns: list of pred_len dicts with keys matching feature_names + "direction", "step"
     """
-    from model.architectures import build_model
-    from model.trainers.arima_trainer import ARIMA_ARCHITECTURES
+    from model_core.architectures import build_model
+    from model_core.trainers.arima_trainer import ARIMA_ARCHITECTURES
 
     if architecture in ARIMA_ARCHITECTURES:
         raise ValueError(

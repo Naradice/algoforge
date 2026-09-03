@@ -32,7 +32,7 @@ def artifact_store(tmp_path):
 
 class TestNormalizeDiff:
     def test_diff_matches_raw_first_differences(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, normalize="diff", val_split=0.2)
@@ -45,7 +45,7 @@ class TestNormalizeDiff:
         assert np.allclose(first_tgt, expected_diff[ds.obs_len - 1: ds.obs_len - 1 + len(first_tgt)], atol=1e-4)
 
     def test_diff_has_near_zero_mean_unlike_raw_level(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds_diff = OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, normalize="diff")
@@ -72,7 +72,7 @@ def _make_sine_parquet_with_vol(path, n=600, period=60, amplitude=0.5, base=100.
 
 class TestCrossColumnTarget:
     def test_omitted_tgt_feature_cols_preserves_src_equals_tgt(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet_with_vol(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, normalize="diff")
@@ -81,7 +81,7 @@ class TestCrossColumnTarget:
         assert np.allclose(ds._train_src[:, -1, :], ds._train_tgt[:, 0, :])
 
     def test_tgt_feature_cols_predicts_a_different_column_than_src(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet_with_vol(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset(
@@ -112,7 +112,7 @@ class TestCrossColumnTarget:
         representation) and tgt_feature_cols (cross-column target) to compose correctly --
         token_level's own tgt-length-alignment logic (line ~119 in dataset.py) was written before
         tgt_feature_cols existed, so this checks they don't silently misalign."""
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet_with_vol(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset(
@@ -133,7 +133,7 @@ class TestCrossColumnTarget:
 
 class TestTokenLevel:
     def test_default_none_preserves_src_equals_tgt(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, normalize="zscore")
@@ -145,7 +145,7 @@ class TestTokenLevel:
         assert np.allclose(ds._train_src[:, -1, :], ds._train_tgt[:, 0, :])
 
     def test_diff_token_level_gives_continuous_differenced_src_with_continuous_tgt(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, normalize="zscore", token_level="diff")
@@ -161,7 +161,7 @@ class TestTokenLevel:
         assert ds._train_tgt.shape[1] == ds.pred_len + 1
 
     def test_quantize_diff_produces_integer_tokens_within_vocab(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=1200)
         ds = OHLCWindowDataset(
@@ -179,7 +179,7 @@ class TestTokenLevel:
         assert ds._train_tgt.dtype == np.float32
 
     def test_quantize_diff_bins_are_roughly_balanced_via_quantile_edges(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=3000, period=60)
         ds = OHLCWindowDataset(
@@ -195,7 +195,7 @@ class TestTokenLevel:
         assert counts.max() / max(counts.min(), 1) < 5
 
     def test_token_level_rejects_multiple_feature_cols(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         with pytest.raises(ValueError, match="single feature_col|one feature_col"):
@@ -205,14 +205,14 @@ class TestTokenLevel:
             )
 
     def test_unknown_token_level_raises(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         with pytest.raises(ValueError, match="Unknown token_level"):
             OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5, token_level="bogus")
 
     def test_quantize_diff_populates_token_stream_for_characteristics(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset(
@@ -225,7 +225,7 @@ class TestTokenLevel:
         assert ds.token_stream.min() >= 0 and ds.token_stream.max() < 7
 
     def test_diff_and_none_leave_token_stream_unset(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         assert OHLCWindowDataset("ds.parquet", obs_len=10, pred_len=5).token_stream is None
@@ -234,7 +234,7 @@ class TestTokenLevel:
 
 class TestClusterTokenLevel:
     def test_cluster_produces_integer_tokens_within_vocab_and_correct_length(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
         ds = OHLCWindowDataset(
@@ -250,7 +250,7 @@ class TestClusterTokenLevel:
         assert len(ds.token_stream) == 1480
 
     def test_cluster_centroids_have_expected_shape(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
         ds = OHLCWindowDataset(
@@ -262,7 +262,7 @@ class TestClusterTokenLevel:
         assert ds.cluster_centroids.shape == (5, 20)
 
     def test_cluster_tgt_stays_continuous_and_index_aligned_in_length(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
         ds = OHLCWindowDataset(
@@ -274,7 +274,7 @@ class TestClusterTokenLevel:
         assert ds._train_src.shape[0] == ds._train_tgt.shape[0]
 
     def test_cluster_rejects_series_shorter_than_cluster_window(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=30)
         with pytest.raises(ValueError, match="cluster_window"):
@@ -286,7 +286,7 @@ class TestClusterTokenLevel:
         """On a periodic signal, clustering should recover something close to a phase
         partition of the cycle -- the same shape recurs every `period` steps, so the cluster
         id sequence should repeat at that lag far more often than chance (1/n_clusters)."""
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         period = 60
         _make_sine_parquet(artifact_store / "ds.parquet", n=3000, period=period)
@@ -302,7 +302,7 @@ class TestClusterTokenLevel:
 
 class TestDigitsTokenLevel:
     def test_digits_expand_one_step_into_sign_plus_n_digits_token_positions(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset(
@@ -316,7 +316,7 @@ class TestDigitsTokenLevel:
         assert ds._train_src.shape[1:] == (10, 4)
 
     def test_digit_tokens_are_0_9_and_sign_tokens_are_10_or_11(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset(
@@ -330,7 +330,7 @@ class TestDigitsTokenLevel:
         assert digit_cols.min() >= 0 and digit_cols.max() <= 9
 
     def test_digit_decoding_reconstructs_the_true_diff_within_scale_precision(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds = OHLCWindowDataset(
@@ -348,7 +348,7 @@ class TestDigitsTokenLevel:
         assert np.allclose(decoded, true_diff, atol=1.0 / ds.digit_scale + 1e-6)
 
     def test_digits_tgt_stays_continuous_with_the_standard_one_row_trim(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         ds_digits = OHLCWindowDataset(
@@ -364,7 +364,7 @@ class TestDigitsTokenLevel:
         assert ds_digits._train_tgt.shape[0] == ds_diff._train_tgt.shape[0]
 
     def test_digits_rejects_multiple_feature_cols(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         with pytest.raises(ValueError, match="one feature_col"):
@@ -376,7 +376,7 @@ class TestDigitsTokenLevel:
 
 class TestSaxTokenLevel:
     def test_sax_produces_integer_tokens_within_vocab(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
         ds = OHLCWindowDataset(
@@ -392,7 +392,7 @@ class TestSaxTokenLevel:
         assert len(ds.token_stream) == 299
 
     def test_sax_bins_are_roughly_balanced_via_quantile_edges(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         # period=63 (not an exact multiple of sax_paa_size=5) avoids the degenerate case where a
         # purely periodic, noise-free signal PAA-averages down to only a handful of exactly
@@ -410,7 +410,7 @@ class TestSaxTokenLevel:
         assert counts.max() / max(counts.min(), 1) < 5
 
     def test_sax_tgt_realigns_to_the_last_step_of_each_paa_segment(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         p, obs_len, pred_len = 5, 10, 5
         _make_sine_parquet(artifact_store / "ds.parquet", n=1500, period=60)
@@ -428,7 +428,7 @@ class TestSaxTokenLevel:
         assert ds._train_tgt[0, -1, 0] == pytest.approx(expected, abs=1e-4)
 
     def test_sax_rejects_series_shorter_than_paa_size(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=10)
         with pytest.raises(ValueError, match="sax_paa_size"):
@@ -437,7 +437,7 @@ class TestSaxTokenLevel:
             )
 
     def test_sax_token_stream_recurs_at_the_signal_period_in_paa_units(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         period = 60
         p = 5
@@ -459,7 +459,7 @@ def pd_read_close(path):
 
 class TestComputeTokenCharacteristics:
     def test_uniform_random_tokens_have_near_max_entropy_and_low_mutual_information(self):
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         rng = np.random.default_rng(0)
         vocab_size = 8
@@ -476,7 +476,7 @@ class TestComputeTokenCharacteristics:
         assert result["lz_compression_ratio"] > 0.3
 
     def test_constant_token_stream_has_zero_entropy_and_compresses_well(self):
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         tokens = np.zeros(5000, dtype=np.int64)
         result = compute_token_characteristics(tokens, vocab_size=8)
@@ -486,7 +486,7 @@ class TestComputeTokenCharacteristics:
         assert result["lz_compression_ratio"] < 0.05  # trivially compressible
 
     def test_periodic_pattern_has_low_conditional_entropy_rate_at_its_own_period(self):
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         # period-3 pattern repeated many times -- fully predictable given 2 tokens of context.
         pattern = np.array([0, 1, 2], dtype=np.int64)
@@ -502,7 +502,7 @@ class TestComputeTokenCharacteristics:
         """A period-3 tiled sequence is a deterministic function of position mod 3, so knowing
         the token at t fully determines the token at t+lag for *any* lag (not just lag=1) --
         this is the case §07's next step needs to distinguish from "only next-step structure"."""
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         pattern = np.array([0, 1, 2], dtype=np.int64)
         tokens = np.tile(pattern, 2000)
@@ -514,7 +514,7 @@ class TestComputeTokenCharacteristics:
             assert curve[lag] > 1.5  # near log2(3) ~ 1.585 bits at every lag
 
     def test_mi_curve_is_near_zero_at_every_lag_for_iid_tokens(self):
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         rng = np.random.default_rng(0)
         tokens = rng.integers(0, 8, size=20_000)
@@ -530,7 +530,7 @@ class TestComputeTokenCharacteristics:
         exactly one step ahead and carries no information about it at any other horizon (i.i.d.
         tokens otherwise) -- the clean synthetic case for "does token_target_mi actually find
         the horizon where the relationship lives, and only that one"."""
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         rng = np.random.default_rng(2)
         vocab_size = 4
@@ -551,7 +551,7 @@ class TestComputeTokenCharacteristics:
     def test_omitting_mi_lags_and_target_leaves_existing_keys_unaffected(self):
         """Both extensions are opt-in -- confirms the default call (no mi_lags, no target) is
         byte-for-byte the same result shape as before this feature existed."""
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         rng = np.random.default_rng(0)
         tokens = rng.integers(0, 8, size=2000)
@@ -561,7 +561,7 @@ class TestComputeTokenCharacteristics:
         assert "token_target_mi" not in result
 
     def test_zipf_distributed_tokens_recover_a_positive_alpha_with_good_fit(self):
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         rng = np.random.default_rng(1)
         vocab_size = 50
@@ -579,7 +579,7 @@ class TestComputeTokenCharacteristics:
         assert zipf["r2"] > 0.8
 
     def test_best_effort_does_not_raise_on_pathological_input(self):
-        from model.trainers.dataset import compute_token_characteristics
+        from model_core.trainers.dataset import compute_token_characteristics
 
         # A single repeated token: too few distinct tokens for a stable Zipf fit, but the call
         # must still succeed and report the degenerate case per-metric rather than raising.
@@ -609,7 +609,7 @@ def _make_regime_shift_parquet(path, n=2000, period=20):
 
 class TestRegimeControlledSplit:
     def test_regime_controlled_matches_train_val_target_means_better_than_chronological(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_regime_shift_parquet(artifact_store / "ds.parquet", n=2000)
         ds_chrono = OHLCWindowDataset(
@@ -626,7 +626,7 @@ class TestRegimeControlledSplit:
         assert regime_gap < chrono_gap * 0.1
 
     def test_regime_controlled_split_is_reproducible_via_split_seed(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_regime_shift_parquet(artifact_store / "ds.parquet", n=2000)
         ds1 = OHLCWindowDataset(
@@ -641,7 +641,7 @@ class TestRegimeControlledSplit:
         assert np.array_equal(ds1._val_tgt, ds2._val_tgt)
 
     def test_unknown_split_mode_raises(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         with pytest.raises(ValueError):
@@ -669,7 +669,7 @@ def _make_gapped_parquet(path, n=200, gap_start=100, gap_len=30):
 
 class TestRequireContiguous:
     def test_windows_spanning_a_gap_are_excluded(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_gapped_parquet(artifact_store / "ds.parquet", n=200, gap_start=100, gap_len=30)
         obs_len, pred_len = 10, 5
@@ -690,7 +690,7 @@ class TestRequireContiguous:
         assert n_unfiltered - n_filtered == total_len - 1
 
     def test_require_contiguous_raises_for_unsupported_token_level(self, artifact_store):
-        from model.trainers.dataset import OHLCWindowDataset
+        from model_core.trainers.dataset import OHLCWindowDataset
 
         _make_sine_parquet(artifact_store / "ds.parquet", n=600)
         with pytest.raises(NotImplementedError):

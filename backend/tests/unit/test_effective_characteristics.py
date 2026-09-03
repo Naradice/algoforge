@@ -38,7 +38,7 @@ def artifact_store(tmp_path):
 
 class TestComputeEffectiveCharacteristics:
     def test_computes_structure_metrics_on_close_with_no_preprocessing(self, artifact_store):
-        from model.trainers.dataset import compute_effective_characteristics
+        from model_core.trainers.dataset import compute_effective_characteristics
 
         _make_ohlc_parquet(artifact_store / "ds.parquet", n=300)
 
@@ -53,7 +53,7 @@ class TestComputeEffectiveCharacteristics:
         assert "error" not in result["regime_changes"]
 
     def test_uses_preprocessing_indicator_column_when_selected(self, artifact_store):
-        from model.trainers.dataset import compute_effective_characteristics
+        from model_core.trainers.dataset import compute_effective_characteristics
 
         _make_ohlc_parquet(artifact_store / "ds.parquet", n=300)
         preprocessing = {"indicators": [{"type": "sma", "period": 5}]}
@@ -67,7 +67,7 @@ class TestComputeEffectiveCharacteristics:
         assert "error" not in result["long_range_dependence"]
 
     def test_degrades_gracefully_per_analysis_on_short_series(self, artifact_store):
-        from model.trainers.dataset import compute_effective_characteristics
+        from model_core.trainers.dataset import compute_effective_characteristics
 
         _make_ohlc_parquet(artifact_store / "short.parquet", n=10)
 

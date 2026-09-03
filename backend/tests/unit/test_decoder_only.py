@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from model.architectures.decoder_only import CausalLinearMix, DecoderOnlyTransformer
+from model_core.architectures.decoder_only import CausalLinearMix, DecoderOnlyTransformer
 
 
 class TestCausalLinearMix:

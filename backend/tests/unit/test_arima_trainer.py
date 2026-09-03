@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from model.trainers.arima_trainer import order_from_config, fit_and_evaluate_arima
+from model_core.trainers.arima_trainer import order_from_config, fit_and_evaluate_arima
 
 
 class TestOrderFromConfig:

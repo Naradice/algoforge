@@ -323,7 +323,8 @@ class TestCreateTrainingRun:
             result = await svc.create_training_run(AsyncMock(), 1, body)
 
             repo.create_training_run.assert_called_once_with(
-                ANY, model_id=1, dataset_id=42, preprocessed_dataset_id=5, hyperparams={"epochs": 1}
+                ANY, model_id=1, dataset_id=42, preprocessed_dataset_id=5, hyperparams={"epochs": 1},
+                execution_target="local",
             )
         assert result is created_run
 
@@ -340,7 +341,8 @@ class TestCreateTrainingRun:
             await svc.create_training_run(AsyncMock(), 1, body)
 
             repo.create_training_run.assert_called_once_with(
-                ANY, model_id=1, dataset_id=7, preprocessed_dataset_id=None, hyperparams={}
+                ANY, model_id=1, dataset_id=7, preprocessed_dataset_id=None, hyperparams={},
+                execution_target="local",
             )
 
     @pytest.mark.asyncio

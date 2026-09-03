@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "algoforge-model-core"
+version = "0.1.0"
+description = "algoforge's model architectures and training-loop core, standalone (no FastAPI/SQLAlchemy/Celery dependency) -- see __init__.py"
+requires-python = ">=3.9"
+dependencies = [
+    "torch",
+    "numpy",
+    "pandas",
+]
+
+[project.optional-dependencies]
+# Only needed for OHLCWindowDataset's token_level="cluster" (trainers/dataset.py) -- lazily
+# imported, so not a dependency of the default (Colab-supported today) path.
+cluster = ["scikit-learn"]
+
+# Installed as a standalone package (not import-path relative to backend/) via e.g.:
+#   pip install "git+https://github.com/Naradice/algoforge.git@<commit>#subdirectory=backend/model_core"
+# package-dir maps the "model_core" import name onto this directory itself, since this
+# pyproject.toml lives inside backend/model_core/ rather than one level up.
+[tool.setuptools]
+package-dir = {"model_core" = "."}
+packages = ["model_core", "model_core.architectures", "model_core.trainers"]
