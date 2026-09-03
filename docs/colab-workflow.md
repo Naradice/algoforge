@@ -238,6 +238,9 @@ cycle at epoch ~236 and registered as `completed` with `best_epoch=229` and
 - Whether a long `colab exec` run risks Colab's own idle/runtime-length limits the same way the
   browser UI does is unconfirmed (the CLI advertises an automatic keep-alive daemon against
   idle-out specifically).
-- No duplicate-execution lock for `run_colab_training` the way `_train_model` has (see
-  `model/colab_trainer.py`'s module docstring) — unlikely to matter given Redis's 12h broker
-  visibility_timeout, but flagged for a very large `colab_timeout_seconds`.
+- `run_colab_training` has the same duplicate-execution Redis lock `_train_model` does (same
+  12h TTL as the broker's visibility_timeout) — verified live: calling it a second time for a
+  `training_run_id` already executing returns `{"skipped": "duplicate_execution"}` immediately
+  rather than starting a second Drive upload + colab-cli session, while the real run completes
+  normally. Still bounded by that same 12h TTL, so a run given a `colab_timeout_seconds` larger
+  than that remains a gap.

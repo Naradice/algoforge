@@ -19,11 +19,12 @@ stop`-ing a session mid-exec makes the blocked `colab exec` process exit non-zer
 (RuntimeError: Connection was lost.) promptly, which is what lets _poll_and_maybe_stop's
 stop_requested branch actually interrupt a run instead of just marking it for later.
 
+Has the same duplicate-execution Redis lock _train_model does (exec_lock_key, same 12h TTL as
+celery_app.py's broker visibility_timeout) -- a redelivered task message for a run still
+executing is skipped rather than starting a second, uncoordinated Drive upload + colab-cli
+session against the same TrainingRun row.
+
 Not yet handled (flag before relying on this unattended):
-  - No duplicate-execution Redis lock the way _train_model has (celery_worker.py's
-    exec_lock_key) -- a Colab run is expected to finish well within Redis's broker
-    visibility_timeout (12h, see celery_app.py), so redelivery-triggered duplicate execution is
-    unlikely but not impossible for a run given a very large colab_timeout_seconds.
   - A run stopped early ends up with zero TrainingRunMetric rows (only current_epoch/val_loss
     on TrainingRun itself are updated during polling -- see _poll_and_maybe_stop's docstring for
     why) -- accurate but sparser than a completed run's full metrics.json import.
@@ -186,12 +187,25 @@ async def run_colab_training(training_run_id: int) -> dict:
     same regardless of execution_target."""
     import asyncio
 
+    from celery_app import _get_redis
     from celery_worker import _make_db, _release_lock
     from data import snapshot_service
     from data.models import Dataset
     from model import colab_runner
     from model.models import MLModel, TrainingCheckpoint, TrainingRun, TrainingRunMetric
     from webhooks.dispatcher import dispatch
+
+    # Same rationale and TTL as _train_model's exec_lock_key: a Celery task message can be
+    # redelivered if it outlives the broker's visibility_timeout (12h, see celery_app.py) while
+    # still executing, which without this would start a second, uncoordinated
+    # run_colab_training against the same TrainingRun row (a second Drive upload, a second
+    # colab-cli session, both writing to the same DB row).
+    redis = _get_redis()
+    exec_lock_key = f"algoforge:executing:colab_train_model:{training_run_id}"
+    lock_acquired = redis is None or redis.set(exec_lock_key, "1", nx=True, ex=43200)
+    if not lock_acquired:
+        logger.warning(f"colab training run {training_run_id}: duplicate execution detected (already running) — skipping")
+        return {"skipped": "duplicate_execution"}
 
     factory, engine = _make_db()
     session_name = f"run-{training_run_id}"
@@ -412,3 +426,5 @@ async def run_colab_training(training_run_id: int) -> dict:
     finally:
         await engine.dispose()
         _release_lock("colab_train_model", training_run_id)
+        if redis is not None:
+            redis.delete(exec_lock_key)
