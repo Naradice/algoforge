@@ -61,6 +61,16 @@ DEFAULT_HYPERPARAMS = {
     "sax_paa_size": 5,
     "embedding_dim": None,
     "preprocessing": None,
+    "optimizer": "adam",
+    "beta1": 0.9,
+    "beta2": 0.999,
+    "momentum": 0.0,
+    "weight_decay": None,
+    "disable_lr_scheduler": False,
+    "shuffle": False,
+    "lr_warmup_epochs": 0,
+    "early_stop_patience": None,
+    "divergence_factor": None,
     "seed": 42,
 }
 
@@ -271,28 +281,79 @@ model = build_model(ARCHITECTURE, _model_kwargs, device=device)
 num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("num_params:", num_params)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=HYPERPARAMS["lr"])
+# optimizer/beta1/beta2/momentum/weight_decay: same construction celery_worker.py's
+# _train_model uses -- see its comments for why weight_decay defaults to None (each optimizer's
+# own torch default) rather than 0, and why beta1/beta2 are exposed at all (isolating whether an
+# optimizer's own per-parameter moment estimates, not just an epoch-denominated LR schedule,
+# explain a result).
+_optimizer_name = str(HYPERPARAMS["optimizer"]).lower()
+_weight_decay = HYPERPARAMS["weight_decay"]
+if _optimizer_name == "sgd":
+    _opt_kwargs = {"momentum": HYPERPARAMS["momentum"]}
+    if _weight_decay is not None:
+        _opt_kwargs["weight_decay"] = float(_weight_decay)
+    optimizer = torch.optim.SGD(model.parameters(), lr=HYPERPARAMS["lr"], **_opt_kwargs)
+elif _optimizer_name == "adamw":
+    _opt_kwargs = {"betas": (HYPERPARAMS["beta1"], HYPERPARAMS["beta2"])}
+    if _weight_decay is not None:
+        _opt_kwargs["weight_decay"] = float(_weight_decay)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=HYPERPARAMS["lr"], **_opt_kwargs)
+else:
+    _opt_kwargs = {"betas": (HYPERPARAMS["beta1"], HYPERPARAMS["beta2"])}
+    if _weight_decay is not None:
+        _opt_kwargs["weight_decay"] = float(_weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=HYPERPARAMS["lr"], **_opt_kwargs)
+
 # Dispatches to the same supervised/GAN/VAE loop celery_worker.py's _train_model uses for this
 # architecture -- see model_core.trainers's module docstring for which architectures use which.
 train_fn, eval_fn = get_trainer_fns(ARCHITECTURE)
 criterion = get_default_criterion(ARCHITECTURE)
+
+# disable_lr_scheduler: see celery_worker.py's _train_model -- an opt-in escape hatch for
+# step-count-controlled comparisons (ReduceLROnPlateau's patience is epoch-denominated, same
+# confound as early_stop_patience). None for gan/vae (criterion is None there too), matching
+# _train_model's own `if criterion and not disable_lr_scheduler` condition exactly.
+scheduler = (
+    torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5)
+    if criterion and not HYPERPARAMS["disable_lr_scheduler"] else None
+)
 """))
 
     cells.append(nbf.v4.new_code_cell("""import json
 import os
 
+_target_lr = HYPERPARAMS["lr"]
+_lr_warmup_epochs = HYPERPARAMS["lr_warmup_epochs"]
+_early_stop_patience = HYPERPARAMS["early_stop_patience"]
+_divergence_factor = HYPERPARAMS["divergence_factor"]
+epochs_since_improvement = 0
 epoch_metrics = []
 best_val_loss = float("inf")
 best_epoch = 0
 
 for epoch in range(1, HYPERPARAMS["epochs"] + 1):
-    train_loss = train_fn(model, dataset, optimizer, criterion, HYPERPARAMS["batch_size"])
+    # lr_warmup_epochs: opt-in linear ramp from lr/N to the full target lr over the first N
+    # epochs -- same as celery_worker.py's _train_model. The scheduler.step() call below is
+    # held off during warmup so ReduceLROnPlateau doesn't fight the ramp with its own reductions.
+    if _lr_warmup_epochs > 0 and epoch <= _lr_warmup_epochs:
+        _warmup_lr = _target_lr * epoch / _lr_warmup_epochs
+        for pg in optimizer.param_groups:
+            pg["lr"] = _warmup_lr
+
+    train_loss = train_fn(model, dataset, optimizer, criterion, HYPERPARAMS["batch_size"], HYPERPARAMS["shuffle"])
     val_loss = eval_fn(model, dataset, criterion, HYPERPARAMS["batch_size"])
+
+    if scheduler and epoch >= _lr_warmup_epochs:
+        scheduler.step(val_loss)
+
     epoch_metrics.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         best_epoch = epoch
+        epochs_since_improvement = 0
         torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, "best.pt")
+    else:
+        epochs_since_improvement += 1
     # Written every epoch so an orchestrator polling this session (model/colab_trainer.py, while
     # colab exec is otherwise blocked until the whole run finishes) can show live progress and
     # decide when to stop early -- see that module's _poll_and_maybe_stop. Atomic write
@@ -303,6 +364,17 @@ for epoch in range(1, HYPERPARAMS["epochs"] + 1):
                     "best_epoch": best_epoch, "best_val_loss": best_val_loss}, f)
     os.replace("progress.json.tmp", "progress.json")
     print(f"epoch {epoch}/{HYPERPARAMS['epochs']}: train={train_loss:.6f} val={val_loss:.6f}")
+
+    # early_stop_patience: stops once this many consecutive epochs pass with no new best
+    # val_loss (a plateau). divergence_factor: stops the moment val_loss exceeds
+    # divergence_factor x best_val_loss (a blow-up), independent of patience -- see
+    # celery_worker.py's _train_model for the full rationale for keeping these distinct.
+    if _early_stop_patience is not None and epochs_since_improvement >= _early_stop_patience:
+        print(f"early-stopped at epoch {epoch} (no improvement for {_early_stop_patience} epochs, best={best_val_loss:.6f} @ epoch {best_epoch})")
+        break
+    if _divergence_factor is not None and val_loss > best_val_loss * _divergence_factor:
+        print(f"diverged at epoch {epoch}: val={val_loss:.6f} exceeds {_divergence_factor}x best ({best_val_loss:.6f}) -- stopping")
+        break
 
 metadata = {
     "dataset_id": DATASET_ID,

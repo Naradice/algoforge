@@ -78,6 +78,14 @@ given inline in hyperparams) is not supported yet -- see `model/colab_trainer.py
 `check_colab_supported`, which still rejects it and points the caller at inline `preprocessing`
 instead.
 
+**Training-control hyperparams**: `optimizer` (`adam`/`adamw`/`sgd`) with `beta1`/`beta2`/
+`momentum`/`weight_decay`, `disable_lr_scheduler`, `shuffle`, `lr_warmup_epochs`,
+`early_stop_patience`, and `divergence_factor` are all wired into the generated notebook
+identically to `celery_worker.py`'s `_train_model` and verified end-to-end (`divergence_factor`
+and `early_stop_patience` each confirmed to actually fire, not just fail to error). `max_steps`
+step-based training (an epoch-free research mode -- see `docs/model-layer.md`) is not
+implemented here.
+
 ## Step 1 — Export a dataset snapshot
 
 ```
