@@ -17,14 +17,17 @@ inspect.getsource() to embed source text directly; that only guaranteed textual 
 generation time, not that both paths ran the same code — see docs/colab-workflow.md's history
 for why this changed.)
 
-Scope: architecture="lstm" is the only one verified against this generator's training-loop
-wiring so far — see _SUPPORTED_ARCHITECTURES. Extending it only requires confirming the new
-architecture's forward()/train_epoch call shape matches (build_model/OHLCWindowDataset/
-train_epoch/eval_epoch themselves need no changes, since they're imported from model_core, not
-regenerated here). token_level / a preprocessing recipe / split_mode are technically reachable
-now that OHLCWindowDataset itself runs unmodified (see the dataset cell below) but are NOT
-exposed by model/colab_trainer.py's check_colab_supported yet — that restriction hasn't been
-lifted because it hasn't been verified end-to-end, not because of a generator limitation.
+Scope: any architecture build_model() accepts works here — the generated notebook calls
+model_core.trainers.get_trainer_fns(architecture) / get_default_criterion(architecture) the
+same way celery_worker.py's _train_model does, rather than hardcoding a whitelist of
+individually-verified architectures, so a new supervised/GAN/VAE architecture added to
+model_core needs no change here to also work on Colab. Excluded: NON_GRADIENT_ARCHITECTURES
+("rl_agent", "ar", "ma", "arma") — not torch.nn.Module-based, build_model() itself rejects
+them regardless of config. token_level / a preprocessing recipe / split_mode are technically
+reachable now that OHLCWindowDataset itself runs unmodified (see the dataset cell below) but
+are NOT exposed by model/colab_trainer.py's check_colab_supported yet — that restriction
+hasn't been lifted because it hasn't been verified end-to-end, not because of a generator
+limitation.
 """
 from __future__ import annotations
 
@@ -35,7 +38,7 @@ from pathlib import Path
 
 import nbformat as nbf
 
-_SUPPORTED_ARCHITECTURES = {"lstm"}
+from model_core.architectures import NON_GRADIENT_ARCHITECTURES
 
 DEFAULT_HYPERPARAMS = {
     "obs_len": 60,
@@ -98,10 +101,10 @@ def build_notebook(
     _train_model keeps model_config and hp separate, so a Colab run builds the model with the
     same shape as the MLModel record actually specifies, not whatever a hyperparams default
     happens to be."""
-    if architecture not in _SUPPORTED_ARCHITECTURES:
+    if architecture in NON_GRADIENT_ARCHITECTURES:
         raise ValueError(
-            f"Unsupported architecture for notebook export: {architecture!r} "
-            f"(supported: {sorted(_SUPPORTED_ARCHITECTURES)})"
+            f"Unsupported architecture for notebook export: {architecture!r} is not "
+            f"torch.nn.Module-based (see model_core.architectures.NON_GRADIENT_ARCHITECTURES)"
         )
 
     hp = {**DEFAULT_HYPERPARAMS, **hyperparams}
@@ -172,8 +175,7 @@ import torch
 import torch.nn as nn
 
 from model_core.architectures import build_model
-from model_core.trainers.dataset import OHLCWindowDataset
-from model_core.trainers.supervised import train_epoch, eval_epoch
+from model_core.trainers import OHLCWindowDataset, get_default_criterion, get_trainer_fns
 
 ARCHITECTURE = {architecture!r}
 HYPERPARAMS = {hp_json}
@@ -206,6 +208,10 @@ model = build_model(
         "input_dim": dataset.n_features,
         "output_dim": dataset.n_features,
         "pred_len": HYPERPARAMS["pred_len"],
+        # See OHLCWindowDataset.effective_seq_len's docstring (model_core/trainers/dataset.py)
+        # for why this is needed (decoder_only) and harmless for every other architecture.
+        # Same call celery_worker.py's _train_model makes -- not a separate calculation.
+        "seq_len": dataset.effective_seq_len,
     },
     device=device,
 )
@@ -213,7 +219,10 @@ num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("num_params:", num_params)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=HYPERPARAMS["lr"])
-criterion = nn.MSELoss()
+# Dispatches to the same supervised/GAN/VAE loop celery_worker.py's _train_model uses for this
+# architecture -- see model_core.trainers's module docstring for which architectures use which.
+train_fn, eval_fn = get_trainer_fns(ARCHITECTURE)
+criterion = get_default_criterion(ARCHITECTURE)
 """))
 
     cells.append(nbf.v4.new_code_cell("""import json
@@ -223,8 +232,8 @@ best_val_loss = float("inf")
 best_epoch = 0
 
 for epoch in range(1, HYPERPARAMS["epochs"] + 1):
-    train_loss = train_epoch(model, dataset, optimizer, criterion, HYPERPARAMS["batch_size"])
-    val_loss = eval_epoch(model, dataset, criterion, HYPERPARAMS["batch_size"])
+    train_loss = train_fn(model, dataset, optimizer, criterion, HYPERPARAMS["batch_size"])
+    val_loss = eval_fn(model, dataset, criterion, HYPERPARAMS["batch_size"])
     epoch_metrics.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
     if val_loss < best_val_loss:
         best_val_loss = val_loss

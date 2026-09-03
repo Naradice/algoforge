@@ -695,7 +695,7 @@ async def _train_model(training_run_id: int) -> dict:
     from sqlalchemy import update
     from model.models import MLModel, TrainingRun, TrainingCheckpoint, TrainingRunMetric
     from model_core.architectures import build_model
-    from model_core.trainers import get_trainer_fns, get_step_trainer_fn, OHLCWindowDataset, compute_effective_characteristics
+    from model_core.trainers import get_trainer_fns, get_default_criterion, get_step_trainer_fn, OHLCWindowDataset, compute_effective_characteristics
     from model_core.trainers.arima_trainer import ARIMA_ARCHITECTURES
     from celery_app import _get_redis
 
@@ -786,13 +786,10 @@ async def _train_model(training_run_id: int) -> dict:
             if dataset.vocab_size is not None:
                 effective_config["vocab_size"] = dataset.vocab_size
                 effective_config["embedding_dim"] = hp.get("embedding_dim")
-            # decoder_only's use_attention=False path (CausalLinearMix) is a fixed-shape layer,
-            # unlike attention/LSTM which are sequence-length-agnostic -- it needs the model's
-            # true input sequence length at construction time. token_level="digits" expands one
-            # time step into (1 + n_digits) token positions, so raw obs_len undercounts it for
-            # that case; every other token_level (including None) is 1 token per step.
-            tokens_per_step = (1 + dataset.n_digits) if dataset.n_digits is not None else 1
-            effective_config["seq_len"] = effective_config["obs_len"] * tokens_per_step
+            # See OHLCWindowDataset.effective_seq_len's docstring for why this is needed
+            # (decoder_only's fixed-shape CausalLinearMix) and harmless for every other
+            # architecture (absorbed by build_model's **kwargs).
+            effective_config["seq_len"] = dataset.effective_seq_len
             model = build_model(architecture, effective_config, device=device)
         except Exception as e:
             async with factory() as db:
@@ -868,7 +865,7 @@ async def _train_model(training_run_id: int) -> dict:
             if weight_decay is not None:
                 adam_kwargs["weight_decay"] = float(weight_decay)
             optimizer = torch.optim.Adam(model.parameters(), lr=target_lr, **adam_kwargs)
-        criterion = None if architecture in ("timegan", "vae") else torch.nn.MSELoss()
+        criterion = get_default_criterion(architecture)
         # disable_lr_scheduler: opt-in escape hatch for step-count-controlled comparisons.
         # ReduceLROnPlateau's patience is epoch-denominated same as early_stop_patience, so it's
         # a second epoch-length-dependent confound that survives even when early stopping is

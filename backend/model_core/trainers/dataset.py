@@ -365,6 +365,19 @@ class OHLCWindowDataset:
         self.pred_len = pred_len
         self.n_features = len(feature_cols)
 
+    @property
+    def effective_seq_len(self) -> int:
+        """The model's true input sequence length -- what an architecture that needs it fixed
+        at construction time (decoder_only's CausalLinearMix/positional encoding, unlike
+        attention/LSTM which are sequence-length-agnostic) should be built with. Equal to
+        obs_len for every token_level except "digits", which expands one time step into
+        (1 + n_digits) token positions (see the token_level="digits" branch in __init__) --
+        raw obs_len would undercount it there. Centralized here (not duplicated per caller) so
+        celery_worker.py's _train_model and model/notebook_export.py's generated notebooks
+        can't independently drift on this calculation."""
+        tokens_per_step = (1 + self.n_digits) if self.n_digits is not None else 1
+        return self.obs_len * tokens_per_step
+
     @staticmethod
     def _compute_gap_mask(index, stride_seconds: float | None) -> np.ndarray:
         """bool array, length len(index); True at position i means row i does not follow row

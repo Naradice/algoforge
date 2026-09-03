@@ -31,7 +31,8 @@ from pathlib import Path
 from fastapi import HTTPException
 from sqlalchemy import select, update
 
-from model.notebook_export import _SUPPORTED_ARCHITECTURES, build_notebook
+from model.notebook_export import build_notebook
+from model_core.architectures import NON_GRADIENT_ARCHITECTURES
 
 logger = logging.getLogger("colab_trainer")
 
@@ -48,12 +49,12 @@ def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None
     model/service.py:create_training_run) so an unsupported request fails immediately with a
     clear reason instead of failing deep into the pipeline after a Colab runtime is already
     provisioned."""
-    if architecture not in _SUPPORTED_ARCHITECTURES:
+    if architecture in NON_GRADIENT_ARCHITECTURES:
         raise HTTPException(status_code=422, detail={
             "code": "COLAB_UNSUPPORTED_ARCHITECTURE",
             "message": (
-                f"execution_target='colab' doesn't support architecture={architecture!r} yet "
-                f"(supported: {sorted(_SUPPORTED_ARCHITECTURES)})"
+                f"execution_target='colab' doesn't support architecture={architecture!r} -- "
+                "it's not torch.nn.Module-based (see model_core.architectures.NON_GRADIENT_ARCHITECTURES)"
             ),
         })
     if preprocessed_dataset_id is not None:

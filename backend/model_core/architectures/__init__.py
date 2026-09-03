@@ -36,6 +36,14 @@ from .pair_lag import PairLagModel
 
 _DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Not torch.nn.Module-based -- build_model() raises ValueError for these regardless of config,
+# so no amount of config/hyperparams makes them buildable here. "rl_agent" trains via the
+# separate Python 3.8 ml_worker; "ar"/"ma"/"arma" are statsmodels MLE fits (see
+# model_core/trainers/arima_trainer.py), not gradient descent. Exposed as a constant so a
+# caller building a UI/notebook/tool around build_model can check this before calling it,
+# without re-deriving the same list from build_model's own if/elif branches below.
+NON_GRADIENT_ARCHITECTURES = {"rl_agent", "ar", "ma", "arma"}
+
 ARCHITECTURE_DEFAULTS: dict[str, dict] = {
     "lstm": {
         "input_dim": 1,
