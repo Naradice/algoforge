@@ -34,7 +34,7 @@ because of a generator limitation.
 """
 from __future__ import annotations
 
-import json
+import pprint
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,6 +53,13 @@ DEFAULT_HYPERPARAMS = {
     "normalize": "returns",
     "feature_cols": ["close"],
     "split_mode": "chronological",
+    "token_level": None,
+    "n_bins": 7,
+    "cluster_window": 20,
+    "n_clusters": 20,
+    "n_digits": 3,
+    "sax_paa_size": 5,
+    "embedding_dim": None,
     "seed": 42,
 }
 
@@ -140,6 +147,14 @@ inside Colab) and register them with algoforge — see the last cell of this not
 """))
 
     cells.append(nbf.v4.new_code_cell(f'!pip install -q "{install_url}"'))
+    if hp.get("token_level") == "cluster":
+        # model_core's own [cluster] extra exists for this (see its pyproject.toml), but
+        # expressing "package[extra] @ git+URL" correctly alongside #subdirectory in one pip
+        # invocation is fiddly to get right -- a separate plain install is simpler and no less
+        # correct, since scikit-learn has no version coupling to model_core itself.
+        cells.append(nbf.v4.new_code_cell(
+            '!pip install -q scikit-learn  # only needed for token_level="cluster" (KMeans)'
+        ))
 
     cells.append(nbf.v4.new_code_cell(f"""import hashlib
 import os
@@ -170,8 +185,13 @@ assert _actual == SNAPSHOT_SHA256, (
 print("snapshot OK:", _actual)
 """))
 
-    hp_json = json.dumps(hp, indent=4)
-    model_config_json = json.dumps(model_config, indent=4)
+    # repr(), not json.dumps() -- json.dumps renders None/True/False as null/true/false, which
+    # is JSON syntax, not Python. That's invisible until a value is actually None (no default
+    # here was until token_level/embedding_dim were added), at which point the generated cell
+    # fails with NameError: name 'null' is not defined. pformat gives the same readability with
+    # correct Python literals.
+    hp_json = pprint.pformat(hp, indent=4, sort_dicts=False)
+    model_config_json = pprint.pformat(model_config, indent=4, sort_dicts=False)
     cells.append(nbf.v4.new_code_cell(f"""import random
 
 import numpy as np
@@ -203,23 +223,34 @@ print("device:", device)
     normalize=HYPERPARAMS["normalize"],
     val_split=HYPERPARAMS["val_split"],
     split_mode=HYPERPARAMS["split_mode"],
+    token_level=HYPERPARAMS["token_level"],
+    n_bins=HYPERPARAMS["n_bins"],
+    cluster_window=HYPERPARAMS["cluster_window"],
+    n_clusters=HYPERPARAMS["n_clusters"],
+    n_digits=HYPERPARAMS["n_digits"],
+    sax_paa_size=HYPERPARAMS["sax_paa_size"],
     device=device,
 )
 
-model = build_model(
-    ARCHITECTURE,
-    {
-        **MODEL_CONFIG,
-        "input_dim": dataset.n_features,
-        "output_dim": dataset.n_features,
-        "pred_len": HYPERPARAMS["pred_len"],
-        # See OHLCWindowDataset.effective_seq_len's docstring (model_core/trainers/dataset.py)
-        # for why this is needed (decoder_only) and harmless for every other architecture.
-        # Same call celery_worker.py's _train_model makes -- not a separate calculation.
-        "seq_len": dataset.effective_seq_len,
-    },
-    device=device,
-)
+_model_kwargs = {
+    **MODEL_CONFIG,
+    "input_dim": dataset.n_features,
+    "output_dim": dataset.n_features,
+    "pred_len": HYPERPARAMS["pred_len"],
+    # See OHLCWindowDataset.effective_seq_len's docstring (model_core/trainers/dataset.py)
+    # for why this is needed (decoder_only) and harmless for every other architecture.
+    # Same call celery_worker.py's _train_model makes -- not a separate calculation.
+    "seq_len": dataset.effective_seq_len,
+}
+# token_level (see OHLCWindowDataset): when set, src is a stream of integer token ids rather
+# than continuous features -- pass the fitted vocab size through so the model builds an
+# embedding front-end instead of its usual continuous input path. Same condition
+# celery_worker.py's _train_model checks.
+if dataset.vocab_size is not None:
+    _model_kwargs["vocab_size"] = dataset.vocab_size
+    _model_kwargs["embedding_dim"] = HYPERPARAMS["embedding_dim"]
+
+model = build_model(ARCHITECTURE, _model_kwargs, device=device)
 num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("num_params:", num_params)
 

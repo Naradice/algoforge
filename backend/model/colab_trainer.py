@@ -42,6 +42,12 @@ logger = logging.getLogger("colab_trainer")
 # model hyperparameter) but kept in the TrainingRun's stored hyperparams for the record.
 _DEFAULT_TIMEOUT_SECONDS = 3600.0
 
+# OHLCWindowDataset's own accepted token_level values (see model_core/trainers/dataset.py) --
+# validated here (before a Colab runtime is even provisioned) purely so a typo gets a clear
+# 422 instead of failing deep inside the notebook. "cluster" additionally needs scikit-learn,
+# which notebook_export.py installs automatically only when this value is set.
+_VALID_TOKEN_LEVELS = {"diff", "quantize_diff", "cluster", "digits", "sax"}
+
 
 def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None, hyperparams: dict) -> None:
     """Raise HTTPException(422) if the requested combination isn't something
@@ -62,10 +68,11 @@ def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None
             "code": "COLAB_UNSUPPORTED_PREPROCESSED_DATASET",
             "message": "execution_target='colab' doesn't support preprocessed_dataset_id yet -- use inline hyperparams instead",
         })
-    if hyperparams.get("token_level") is not None:
+    token_level = hyperparams.get("token_level")
+    if token_level is not None and token_level not in _VALID_TOKEN_LEVELS:
         raise HTTPException(status_code=422, detail={
-            "code": "COLAB_UNSUPPORTED_TOKEN_LEVEL",
-            "message": f"execution_target='colab' doesn't support token_level={hyperparams['token_level']!r} yet",
+            "code": "COLAB_INVALID_TOKEN_LEVEL",
+            "message": f"token_level must be one of {sorted(_VALID_TOKEN_LEVELS)} or omitted, got {token_level!r}",
         })
     if hyperparams.get("preprocessing") is not None:
         raise HTTPException(status_code=422, detail={

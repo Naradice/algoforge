@@ -69,11 +69,12 @@ dispatches via `model_core.trainers.get_trainer_fns`/`get_default_criterion` gen
 (verified end-to-end for `lstm`, `decoder_only`, `timegan`, `vae`) rather than hardcoding a
 whitelist. Excluded: `model_core.architectures.NON_GRADIENT_ARCHITECTURES` (`rl_agent`/`ar`/
 `ma`/`arma` — not `torch.nn.Module`-based). `split_mode` (`"chronological"`/`"regime_controlled"`)
-is supported and verified end-to-end. `token_level` and a preprocessing recipe are technically
-reachable — the notebook imports the real `OHLCWindowDataset` unmodified — but
-`model/colab_trainer.py`'s `check_colab_supported` doesn't expose them yet: `token_level` needs
-`vocab_size`/`embedding_dim` wired into the model-build cell, and a preprocessing recipe needs
-the separate `finance_client` package installed too. Neither has been verified end-to-end yet.
+and `token_level` (`"diff"`/`"quantize_diff"`/`"cluster"`/`"digits"`/`"sax"`) are both supported
+and verified end-to-end (`"cluster"` triggers an extra `pip install scikit-learn` cell
+automatically). A preprocessing recipe is technically reachable — the notebook imports the real
+`OHLCWindowDataset` unmodified — but `model/colab_trainer.py`'s `check_colab_supported` doesn't
+expose it yet: it needs the separate `finance_client` package installed too, and hasn't been
+verified end-to-end.
 
 ## Step 1 — Export a dataset snapshot
 
