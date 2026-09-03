@@ -23,11 +23,14 @@ same way celery_worker.py's _train_model does, rather than hardcoding a whitelis
 individually-verified architectures, so a new supervised/GAN/VAE architecture added to
 model_core needs no change here to also work on Colab. Excluded: NON_GRADIENT_ARCHITECTURES
 ("rl_agent", "ar", "ma", "arma") — not torch.nn.Module-based, build_model() itself rejects
-them regardless of config. token_level / a preprocessing recipe / split_mode are technically
-reachable now that OHLCWindowDataset itself runs unmodified (see the dataset cell below) but
-are NOT exposed by model/colab_trainer.py's check_colab_supported yet — that restriction
-hasn't been lifted because it hasn't been verified end-to-end, not because of a generator
-limitation.
+them regardless of config. split_mode ("chronological"/"regime_controlled") is passed through
+to OHLCWindowDataset and verified end-to-end (see model/colab_trainer.py's
+check_colab_supported). token_level and a preprocessing recipe are technically reachable now
+that OHLCWindowDataset itself runs unmodified (see the dataset cell below) but are NOT exposed
+by check_colab_supported yet — that restriction hasn't been lifted because it hasn't been
+verified end-to-end (token_level needs vocab_size/embedding_dim wired into the model-build
+cell; a preprocessing recipe needs the separate `finance_client` package installed too), not
+because of a generator limitation.
 """
 from __future__ import annotations
 
@@ -49,6 +52,7 @@ DEFAULT_HYPERPARAMS = {
     "val_split": 0.2,
     "normalize": "returns",
     "feature_cols": ["close"],
+    "split_mode": "chronological",
     "seed": 42,
 }
 
@@ -198,6 +202,7 @@ print("device:", device)
     feature_cols=HYPERPARAMS["feature_cols"],
     normalize=HYPERPARAMS["normalize"],
     val_split=HYPERPARAMS["val_split"],
+    split_mode=HYPERPARAMS["split_mode"],
     device=device,
 )
 

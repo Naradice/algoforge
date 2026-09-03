@@ -64,11 +64,16 @@ under a few hundred thousand rows is squarely in range; a multi-million-row `seq
 sweep is not (send that to this machine's GPU worker instead, via the normal
 `start_training_run` MCP tool / `/models/{id}/training-runs` API).
 
-**Current generator scope**: only `architecture="lstm"` is verified against this generator's
-training-loop wiring (see `model/notebook_export.py`'s `_SUPPORTED_ARCHITECTURES`). `token_level`
-/ a preprocessing recipe / `split_mode` are technically reachable now that the notebook imports
-the real `OHLCWindowDataset` unmodified, but `model/colab_trainer.py`'s `check_colab_supported`
-doesn't expose them yet — that hasn't been verified end-to-end.
+**Current generator scope**: any architecture `build_model()` accepts works — the notebook
+dispatches via `model_core.trainers.get_trainer_fns`/`get_default_criterion` generically
+(verified end-to-end for `lstm`, `decoder_only`, `timegan`, `vae`) rather than hardcoding a
+whitelist. Excluded: `model_core.architectures.NON_GRADIENT_ARCHITECTURES` (`rl_agent`/`ar`/
+`ma`/`arma` — not `torch.nn.Module`-based). `split_mode` (`"chronological"`/`"regime_controlled"`)
+is supported and verified end-to-end. `token_level` and a preprocessing recipe are technically
+reachable — the notebook imports the real `OHLCWindowDataset` unmodified — but
+`model/colab_trainer.py`'s `check_colab_supported` doesn't expose them yet: `token_level` needs
+`vocab_size`/`embedding_dim` wired into the model-build cell, and a preprocessing recipe needs
+the separate `finance_client` package installed too. Neither has been verified end-to-end yet.
 
 ## Step 1 — Export a dataset snapshot
 

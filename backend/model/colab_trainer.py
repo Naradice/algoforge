@@ -73,10 +73,10 @@ def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None
             "message": "execution_target='colab' doesn't support an inline preprocessing recipe yet",
         })
     split_mode = hyperparams.get("split_mode", "chronological")
-    if split_mode != "chronological":
+    if split_mode not in ("chronological", "regime_controlled"):
         raise HTTPException(status_code=422, detail={
             "code": "COLAB_UNSUPPORTED_SPLIT_MODE",
-            "message": f"execution_target='colab' only supports split_mode='chronological' for now, got {split_mode!r}",
+            "message": f"split_mode must be 'chronological' or 'regime_controlled' (OHLCWindowDataset's only two), got {split_mode!r}",
         })
 
 
