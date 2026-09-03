@@ -305,3 +305,8 @@ class HyperparamSearchCreate(BaseModel):
     model_id: int
     dataset_id: int
     search_grid: dict[str, list]  # e.g. {"lr": [0.001, 0.0001], "batch_size": [32, 64]}
+    # Same meaning as TrainingRunCreate.execution_target -- applies to every run the grid
+    # expands into. Each run still goes through create_training_run's own check_colab_supported
+    # validation individually when execution_target="colab", so an unsupported combination
+    # fails the whole search at creation time rather than partway through.
+    execution_target: str = "local"

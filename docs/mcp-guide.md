@@ -51,7 +51,7 @@ The MCP server is mounted at `http://localhost:8000/mcp` using SSE transport. Ad
 | `compare_model_runs(model_id)` | Compare runs ranked by val_loss |
 | `deploy_model(model_id, training_run_id)` | Deploy best run |
 | `predict(model_id, features, feature_names)` | Run inference |
-| `start_hyperparameter_search(model_id, dataset_id, search_grid)` | Grid search |
+| `start_hyperparameter_search(model_id, dataset_id, search_grid, execution_target="local")` | Grid search — `execution_target="colab"` runs every combination on Colab (see [colab-workflow.md](colab-workflow.md)); actual concurrency depends on the `colab` queue's worker count |
 
 Preprocessed datasets aren't created via MCP yet (no `create_preprocessed_dataset` tool) — create
 one through the UI (`/data/preprocessed/new`) or `POST /preprocessed-datasets`, then reference it

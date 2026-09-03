@@ -400,15 +400,23 @@ async def predict(model_id: int, features: list[list[float]], feature_names: lis
 
 
 @mcp.tool()
-async def start_hyperparameter_search(model_id: int, dataset_id: int, search_grid: dict) -> dict:
+async def start_hyperparameter_search(
+    model_id: int, dataset_id: int, search_grid: dict, execution_target: str = "local",
+) -> dict:
     """
     Start a hyperparameter search, creating one training run per grid combination.
 
     Args:
-        model_id:    Model to search hyperparams for.
-        dataset_id:  Dataset to train on.
-        search_grid: Dict mapping param names to lists of values.
-                     Example: {"lr": [0.001, 0.0001], "batch_size": [32, 64]}
+        model_id:           Model to search hyperparams for.
+        dataset_id:         Dataset to train on.
+        search_grid:        Dict mapping param names to lists of values.
+                            Example: {"lr": [0.001, 0.0001], "batch_size": [32, 64]}
+        execution_target:   "local" (default) or "colab" -- see start_training_run's docstring.
+                            Applies to every run the grid expands into; each is still validated
+                            against check_colab_supported individually, so an unsupported
+                            combination rejects the whole search up front. Note actual
+                            concurrency across the resulting Colab runs depends on how many
+                            `colab` queue workers are running -- see docs/colab-workflow.md.
     """
     from database import async_session_factory
     from model.service import model_service
@@ -416,8 +424,12 @@ async def start_hyperparameter_search(model_id: int, dataset_id: int, search_gri
     from celery_app import enqueue
 
     async with async_session_factory() as db:
-        body = HyperparamSearchCreate(model_id=model_id, dataset_id=dataset_id, search_grid=search_grid)
+        body = HyperparamSearchCreate(
+            model_id=model_id, dataset_id=dataset_id, search_grid=search_grid,
+            execution_target=execution_target,
+        )
         run_ids = await model_service.create_search_runs(db, body)
+        task_name = "colab_train_model" if execution_target == "colab" else "train_model"
         for run_id in run_ids:
-            await enqueue("train_model", run_id)
+            await enqueue(task_name, run_id)
     return {"run_ids": run_ids, "count": len(run_ids)}

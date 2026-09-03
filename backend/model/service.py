@@ -218,7 +218,13 @@ class ModelService:
         for combo in itertools.product(*values):
             hyperparams = dict(zip(keys, combo))
             from model.models import TrainingRunCreate
-            run = await self.create_training_run(db, body.model_id, TrainingRunCreate(dataset_id=body.dataset_id, hyperparams=hyperparams))
+            run = await self.create_training_run(
+                db, body.model_id,
+                TrainingRunCreate(
+                    dataset_id=body.dataset_id, hyperparams=hyperparams,
+                    execution_target=body.execution_target,
+                ),
+            )
             run_ids.append(run.id)
         return run_ids
 

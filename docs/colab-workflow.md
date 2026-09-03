@@ -86,6 +86,16 @@ and `early_stop_patience` each confirmed to actually fire, not just fail to erro
 step-based training (an epoch-free research mode -- see `docs/model-layer.md`) is not
 implemented here.
 
+**Hyperparameter search** (`POST /training-runs/search` / MCP `start_hyperparameter_search`):
+`execution_target="colab"` runs every combination the grid expands into on Colab — each is
+validated against `check_colab_supported` individually at creation time, so one unsupported
+combination rejects the whole search up front rather than failing partway through. Verified
+that a 4-combination grid creates all four `TrainingRun`s with `execution_target="colab"`
+correctly, and that a `NON_GRADIENT_ARCHITECTURES` model rejects the whole search with no rows
+left behind. Actual concurrency across the resulting runs depends on how many `colab` queue
+workers are running (see the parallelization note in Step 3 below) — the dev setup's single
+`--pool=solo` worker runs them one at a time regardless of how many get enqueued at once.
+
 ## Step 1 — Export a dataset snapshot
 
 ```

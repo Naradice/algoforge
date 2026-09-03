@@ -27,8 +27,9 @@ async def compare_training_runs(run_ids: str, db: AsyncSession = Depends(get_db)
 @tr_router.post("/search", status_code=202)
 async def start_hyperparameter_search(body: HyperparamSearchCreate, db: AsyncSession = Depends(get_db)):
     run_ids = await model_service.create_search_runs(db, body)
+    task_name = "colab_train_model" if body.execution_target == "colab" else "train_model"
     for run_id in run_ids:
-        await enqueue("train_model", run_id)
+        await enqueue(task_name, run_id)
     return DataResponse(data={"run_ids": run_ids})
 
 
