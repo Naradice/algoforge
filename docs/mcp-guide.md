@@ -43,7 +43,7 @@ The MCP server is mounted at `http://localhost:8000/mcp` using SSE transport. Ad
 | `create_model(name, architecture, config)` | Create a model |
 | `list_preprocessed_datasets(dataset_id=None)` | List saved preprocessing recipes (optionally for one dataset) |
 | `get_preprocessed_dataset(preprocessed_dataset_id)` | Recipe config + its structure characteristics |
-| `start_training_run(model_id, hyperparams, dataset_id=None, preprocessed_dataset_id=None)` | Start training — prefer `preprocessed_dataset_id` when a recipe exists |
+| `start_training_run(model_id, hyperparams, dataset_id=None, preprocessed_dataset_id=None, execution_target="local")` | Start training — prefer `preprocessed_dataset_id` when a recipe exists. `execution_target="colab"` runs on a Google Colab CPU runtime instead of this backend's own worker (see [colab-workflow.md](colab-workflow.md)); only `architecture="lstm"` with no recipe/token_level/preprocessing and `split_mode="chronological"` is supported for it today |
 | `get_training_status(training_run_id)` | Poll status with epoch/ETA |
 | `stop_training_run(training_run_id)` | Gracefully stop training |
 | `get_model_training_runs(model_id)` | List training run history |

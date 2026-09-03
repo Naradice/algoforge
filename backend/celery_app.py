@@ -6,6 +6,10 @@ Workers are started per queue:
     celery -A celery_worker worker -Q characteristics -c 12 --pool=prefork
     celery -A celery_worker worker -Q training        -c 2  --pool=prefork
     celery -A celery_worker worker -Q backtest        -c 5  --pool=prefork
+    celery -A celery_worker worker -Q colab           -c 2  --pool=prefork
+        # colab_train_model spends nearly all its wall time blocked on a colab-cli subprocess
+        # call (model/colab_trainer.py), not doing local work -- kept off the `training` queue
+        # so a long Colab run never occupies a slot the local GPU/CPU trainer needs.
 """
 
 from __future__ import annotations
@@ -60,6 +64,7 @@ celery_app.conf.update(
         "celery_worker.compute_characteristics": {"queue": "characteristics"},
         "celery_worker.compute_preprocessed_characteristics": {"queue": "characteristics"},
         "celery_worker.train_model":           {"queue": "training"},
+        "celery_worker.colab_train_model":     {"queue": "colab"},
         "celery_worker.validate_model":        {"queue": "training"},
         "celery_worker.execute_strategy_run":  {"queue": "backtest"},
         "celery_worker.tick_scheduler":        {"queue": "collection"},

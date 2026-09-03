@@ -1112,6 +1112,16 @@ async def _train_model(training_run_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Task 3b — colab_train_model (execution_target="colab" — see model/colab_trainer.py)
+# ---------------------------------------------------------------------------
+
+@celery_app.task(name="celery_worker.colab_train_model", bind=False)
+def colab_train_model(training_run_id: int) -> dict:
+    from model.colab_trainer import run_colab_training
+    return asyncio.run(run_colab_training(training_run_id))
+
+
+# ---------------------------------------------------------------------------
 # Task 4 — validate_model
 # ---------------------------------------------------------------------------
 

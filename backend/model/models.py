@@ -65,6 +65,18 @@ class TrainingRun(Base):
     preprocessed_dataset_id: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)  # soft FK → preprocessed_datasets.id
     hyperparams: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="pending")  # pending | running | completed | error | stopped
+    # internal: trained by this backend's own celery worker (the default, all pre-existing rows).
+    # external: trained elsewhere (e.g. a Colab notebook run by hand) and registered after the
+    # fact via POST /models/{id}/training-runs/import — see
+    # model/service.py:import_external_training_run.
+    source: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="internal")
+    # Where a source="internal" run's training actually executes: "local" (this backend's own
+    # `training` queue, the pre-existing behaviour) or "colab" (this backend orchestrates a
+    # Colab run automatically — export a dataset snapshot, generate a notebook, run it via
+    # colab-cli, pull the result back — see model/colab_trainer.py). Meaningless for
+    # source="external" rows (those were never orchestrated by this backend in the first
+    # place); left at the default "local" for them.
+    execution_target: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="local")
     current_epoch: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
     best_epoch: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     val_loss: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
@@ -160,6 +172,45 @@ class TrainingRunCreate(BaseModel):
     dataset_id: int | None = None
     preprocessed_dataset_id: int | None = None
     hyperparams: dict[str, Any] = {}
+    # "local" (default): this backend's own `training` queue, as before. "colab": this backend
+    # orchestrates a Colab CPU run automatically instead — see model/colab_trainer.py. Only
+    # architectures/options colab_trainer.py's notebook generator supports can use "colab";
+    # requesting it for an unsupported combination fails at creation time, not mid-run.
+    execution_target: str = "local"
+
+
+class TrainingRunImportMetric(BaseModel):
+    epoch: int
+    train_loss: float | None = None
+    val_loss: float | None = None
+    lr: float | None = None
+
+
+class TrainingRunImportCreate(BaseModel):
+    """Body (as a `metadata` form field, JSON-encoded) for POST /models/{id}/training-runs/import.
+
+    Registers a training run that happened outside this backend (e.g. a Colab notebook) as a
+    first-class TrainingRun so it shows up in /model/compare and the model detail page like any
+    other run. `dataset_id` must reference the algoforge dataset the external run actually
+    trained on (the snapshot exported for the notebook), so provenance stays traceable even
+    though the training itself ran elsewhere.
+    """
+
+    dataset_id: int
+    preprocessed_dataset_id: int | None = None
+    hyperparams: dict[str, Any] = {}
+    epoch_metrics: list[TrainingRunImportMetric] = []
+    best_epoch: int
+    val_loss: float
+    num_params: int | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    notes: str | None = None
+    # Free-form provenance for reproducing the run — e.g. {"notebook_url": "https://colab.research.google.com/github/...",
+    # "git_commit": "...", "dataset_snapshot_sha256": "...", "platform": "colab"}. Merged into
+    # the created TrainingRun's hyperparams under "_external_ref" rather than given dedicated
+    # columns, so no further schema changes are needed as what's tracked here evolves.
+    external_ref: dict[str, Any] = {}
 
 
 class TrainingRunRead(BaseModel):
@@ -171,6 +222,8 @@ class TrainingRunRead(BaseModel):
     preprocessed_dataset_id: int | None
     hyperparams: dict[str, Any]
     status: str
+    source: str
+    execution_target: str
     current_epoch: int
     best_epoch: int | None
     val_loss: float | None

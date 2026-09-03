@@ -45,6 +45,12 @@ export default function ModelDetailPage() {
   const [datasetId, setDatasetId] = useState("");
   const [preprocessedDatasetId, setPreprocessedDatasetId] = useState("");
   const [trainingParams, setTrainingParams] = useState<TrainingParams>(DEFAULT_TRAINING);
+  // "colab" runs on a Google Colab CPU runtime instead of this backend's own worker — see
+  // docs/colab-workflow.md. Only architecture="lstm" with a raw dataset (no preprocessing
+  // recipe) is supported today; the backend rejects anything else at creation time, but the
+  // form steers away from that combination up front instead of round-tripping an error.
+  const [executionTarget, setExecutionTarget] = useState<"local" | "colab">("local");
+  const colabUnsupportedArchitecture = executionTarget === "colab" && model?.architecture !== "lstm";
 
   const { data: preprocessedDatasets } = useSWR(
     datasetId ? `/api/v1/preprocessed-datasets?dataset_id=${datasetId}&page_size=200` : null,
@@ -86,16 +92,26 @@ export default function ModelDetailPage() {
   async function startTraining() {
     setTrainError(null);
     if (!datasetId) { setTrainError("Select a dataset"); return; }
-    if (!preprocessedDatasetId) { setTrainError("Select a preprocessed dataset (or create one)"); return; }
+    if (executionTarget === "local" && !preprocessedDatasetId) {
+      setTrainError("Select a preprocessed dataset (or create one)");
+      return;
+    }
+    if (executionTarget === "colab" && colabUnsupportedArchitecture) {
+      setTrainError(`Colab execution doesn't support architecture=${model?.architecture} yet (only lstm)`);
+      return;
+    }
     setStartingRun(true);
     try {
+      const body: Record<string, unknown> =
+        executionTarget === "colab"
+          // Colab path doesn't support a preprocessing recipe yet (see docs/colab-workflow.md)
+          // — send the raw dataset_id instead of preprocessed_dataset_id.
+          ? { dataset_id: parseInt(datasetId), hyperparams: trainingParams, execution_target: "colab" }
+          : { preprocessed_dataset_id: parseInt(preprocessedDatasetId), hyperparams: trainingParams };
       const res = await apiFetch(`/api/v1/models/${id}/training-runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          preprocessed_dataset_id: parseInt(preprocessedDatasetId),
-          hyperparams: trainingParams,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -230,6 +246,40 @@ export default function ModelDetailPage() {
 
         {showTrainForm && (
           <div className="mb-4 rounded border border-gray-700 bg-gray-900 p-4 space-y-4">
+            {/* Execution target */}
+            <div>
+              <label className="mb-1 block text-xs text-gray-400">Run on</label>
+              <div className="flex gap-2">
+                {(["local", "colab"] as const).map((target) => (
+                  <button
+                    key={target}
+                    type="button"
+                    onClick={() => setExecutionTarget(target)}
+                    className={`rounded border px-3 py-1.5 text-xs ${
+                      executionTarget === target
+                        ? "border-brand-500 bg-brand-500/20 text-white"
+                        : "border-gray-700 bg-gray-800 text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    {target === "local" ? "This machine" : "Google Colab (CPU)"}
+                  </button>
+                ))}
+              </div>
+              {executionTarget === "colab" && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Exports a dataset snapshot to Drive, generates a notebook, and runs it on a Colab
+                  CPU runtime automatically — see docs/colab-workflow.md. Only architecture=&quot;lstm&quot;
+                  with no preprocessing recipe is supported today.
+                </p>
+              )}
+              {colabUnsupportedArchitecture && (
+                <p className="mt-1 text-xs text-amber-400">
+                  This model is architecture=&quot;{model?.architecture}&quot; — Colab execution only
+                  supports &quot;lstm&quot; right now.
+                </p>
+              )}
+            </div>
+
             {/* Dataset selector */}
             <div>
               <label className="mb-1 block text-xs text-gray-400">Dataset</label>
@@ -245,8 +295,8 @@ export default function ModelDetailPage() {
               </select>
             </div>
 
-            {/* Preprocessed dataset (recipe) selector */}
-            {datasetId && (
+            {/* Preprocessed dataset (recipe) selector — not supported on the Colab path yet */}
+            {executionTarget === "local" && datasetId && (
               <div>
                 <div className="mb-1 flex items-center justify-between">
                   <label className="block text-xs text-gray-400">Preprocessed Dataset</label>
@@ -311,7 +361,7 @@ export default function ModelDetailPage() {
             <div className="flex gap-2 pt-1">
               <button
                 onClick={startTraining}
-                disabled={startingRun}
+                disabled={startingRun || colabUnsupportedArchitecture}
                 className="rounded bg-brand-500 px-3 py-1.5 text-xs text-white hover:bg-sky-400 disabled:opacity-50"
               >
                 {startingRun ? "Queuing…" : "Start Training"}
@@ -344,6 +394,7 @@ export default function ModelDetailPage() {
                 <th className="py-2 pr-4">Progress</th>
                 <th className="py-2 pr-4">Val Loss</th>
                 <th className="py-2 pr-4">Dataset</th>
+                <th className="py-2 pr-4">Run on</th>
                 <th className="py-2" />
               </tr>
             </thead>
@@ -359,6 +410,13 @@ export default function ModelDetailPage() {
                   </td>
                   <td className="py-2 pr-4 text-gray-300">{run.val_loss != null ? run.val_loss.toFixed(6) : "—"}</td>
                   <td className="py-2 pr-4 text-gray-400">{run.dataset_id}</td>
+                  <td className="py-2 pr-4">
+                    {run.execution_target === "colab" ? (
+                      <span className="rounded bg-brand-500/20 px-1.5 py-0.5 text-xs text-brand-400">Colab</span>
+                    ) : (
+                      <span className="text-xs text-gray-500">This machine</span>
+                    )}
+                  </td>
                   <td className="py-2 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <button

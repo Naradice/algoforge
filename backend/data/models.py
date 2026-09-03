@@ -93,6 +93,31 @@ class DataCharacteristics(Base):
     dataset: Mapped[Dataset] = relationship("Dataset", back_populates="characteristics")
 
 
+class DatasetSnapshot(Base):
+    """An immutable, single-file, hash-stamped copy of a dataset's contents at one point in
+    time — for handing to an external, disconnected execution environment (e.g. a Colab
+    notebook) where the live dataset (which incremental collection keeps mutating) can't be
+    reached directly. See scripts/export_dataset_snapshot.py.
+    """
+
+    __tablename__ = "dataset_snapshots"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    dataset_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False, index=True)
+    artifact_path: Mapped[str] = mapped_column(sa.Text, nullable=False)  # relative to ARTIFACT_STORE_PATH, single parquet file
+    sha256: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    row_count: Mapped[int | None] = mapped_column(sa.BigInteger, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(sa.BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="local")  # local | uploaded | error
+    export_provider: Mapped[str | None] = mapped_column(sa.Text, nullable=True)  # e.g. "gdrive"
+    # e.g. {"file_id": "...", "url": "...", "uploaded_at": "..."} — free-form per provider,
+    # so adding a new export target never needs a schema change.
+    export_ref: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+
+    dataset: Mapped[Dataset] = relationship("Dataset")
+
+
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
@@ -132,6 +157,21 @@ class DatasetRead(BaseModel):
     to_ts: datetime | None
     row_count: int | None
     status: str
+    created_at: datetime
+
+
+class DatasetSnapshotRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    dataset_id: int
+    artifact_path: str
+    sha256: str
+    row_count: int | None
+    size_bytes: int | None
+    status: str
+    export_provider: str | None
+    export_ref: dict[str, Any] | None
     created_at: datetime
 
 

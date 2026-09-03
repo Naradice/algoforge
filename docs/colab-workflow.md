@@ -1,0 +1,172 @@
+# Colab Workflow — Training Tiny Models on Google Colab's CPU Runtime
+
+Some architectures/hyperparams (a tiny LSTM, a short obs_len, a small dataset) don't need this
+machine's GPU or even its CPU tied up for the duration — they finish fine on a bare Colab CPU
+runtime. This doc is the practical guide for that path: pick a candidate, export its data,
+generate a notebook, run it, watch it, and register the result back into algoforge.
+
+Related design docs: [data-layer.md](data-layer.md) (dataset artifacts),
+[model-layer.md](model-layer.md) (TrainingRun lifecycle) — this doc is the operational
+"how do I actually run one" companion to both.
+
+## Overview
+
+```
+┌─────────────┐   ① export+upload    ┌──────────────┐   ② generate   ┌─────────────────┐
+│  algoforge   │ ───────────────────▶ │ Google Drive │ ─────────────▶ │ notebooks/*.ipynb │
+│  dataset     │  snapshot (hash-     │  (public dl  │   (embeds real │ (Git-tracked)     │
+│  (mutable)   │  stamped, immutable) │   link)      │   algoforge    │                   │
+└─────────────┘                      └──────────────┘   source code) └────────┬──────────┘
+                                                                                │ ③ run
+                                                                                ▼
+┌──────────────┐   ⑤ registers as     ┌──────────────────┐   downloads   ┌───────────────┐
+│  algoforge    │ ◀──────────────────  │ best.pt +         │ ◀───────────  │  Colab CPU    │
+│  TrainingRun  │   source="external"  │ metrics.json      │               │  runtime      │
+│  (/model/     │                      └──────────────────┘               └───────────────┘
+│   compare)    │
+└──────────────┘
+```
+
+Everything on the left runs on this machine (or in the `colab-cli` container); everything on
+the right runs on Google's infrastructure. Nothing in between requires this machine to stay on
+or the algoforge backend to be reachable from outside — that's the whole point.
+
+## One-time setup
+
+1. **Google Drive OAuth** (for uploading dataset snapshots) — see
+   `data/gdrive_export.py`'s module docstring. Needs `GDRIVE_OAUTH_CLIENT_JSON` and
+   `GDRIVE_SNAPSHOT_FOLDER_ID` in `backend/.env`, plus one interactive browser login (the
+   resulting token then caches at `GDRIVE_OAUTH_TOKEN_PATH` and every later call is
+   non-interactive). **Use a personal Gmail account's own OAuth login, not a service account** —
+   service accounts have no Drive storage quota and fail with `storageQuotaExceeded` even on a
+   shared folder, confirmed live; that only works around a Google Workspace Shared Drive.
+2. **`colab-cli` container** — see `infra/colab-cli/README.md`. One-time interactive login
+   (`docker compose exec -it colab-cli colab status`, follow the printed OAuth URL) which also
+   caches into a Docker volume.
+
+Both logins are things only a human can do (a real browser round-trip) — do them once, then
+everything below is scriptable.
+
+## Picking a candidate
+
+Good fit for this path: an architecture/size/hyperparam combination that would finish in
+minutes-to-low-hours on a CPU. `docs/model-layer.md`'s architecture table and the "Row cap"
+section are the relevant references — a `lstm`/`decoder_only` at small `hidden_dim` on a dataset
+under a few hundred thousand rows is squarely in range; a multi-million-row `seq2seq_transformer`
+sweep is not (send that to this machine's GPU worker instead, via the normal
+`start_training_run` MCP tool / `/models/{id}/training-runs` API).
+
+**Current generator scope**: only `architecture="lstm"` on the default `OHLCWindowDataset` path
+(no `token_level`, no preprocessing recipe) is supported — see `model/notebook_export.py`'s
+docstring for what extending this to another architecture requires.
+
+## Step 1 — Export a dataset snapshot
+
+```
+cd algoforge/backend
+python -m scripts.export_dataset_snapshot --dataset-id <DATASET_ID> --upload-gdrive
+```
+
+Prints a `snapshot_id` — the dataset's current contents, frozen and hash-stamped, since a live
+dataset can keep changing under incremental collection (see data-layer.md) and a disconnected
+Colab runtime can't reach it anyway. Reuse the same `snapshot_id` for every notebook that should
+train on the exact same data (comparing runs against a moving dataset defeats the comparison —
+see model-layer.md's "Comparing training runs" methodology notes).
+
+## Step 2 — Generate the notebook
+
+```
+python -m scripts.generate_colab_notebook \
+    --architecture lstm --model-name <MODEL_NAME> \
+    --snapshot-id <SNAPSHOT_ID> \
+    --hyperparams-json '{"obs_len":60,"pred_len":10,"epochs":30,"hidden_dim":32,"lr":0.001}' \
+    --out ../notebooks/<MODEL_NAME>.ipynb
+```
+
+Commit the resulting `.ipynb` — it's self-contained (embeds the actual `LSTMModel` /
+`_apply_normalize` / `_make_windows` / `train_epoch`/`eval_epoch` source via
+`inspect.getsource()`, not a reimplementation) and records the algoforge git commit it was
+generated from, so it's independently reproducible from GitHub alone: anyone can open
+`https://colab.research.google.com/github/<org>/algoforge/blob/<ref>/notebooks/<MODEL_NAME>.ipynb`
+directly in a browser too, no `colab-cli` needed, if a human wants to just click through it.
+
+Repeat Steps 1–2 once per (model, dataset, hyperparams) combination you want to try — this is
+the natural point to queue up several candidates before moving to Step 3.
+
+## Step 3 — Run it, watch it, retrieve it
+
+```
+cd algoforge/infra/colab-cli
+docker compose exec colab-cli colab new -s <MODEL_NAME>
+docker compose exec colab-cli colab exec -s <MODEL_NAME> \
+    -f /notebooks/<MODEL_NAME>.ipynb --timeout 3600   # default timeout is 30s -- always raise it
+```
+
+`colab exec` blocks until the notebook finishes (or the timeout fires) — its exit code is the
+completion signal for that terminal. **To check on it from elsewhere while it's still running**,
+open a second `docker compose exec`:
+
+```
+docker compose exec colab-cli colab status -s <MODEL_NAME>
+docker compose exec colab-cli colab log -s <MODEL_NAME>
+```
+
+**`colab log` only shows which cells have executed (their code), not their printed output** —
+confirmed live, so it does *not* surface the notebook's own `"epoch N/M: train=... val=..."`
+print lines. `colab status` at least tells you whether the session is still running. The
+`colab exec` command's own captured stdout (which `model/colab_trainer.py` logs unconditionally
+when running this automatically) is currently the only place those progress lines are visible —
+which means, for a manual run, they're genuinely only visible once `colab exec` returns and
+prints everything it buffered, not while it's in progress.
+
+Once it finishes:
+
+```
+docker compose exec colab-cli colab download -s <MODEL_NAME> /content/best.pt /notebooks/<MODEL_NAME>_best.pt
+docker compose exec colab-cli colab download -s <MODEL_NAME> /content/metrics.json /notebooks/<MODEL_NAME>_metrics.json
+docker compose exec colab-cli colab stop -s <MODEL_NAME>
+```
+
+### Getting a completion notification instead of babysitting a terminal
+
+Since `colab exec` is a single blocking command, running it via Claude Code with
+`run_in_background: true` turns "check on Colab periodically" into "get told when it's done" —
+ask your Claude Code session to run the `colab exec` command above in the background for a given
+notebook (or a whole list of them, one after another), and it will surface a notification the
+moment each one exits, instead of you polling `colab status` by hand. This is the practical
+answer to "how do I know when it's done" for this workflow.
+
+## Step 4 — Register the result with algoforge
+
+```
+cd algoforge/backend
+python -m scripts.import_training_run --model-id <MODEL_ID> --dataset-id <DATASET_ID> \
+    --checkpoint ../notebooks/<MODEL_NAME>_best.pt \
+    --metadata ../notebooks/<MODEL_NAME>_metrics.json \
+    --notebook-url https://colab.research.google.com/github/<org>/algoforge/blob/<ref>/notebooks/<MODEL_NAME>.ipynb
+```
+
+This creates a `TrainingRun(source="external")` with the notebook URL, git commit, and dataset
+snapshot sha256 recorded in `hyperparams._external_ref` — it then shows up in `/model/compare`
+and the model detail page exactly like a run this machine's own celery worker trained, so
+Sharpe/val_loss/param-count comparisons work across both without special-casing.
+
+## Running several (model, dataset) candidates at once
+
+Repeat Steps 1–4 per candidate. Two things to know before parallelizing across multiple
+`colab new -s <name>` sessions concurrently: how many concurrent Colab runtimes your account's
+tier actually allows, and whether this container's single `colab-cli` process handles concurrent
+`exec` calls to different sessions cleanly — neither has been tested here. Running them
+sequentially (or a couple at a time) is the safe default until that's checked.
+
+## Known limitations (be aware before relying on this unattended)
+
+- No push notification from Colab back to algoforge or this session — the Colab side has no way
+  to reach this machine's backend, so "done" is only ever discovered by asking (`colab status`,
+  a blocking `colab exec`, or polling), never pushed. See `docs/research-agent-service.md`'s and
+  `algoforge/docs/mcp-guide.md`'s webhook design for why that's true generally, not just here.
+- `colab exec`'s exit code reliability for an in-notebook failure (vs. only
+  CLI/connection-level failures) is unconfirmed.
+- Whether a long `colab exec` run risks Colab's own idle/runtime-length limits the same way the
+  browser UI does is unconfirmed (the CLI advertises an automatic keep-alive daemon against
+  idle-out specifically).

@@ -43,6 +43,13 @@ websocket-client
 PyYAML
 google-auth-oauthlib
 
+# Dataset snapshot export to Google Drive (data/gdrive_export.py, scripts/export_dataset_snapshot.py)
+# — optional, only needed if GDRIVE_SERVICE_ACCOUNT_JSON is set.
+google-api-python-client
+
+# Colab notebook generation (model/notebook_export.py, scripts/generate_colab_notebook.py)
+nbformat
+
 # Scheduling
 apscheduler>=3.10
 

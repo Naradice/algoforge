@@ -205,6 +205,7 @@ async def start_training_run(
     hyperparams: dict,
     dataset_id: int | None = None,
     preprocessed_dataset_id: int | None = None,
+    execution_target: str = "local",
 ) -> dict:
     """
     Start a training run for a model.
@@ -222,6 +223,16 @@ async def start_training_run(
                                     when preprocessed_dataset_id is set — they come from the recipe.
         dataset_id:                Raw dataset to train on (ad-hoc, no saved recipe).
         preprocessed_dataset_id:   A saved preprocessing recipe (see list_preprocessed_datasets).
+        execution_target:          "local" (default): this backend's own training queue/GPU-CPU
+                                    worker. "colab": run on a Google Colab CPU runtime instead —
+                                    this backend automatically exports a dataset snapshot to
+                                    Drive, generates a notebook, runs it via colab-cli, and
+                                    imports the result, all before returning control (see
+                                    docs/colab-workflow.md). Only architecture="lstm" with no
+                                    preprocessed_dataset_id/token_level/preprocessing recipe and
+                                    split_mode="chronological" is supported for "colab" today —
+                                    an unsupported combination raises immediately rather than
+                                    starting a run that would fail partway through.
     """
     from database import async_session_factory
     from model.service import model_service
@@ -229,10 +240,14 @@ async def start_training_run(
     from celery_app import enqueue
 
     async with async_session_factory() as db:
-        body = TrainingRunCreate(dataset_id=dataset_id, preprocessed_dataset_id=preprocessed_dataset_id, hyperparams=hyperparams)
+        body = TrainingRunCreate(
+            dataset_id=dataset_id, preprocessed_dataset_id=preprocessed_dataset_id,
+            hyperparams=hyperparams, execution_target=execution_target,
+        )
         run = await model_service.create_training_run(db, model_id, body)
-        await enqueue("train_model", run.id)
-        return {"run_id": run.id, "model_id": model_id, "status": run.status}
+        task_name = "colab_train_model" if run.execution_target == "colab" else "train_model"
+        await enqueue(task_name, run.id)
+        return {"run_id": run.id, "model_id": model_id, "status": run.status, "execution_target": run.execution_target}
 
 
 @mcp.tool()

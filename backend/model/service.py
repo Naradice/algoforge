@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from model.models import (
     MLModel, MLModelCreate, MLModelUpdate, TrainingRun, TrainingRunCreate,
     PreprocessedDataset, PreprocessedDatasetCreate, PreprocessedDatasetUpdate,
+    TrainingRunImportCreate,
 )
 from model.repository import model_repo
 
@@ -61,7 +62,7 @@ class ModelService:
         return run
 
     async def create_training_run(self, db: AsyncSession, model_id: int, body: TrainingRunCreate) -> TrainingRun:
-        await self.get_model(db, model_id)
+        model = await self.get_model(db, model_id)
         dataset_id = body.dataset_id
         if body.preprocessed_dataset_id is not None:
             # The recipe is the single source of truth for which dataset it was built on —
@@ -70,10 +71,97 @@ class ModelService:
             dataset_id = pd.dataset_id
         if dataset_id is None:
             raise HTTPException(status_code=422, detail="dataset_id or preprocessed_dataset_id is required")
+
+        if body.execution_target not in ("local", "colab"):
+            raise HTTPException(
+                status_code=422,
+                detail=f"execution_target must be 'local' or 'colab', got {body.execution_target!r}",
+            )
+        if body.execution_target == "colab":
+            from model.colab_trainer import check_colab_supported
+            check_colab_supported(model.architecture, body.preprocessed_dataset_id, body.hyperparams)
+
         return await model_repo.create_training_run(
             db, model_id=model_id, dataset_id=dataset_id,
             preprocessed_dataset_id=body.preprocessed_dataset_id, hyperparams=body.hyperparams,
+            execution_target=body.execution_target,
         )
+
+    async def import_external_training_run(
+        self, db: AsyncSession, model_id: int, checkpoint: UploadFile, body: TrainingRunImportCreate,
+    ) -> TrainingRun:
+        """Register a training run that was executed outside this backend (e.g. a Colab
+        notebook) as a first-class TrainingRun, so it appears in /model/compare and the model
+        detail page like any run the celery worker trained itself.
+
+        Mirrors the artifact layout celery_worker.py's _train_model uses
+        (store/models/{model_id}/training_{run_id}/best.<ext>) so downstream code (deploy,
+        predict) that resolves artifact_path relative to ARTIFACT_STORE_PATH needs no changes.
+        """
+        import os
+        from datetime import datetime, timezone
+        from pathlib import Path
+        from sqlalchemy import select
+        from data.models import Dataset
+        from model.models import TrainingCheckpoint, TrainingRunMetric
+
+        await self.get_model(db, model_id)
+
+        ds = (await db.execute(select(Dataset).where(Dataset.id == body.dataset_id))).scalar_one_or_none()
+        if ds is None:
+            raise HTTPException(status_code=404, detail=DATASET_NOT_FOUND)
+        if body.preprocessed_dataset_id is not None:
+            await self.get_preprocessed_dataset(db, body.preprocessed_dataset_id)
+
+        hyperparams = dict(body.hyperparams)
+        if body.external_ref:
+            hyperparams["_external_ref"] = body.external_ref
+        if body.notes:
+            hyperparams["_external_notes"] = body.notes
+
+        run = await model_repo.create_training_run(
+            db,
+            model_id=model_id,
+            dataset_id=body.dataset_id,
+            preprocessed_dataset_id=body.preprocessed_dataset_id,
+            hyperparams=hyperparams,
+            status="completed",
+            source="external",
+            current_epoch=body.best_epoch,
+            best_epoch=body.best_epoch,
+            val_loss=body.val_loss,
+            num_params=body.num_params,
+            started_at=body.started_at,
+            ended_at=body.ended_at or datetime.now(timezone.utc),
+        )
+
+        store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts")).resolve()
+        checkpoint_dir = store / "models" / str(model_id) / f"training_{run.id}"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        suffix = Path(checkpoint.filename or "best.pt").suffix or ".pt"
+        dest = checkpoint_dir / f"best{suffix}"
+        with dest.open("wb") as f:
+            while chunk := await checkpoint.read(1024 * 1024):
+                f.write(chunk)
+        # .as_posix() -- this backend also runs in Linux containers (docker-compose.dev.yml)
+        # that resolve artifact_path as Path(ARTIFACT_STORE_PATH) / training_run.artifact_path;
+        # a Windows-style backslash path stored here would not resolve there (same fix as
+        # data/snapshot_service.py's create_snapshot).
+        artifact_rel = dest.relative_to(store).as_posix()
+
+        db.add(TrainingCheckpoint(
+            training_run_id=run.id,
+            epoch=body.best_epoch,
+            metrics={"val_loss": body.val_loss, "source": "external"},
+            artifact_path=artifact_rel,
+        ))
+        for m in body.epoch_metrics:
+            db.add(TrainingRunMetric(
+                training_run_id=run.id, epoch=m.epoch,
+                train_loss=m.train_loss, val_loss=m.val_loss, lr=m.lr,
+            ))
+
+        return await model_repo.update_training_run(db, run.id, artifact_path=artifact_rel)
 
     async def get_validations(self, db: AsyncSession, model_id: int) -> list:
         await self.get_model(db, model_id)

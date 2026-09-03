@@ -45,6 +45,7 @@ useful documentation under the “docs” directory to help us build a web app t
 | [data-layer.md](data-layer.md) | Data sources, collection, characteristics |
 | [model-layer.md](model-layer.md) | ML model lifecycle, training, deployment |
 | [mcp-guide.md](mcp-guide.md) | Using the platform as an AI agent via MCP |
+| [colab-workflow.md](colab-workflow.md) | Training a tiny model on Google Colab's CPU instead of this machine — export a data snapshot, generate a notebook, run/watch it, register the result |
 | [research-agent-service.md](research-agent-service.md) | Design for a separate autonomous research-agent service consuming AlgoForge's MCP server |
 | [requirements.md](requirements.md) | Backlog of concrete gaps found in AlgoForge while designing external autonomous MCP consumers |
 

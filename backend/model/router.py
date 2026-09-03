@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -10,7 +10,7 @@ from pagination import Pagination
 from schemas import DataResponse, Meta
 from model.models import (
     MLModelCreate, MLModelUpdate, MLModelRead,
-    TrainingRunCreate, TrainingRunRead,
+    TrainingRunCreate, TrainingRunRead, TrainingRunImportCreate,
     ModelValidationRead, PredictRequest, PredictResponse,
     ValidationCreate,
 )
@@ -65,7 +65,6 @@ async def deploy_model(model_id: int, training_run_id: int, db: AsyncSession = D
 @router.post("/{model_id}/predict", response_model=DataResponse[PredictResponse])
 async def predict(model_id: int, body: PredictRequest, db: AsyncSession = Depends(get_db)):
     import asyncio
-    from fastapi import HTTPException
     from model.inference import predict as run_predict
 
     model_rec = await model_service.get_model(db, model_id)
@@ -106,7 +105,8 @@ async def list_training_runs(
 @router.post("/{model_id}/training-runs", response_model=DataResponse[TrainingRunRead], status_code=202)
 async def start_training_run(model_id: int, body: TrainingRunCreate, db: AsyncSession = Depends(get_db)):
     run = await model_service.create_training_run(db, model_id, body)
-    await enqueue("train_model", run.id)
+    task_name = "colab_train_model" if run.execution_target == "colab" else "train_model"
+    await enqueue(task_name, run.id)
     return DataResponse(data=run)
 
 
@@ -114,6 +114,24 @@ async def start_training_run(model_id: int, body: TrainingRunCreate, db: AsyncSe
 async def get_training_run(model_id: int, run_id: int, db: AsyncSession = Depends(get_db)):
     item = await model_service.get_training_run(db, model_id, run_id)
     return DataResponse(data=item)
+
+
+@router.post("/{model_id}/training-runs/import", response_model=DataResponse[TrainingRunRead], status_code=201)
+async def import_training_run(
+    model_id: int,
+    checkpoint: UploadFile = File(..., description="Best checkpoint file (e.g. best.pt)"),
+    metadata: str = Form(..., description="JSON-encoded TrainingRunImportCreate body"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Register a training run executed outside this backend (e.g. a Colab notebook) as a
+    completed TrainingRun, so it appears in /model/compare and the model detail page alongside
+    runs the celery worker trained itself. See TrainingRunImportCreate for the metadata shape."""
+    try:
+        payload = TrainingRunImportCreate.model_validate_json(metadata)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"invalid metadata JSON: {e}")
+    run = await model_service.import_external_training_run(db, model_id, checkpoint, payload)
+    return DataResponse(data=run)
 
 
 # ── Validations ────────────────────────────────────────────────────────────────
