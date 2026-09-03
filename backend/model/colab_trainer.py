@@ -68,7 +68,15 @@ def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None
     model/notebook_export.py's generator can produce. Checked at TrainingRun creation time (see
     model/service.py:create_training_run) so an unsupported request fails immediately with a
     clear reason instead of failing deep into the pipeline after a Colab runtime is already
-    provisioned."""
+    provisioned.
+
+    *preprocessed_dataset_id* itself needs no validation here -- run_colab_training resolves it
+    the same way celery_worker.py's _resolve_training_context does (the referenced
+    PreprocessedDataset's own preprocessing/feature_cols/normalize become this run's), and
+    whatever it resolves to is still built from the same components (token_level, preprocessing)
+    validated below. Kept as a parameter so this signature doesn't need to change if that ever
+    stops being true (e.g. a future recipe field this generator can't handle).
+    """
     if architecture in NON_GRADIENT_ARCHITECTURES:
         raise HTTPException(status_code=422, detail={
             "code": "COLAB_UNSUPPORTED_ARCHITECTURE",
@@ -76,11 +84,6 @@ def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None
                 f"execution_target='colab' doesn't support architecture={architecture!r} -- "
                 "it's not torch.nn.Module-based (see model_core.architectures.NON_GRADIENT_ARCHITECTURES)"
             ),
-        })
-    if preprocessed_dataset_id is not None:
-        raise HTTPException(status_code=422, detail={
-            "code": "COLAB_UNSUPPORTED_PREPROCESSED_DATASET",
-            "message": "execution_target='colab' doesn't support preprocessed_dataset_id yet -- use inline hyperparams instead",
         })
     token_level = hyperparams.get("token_level")
     if token_level is not None and token_level not in _VALID_TOKEN_LEVELS:
@@ -210,9 +213,31 @@ async def run_colab_training(training_run_id: int) -> dict:
             dataset_id = run.dataset_id
             hyperparams = dict(run.hyperparams)
 
-            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
-                status="running", started_at=datetime.now(timezone.utc),
-            ))
+            # A preprocessed-dataset recipe is the single source of truth for preprocessing/
+            # feature_cols/normalize when referenced, overriding any same-named inline
+            # hyperparams -- same resolution celery_worker.py's _resolve_training_context does
+            # for a local run, including snapshotting the resolved values back onto
+            # TrainingRun.hyperparams so this run stays self-describing even if its recipe is
+            # later renamed or deleted.
+            run_update_values = {"status": "running", "started_at": datetime.now(timezone.utc)}
+            if run.preprocessed_dataset_id is not None:
+                from model.models import PreprocessedDataset
+                pd_rec = (await db.execute(
+                    select(PreprocessedDataset).where(PreprocessedDataset.id == run.preprocessed_dataset_id)
+                )).scalar_one_or_none()
+                if pd_rec is not None:
+                    # Mutate the same `hyperparams` dict Step 4 later writes back wholesale
+                    # (`hyperparams={**hyperparams, "_external_ref": ...}`) -- putting these
+                    # keys only in a copy here, as an earlier version of this code did, meant
+                    # Step 4's write silently dropped preprocessed_dataset_id/_name again.
+                    hyperparams["preprocessing"] = pd_rec.preprocessing
+                    hyperparams["feature_cols"] = pd_rec.feature_cols
+                    hyperparams["normalize"] = pd_rec.normalize
+                    hyperparams["preprocessed_dataset_id"] = pd_rec.id
+                    hyperparams["preprocessed_dataset_name"] = pd_rec.name
+                    run_update_values["hyperparams"] = dict(hyperparams)
+
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(**run_update_values))
             await db.commit()
 
         loop = asyncio.get_event_loop()

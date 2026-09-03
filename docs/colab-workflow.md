@@ -69,14 +69,17 @@ dispatches via `model_core.trainers.get_trainer_fns`/`get_default_criterion` gen
 (verified end-to-end for `lstm`, `decoder_only`, `timegan`, `vae`) rather than hardcoding a
 whitelist. Excluded: `model_core.architectures.NON_GRADIENT_ARCHITECTURES` (`rl_agent`/`ar`/
 `ma`/`arma` — not `torch.nn.Module`-based). `split_mode` (`"chronological"`/`"regime_controlled"`)
-`token_level` (`"diff"`/`"quantize_diff"`/`"cluster"`/`"digits"`/`"sax"`), and an inline
-`preprocessing` recipe (indicators/clustering) are all supported and verified end-to-end
-(`token_level="cluster"` and a `preprocessing` recipe each trigger their own extra `pip
-install` cell automatically — `scikit-learn` for the former, `finance_client` plus its actual
-runtime deps for the latter). `preprocessed_dataset_id` (a *saved* recipe, as opposed to one
-given inline in hyperparams) is not supported yet -- see `model/colab_trainer.py`'s
-`check_colab_supported`, which still rejects it and points the caller at inline `preprocessing`
-instead.
+`token_level` (`"diff"`/`"quantize_diff"`/`"cluster"`/`"digits"`/`"sax"`), an inline
+`preprocessing` recipe (indicators/clustering), and `preprocessed_dataset_id` (a *saved*
+recipe) are all supported and verified end-to-end (`token_level="cluster"` and a preprocessing
+recipe — inline or saved — each trigger their own extra `pip install` cell automatically —
+`scikit-learn` for the former, `finance_client` plus its actual runtime deps for the latter).
+`preprocessed_dataset_id` is resolved the same way `celery_worker.py`'s
+`_resolve_training_context` does for a local run: the referenced recipe's
+`preprocessing`/`feature_cols`/`normalize` override any same-named inline hyperparams, and the
+resolved values (plus the recipe's own id/name) are snapshotted back onto
+`TrainingRun.hyperparams` so the run stays self-describing even if the recipe is later renamed
+or deleted.
 
 **Training-control hyperparams**: `optimizer` (`adam`/`adamw`/`sgd`) with `beta1`/`beta2`/
 `momentum`/`weight_decay`, `disable_lr_scheduler`, `shuffle`, `lr_warmup_epochs`,
