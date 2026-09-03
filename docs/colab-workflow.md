@@ -182,14 +182,41 @@ tier actually allows, and whether this container's single `colab-cli` process ha
 `exec` calls to different sessions cleanly — neither has been tested here. Running them
 sequentially (or a couple at a time) is the safe default until that's checked.
 
+## Live progress and stopping (execution_target="colab" only)
+
+The manual CLI flow above (Steps 3–4) has no live progress — `colab exec` is a single blocking
+call. But a run started with `execution_target="colab"` (i.e. going through
+`model/colab_trainer.py`'s `run_colab_training`, not the manual CLI steps by hand) gets both,
+via the same mechanism: while `colab_runner.exec_notebook` is blocked, a concurrent task
+(`_poll_and_maybe_stop`) polls the notebook's own `progress.json` (written every epoch — see
+`model/notebook_export.py`) every 20s via `colab download`, reflecting `current_epoch`/`val_loss`
+onto the `TrainingRun` live — the same fields `GET /training-runs/{id}/status` and the UI's
+training-run table already show for a local run. The same task also checks
+`TrainingRun.stop_requested` each cycle; `POST /training-runs/{id}/stop` (the same endpoint that
+stops a local run) sets it, and once seen, the task grabs the latest checkpoint it can and calls
+`colab stop` on the session — confirmed live that this reliably makes the blocked `colab exec`
+call exit non-zero within the poll interval, which is what lets the run actually be interrupted
+rather than just flagged for later. A stopped run ends up `status="completed"` (matching a
+stopped local run's own convention) with whatever `best_epoch`/`val_loss` progress.json last
+recorded, but with zero `TrainingRunMetric` rows (only the bulk metrics.json import on normal
+completion writes those, to avoid double-writing what polling already wrote to `TrainingRun`
+itself) — an accurate reflection of a run that didn't finish normally, not a bug.
+
+Verified live end to end: a 300-epoch run, `stop_requested` set mid-run, stopped within one poll
+cycle at epoch ~236 and registered as `completed` with `best_epoch=229` and
+`hyperparams._external_ref.stopped_early=true`.
+
 ## Known limitations (be aware before relying on this unattended)
 
-- No push notification from Colab back to algoforge or this session — the Colab side has no way
-  to reach this machine's backend, so "done" is only ever discovered by asking (`colab status`,
-  a blocking `colab exec`, or polling), never pushed. See `docs/research-agent-service.md`'s and
-  `algoforge/docs/mcp-guide.md`'s webhook design for why that's true generally, not just here.
+- No push notification from Colab back to algoforge or this session for anything *other* than
+  the polling above — the Colab side has no way to reach this machine's backend directly. See
+  `docs/research-agent-service.md`'s and `algoforge/docs/mcp-guide.md`'s webhook design for why
+  that's true generally.
 - `colab exec`'s exit code reliability for an in-notebook failure (vs. only
   CLI/connection-level failures) is unconfirmed.
 - Whether a long `colab exec` run risks Colab's own idle/runtime-length limits the same way the
   browser UI does is unconfirmed (the CLI advertises an automatic keep-alive daemon against
   idle-out specifically).
+- No duplicate-execution lock for `run_colab_training` the way `_train_model` has (see
+  `model/colab_trainer.py`'s module docstring) — unlikely to matter given Redis's 12h broker
+  visibility_timeout, but flagged for a very large `colab_timeout_seconds`.

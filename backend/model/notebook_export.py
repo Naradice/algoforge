@@ -279,6 +279,7 @@ criterion = get_default_criterion(ARCHITECTURE)
 """))
 
     cells.append(nbf.v4.new_code_cell("""import json
+import os
 
 epoch_metrics = []
 best_val_loss = float("inf")
@@ -292,6 +293,15 @@ for epoch in range(1, HYPERPARAMS["epochs"] + 1):
         best_val_loss = val_loss
         best_epoch = epoch
         torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, "best.pt")
+    # Written every epoch so an orchestrator polling this session (model/colab_trainer.py, while
+    # colab exec is otherwise blocked until the whole run finishes) can show live progress and
+    # decide when to stop early -- see that module's _poll_and_maybe_stop. Atomic write
+    # (tmp file + rename) so a concurrent `colab download` of progress.json never reads a
+    # half-written file.
+    with open("progress.json.tmp", "w") as f:
+        json.dump({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                    "best_epoch": best_epoch, "best_val_loss": best_val_loss}, f)
+    os.replace("progress.json.tmp", "progress.json")
     print(f"epoch {epoch}/{HYPERPARAMS['epochs']}: train={train_loss:.6f} val={val_loss:.6f}")
 
 metadata = {
