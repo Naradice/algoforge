@@ -21,6 +21,19 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# Load backend/.env before any module below reads os.getenv() at import time (celery_app.py
+# reads REDIS_URL immediately on import). Docker Compose already injects .env as real
+# environment variables via `env_file:` before the container's python process even starts, and
+# load_dotenv() never overrides an already-set variable, so this is a no-op there -- it only
+# matters for a bare `celery -A celery_worker worker ...` invocation outside docker-compose
+# (e.g. local Windows dev), which otherwise silently runs with every .env-only setting unset
+# (ARTIFACT_STORE_PATH, GDRIVE_*, ...) and fails deep inside a task instead of at startup.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 import asyncio
 import logging
 import math
