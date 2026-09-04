@@ -319,7 +319,8 @@ scheduler = (
 )
 """))
 
-    cells.append(nbf.v4.new_code_cell("""import json
+    cells.append(nbf.v4.new_code_cell("""import csv
+import json
 import os
 
 _target_lr = HYPERPARAMS["lr"]
@@ -346,7 +347,6 @@ for epoch in range(1, HYPERPARAMS["epochs"] + 1):
     if scheduler and epoch >= _lr_warmup_epochs:
         scheduler.step(val_loss)
 
-    epoch_metrics.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         best_epoch = epoch
@@ -354,15 +354,29 @@ for epoch in range(1, HYPERPARAMS["epochs"] + 1):
         torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, "best.pt")
     else:
         epochs_since_improvement += 1
-    # Written every epoch so an orchestrator polling this session (model/colab_trainer.py, while
-    # colab exec is otherwise blocked until the whole run finishes) can show live progress and
-    # decide when to stop early -- see that module's _poll_and_maybe_stop. Atomic write
-    # (tmp file + rename) so a concurrent `colab download` of progress.json never reads a
-    # half-written file.
-    with open("progress.json.tmp", "w") as f:
-        json.dump({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
-                    "best_epoch": best_epoch, "best_val_loss": best_val_loss}, f)
-    os.replace("progress.json.tmp", "progress.json")
+    # best_epoch/best_val_loss recorded per-row (as of this epoch) so a consumer reading only
+    # the last row -- see below -- gets the same "current status" progress.json used to convey,
+    # without a second file. epoch_metrics itself (this full list) is still exactly what
+    # metrics.json's "epoch_metrics" field gets at the end of the run.
+    epoch_metrics.append({
+        "epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+        "best_epoch": best_epoch, "best_val_loss": best_val_loss,
+    })
+    # Rewritten in full every epoch (not appended -- the whole history is tiny even for
+    # thousands of epochs) so an orchestrator polling this session (model/colab_trainer.py,
+    # while colab exec is otherwise blocked until the whole run finishes) can show live progress
+    # and decide when to stop early -- see that module's _poll_and_maybe_stop. Also doubles as
+    # this run's resilience backup: if the final metrics.json fetch after colab exec returns
+    # ever fails (e.g. a degraded colab-cli connection -- see colab_runner.download_with_retry's
+    # docstring), colab_trainer.py falls back to whatever this file held as of the last
+    # successful poll, so at most the last _POLL_INTERVAL_SECONDS-or-so of epochs are at risk of
+    # being lost instead of the entire run's history. Atomic write (tmp file + rename) so a
+    # concurrent `colab download` of metrics_log.csv never reads a half-written file.
+    with open("metrics_log.csv.tmp", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["epoch", "train_loss", "val_loss", "best_epoch", "best_val_loss"])
+        writer.writeheader()
+        writer.writerows(epoch_metrics)
+    os.replace("metrics_log.csv.tmp", "metrics_log.csv")
     print(f"epoch {epoch}/{HYPERPARAMS['epochs']}: train={train_loss:.6f} val={val_loss:.6f}")
 
     # early_stop_patience: stops once this many consecutive epochs pass with no new best

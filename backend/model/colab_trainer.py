@@ -12,25 +12,24 @@ blocked on a subprocess call, not doing local work) never occupies a slot the lo
 trainer needs.
 
 Progress and stop_requested (see _poll_and_maybe_stop) are handled by polling the notebook's
-own progress.json (written every epoch -- see notebook_export.py) via `colab download` while
-colab_runner.exec_notebook is otherwise blocked -- confirmed live that `colab status`/`colab
-ls`/`colab download` all work normally against a session mid-`colab exec`, and that `colab
-stop`-ing a session mid-exec makes the blocked `colab exec` process exit non-zero
-(RuntimeError: Connection was lost.) promptly, which is what lets _poll_and_maybe_stop's
-stop_requested branch actually interrupt a run instead of just marking it for later.
+own metrics_log.csv (the full epoch history, rewritten every epoch -- see notebook_export.py)
+via `colab download` while colab_runner.exec_notebook is otherwise blocked -- confirmed live
+that `colab status`/`colab ls`/`colab download` all work normally against a session mid-`colab
+exec`, and that `colab stop`-ing a session mid-exec makes the blocked `colab exec` process exit
+non-zero (RuntimeError: Connection was lost.) promptly, which is what lets
+_poll_and_maybe_stop's stop_requested branch actually interrupt a run instead of just marking it
+for later. The locally-downloaded copy of that CSV also doubles as this run's fallback source of
+epoch_metrics if the final metrics.json fetch (see run_colab_training's step 4) ends up failing
+even after colab_runner.download_with_retry's budget -- see _read_metrics_csv.
 
 Has the same duplicate-execution Redis lock _train_model does (exec_lock_key, same 12h TTL as
 celery_app.py's broker visibility_timeout) -- a redelivered task message for a run still
 executing is skipped rather than starting a second, uncoordinated Drive upload + colab-cli
 session against the same TrainingRun row.
-
-Not yet handled (flag before relying on this unattended):
-  - A run stopped early ends up with zero TrainingRunMetric rows (only current_epoch/val_loss
-    on TrainingRun itself are updated during polling -- see _poll_and_maybe_stop's docstring for
-    why) -- accurate but sparser than a completed run's full metrics.json import.
 """
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import os
@@ -57,11 +56,39 @@ _DEFAULT_TIMEOUT_SECONDS = 3600.0
 # which notebook_export.py installs automatically only when this value is set.
 _VALID_TOKEN_LEVELS = {"diff", "quantize_diff", "cluster", "digits", "sax"}
 
-# How often _poll_and_maybe_stop checks progress.json and stop_requested. Each check costs a
+# How often _poll_and_maybe_stop checks metrics_log.csv and stop_requested. Each check costs a
 # `colab download` (a docker exec round-trip, a couple seconds) plus two small DB round-trips,
 # so this trades "how current is current_epoch / how promptly does stop actually stop" against
 # not hammering colab-cli with requests while it's already busy running the notebook.
 _POLL_INTERVAL_SECONDS = 20.0
+
+
+def _read_metrics_csv(path: Path) -> tuple[list[dict], dict | None]:
+    """Parses a metrics_log.csv downloaded from the notebook (see notebook_export.py's per-epoch
+    write) into ([{"epoch", "train_loss", "val_loss"}, ...], last_row_or_None). Used both by
+    _poll_and_maybe_stop (which only wants the last row -- current_epoch/val_loss/best_epoch/
+    best_val_loss "as of now") and by run_colab_training's completion step, as the fallback
+    source for epoch_metrics/best_epoch/val_loss when it has no metrics.json to work from (a
+    stopped-early run never gets one -- see run_colab_training -- or the final download failed
+    even after colab_runner.download_with_retry's budget). Returns ([], None) if the file
+    doesn't exist yet or has no data rows (e.g. downloaded before the first epoch completed).
+    """
+    if not path.is_file():
+        return [], None
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return [], None
+    epoch_metrics = [
+        {"epoch": int(r["epoch"]), "train_loss": float(r["train_loss"]), "val_loss": float(r["val_loss"])}
+        for r in rows
+    ]
+    last = rows[-1]
+    last_row = {
+        "epoch": int(last["epoch"]), "val_loss": float(last["val_loss"]),
+        "best_epoch": int(last["best_epoch"]), "best_val_loss": float(last["best_val_loss"]),
+    }
+    return epoch_metrics, last_row
 
 
 def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None, hyperparams: dict) -> None:
@@ -105,25 +132,26 @@ async def _poll_and_maybe_stop(
 ) -> dict | None:
     """Runs concurrently with colab_runner.exec_notebook's blocking call (the caller cancels
     this once that returns on its own -- normal completion). Every _POLL_INTERVAL_SECONDS:
-      1. Downloads the notebook's own progress.json (written every epoch -- see
-         notebook_export.py) and reflects epoch/val_loss into TrainingRun, so
-         get_training_status shows live progress instead of being stuck at 0 until the whole
-         run finishes. Deliberately does NOT write TrainingRunMetric rows here -- the normal
-         completion path imports metrics.json's full epoch_metrics in one batch, and doing
-         that here too would double them up. A run that gets stopped early (see below)
-         therefore ends up with zero TrainingRunMetric rows, which is an accurate reflection
-         of what happened, not a bug.
+      1. Downloads the notebook's own metrics_log.csv (the full epoch history, rewritten every
+         epoch -- see notebook_export.py) and reflects its last row's epoch/val_loss into
+         TrainingRun, so get_training_status shows live progress instead of being stuck at 0
+         until the whole run finishes. Deliberately does NOT write TrainingRunMetric rows here
+         even though the full history is right there in the downloaded CSV -- the normal
+         completion path imports metrics.json's epoch_metrics in one batch, and doing that here
+         too would double them up. The locally-downloaded CSV file itself (not this function's
+         return value, which the caller discards on normal completion -- see below) is what
+         backs a stopped-early or fetch-failed run's epoch_metrics instead; see
+         run_colab_training's step 4 and _read_metrics_csv.
       2. Checks TrainingRun.stop_requested. If set, best-effort grabs the latest best.pt (the
          notebook only writes a fresh one when val_loss improves, so this may be a few epochs
-         behind progress.json) before calling colab_runner.stop_session -- confirmed live that
+         behind metrics_log.csv) before calling colab_runner.stop_session -- confirmed live that
          this makes the concurrently-blocked exec_notebook call exit non-zero
          (RuntimeError: Connection was lost.) promptly, which the caller relies on to know the
          run actually stopped rather than just being marked to stop later.
 
-    Returns a dict with "progress" (the last progress.json seen, or None) and "best_path" (the
-    downloaded checkpoint Path, or None if none was ever available) if it stopped the session
-    itself; returns None if cancelled by the caller instead (the normal-completion case, where
-    the caller has metrics.json to work from and doesn't need this function's result).
+    Returns a dict with "progress" (the last metrics_log.csv row seen, or None) and "best_path"
+    (the downloaded checkpoint Path, or None if none was ever available) if it stopped the
+    session itself; returns None if cancelled by the caller instead (the normal-completion case).
     """
     import asyncio
 
@@ -131,27 +159,28 @@ async def _poll_and_maybe_stop(
     from model.models import TrainingRun
 
     loop = asyncio.get_event_loop()
-    progress_path = notebooks_dir / f"{session_name}_progress.json"
+    metrics_csv_path = notebooks_dir / f"{session_name}_metrics_log.csv"
     last_epoch_seen: int | None = None
-    last_progress: dict | None = None
+    last_row: dict | None = None
 
     while True:
         await asyncio.sleep(_POLL_INTERVAL_SECONDS)
 
         try:
-            await loop.run_in_executor(None, colab_runner.download, session_name, "progress.json", progress_path)
-            data = json.loads(progress_path.read_text())
-            last_progress = data
-            epoch = data.get("epoch")
-            if epoch is not None and epoch != last_epoch_seen:
-                last_epoch_seen = epoch
-                async with factory() as db:
-                    await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
-                        current_epoch=epoch, val_loss=data.get("val_loss"),
-                    ))
-                    await db.commit()
+            await loop.run_in_executor(None, colab_runner.download, session_name, "metrics_log.csv", metrics_csv_path)
+            _, row = _read_metrics_csv(metrics_csv_path)
+            if row is not None:
+                last_row = row
+                epoch = row["epoch"]
+                if epoch != last_epoch_seen:
+                    last_epoch_seen = epoch
+                    async with factory() as db:
+                        await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                            current_epoch=epoch, val_loss=row["val_loss"],
+                        ))
+                        await db.commit()
         except Exception:
-            # Most likely progress.json doesn't exist yet (still installing/downloading the
+            # Most likely metrics_log.csv doesn't exist yet (still installing/downloading the
             # dataset snapshot before the first epoch) -- not worth failing the run over.
             logger.debug(f"colab training run {training_run_id}: progress poll found nothing (yet?)", exc_info=True)
 
@@ -180,7 +209,7 @@ async def _poll_and_maybe_stop(
                 await loop.run_in_executor(None, colab_runner.stop_session, session_name)
             except Exception:
                 logger.warning(f"colab training run {training_run_id}: failed to stop session {session_name}", exc_info=True)
-            return {"progress": last_progress, "best_path": best_path}
+            return {"progress": last_row, "best_path": best_path}
 
 
 async def run_colab_training(training_run_id: int) -> dict:
@@ -331,13 +360,27 @@ async def run_colab_training(training_run_id: int) -> dict:
 
             best_path = notebooks_dir / f"{session_name}_best.pt"
             metrics_path = notebooks_dir / f"{session_name}_metrics.json"
+            metrics_fetch_failed = False
             if stopped_early is None:
                 # download_with_retry, not download: this is the one-shot fetch of a completed
                 # run's only copy of its result, with no further poll cycle to fall back on if it
                 # fails -- see colab_runner.download_with_retry's docstring for the live outage
                 # (~10 minutes) this is sized against.
                 await loop.run_in_executor(None, colab_runner.download_with_retry, session_name, "best.pt", best_path)
-                await loop.run_in_executor(None, colab_runner.download_with_retry, session_name, "metrics.json", metrics_path)
+                try:
+                    await loop.run_in_executor(None, colab_runner.download_with_retry, session_name, "metrics.json", metrics_path)
+                except colab_runner.ColabCliError:
+                    # Training itself succeeded -- best.pt above already proves that -- so losing
+                    # only the metadata fetch after this much retry shouldn't discard the whole
+                    # run. Fall back to metrics_log.csv (step 4 below), which _poll_and_maybe_stop
+                    # kept refreshed locally throughout the run and holds everything metrics.json's
+                    # own epoch_metrics would, missing at most the last
+                    # _POLL_INTERVAL_SECONDS-or-so of epochs -- see _read_metrics_csv.
+                    logger.warning(
+                        f"colab training run {training_run_id}: metrics.json fetch failed after "
+                        "retries -- falling back to the last poll-cached metrics_log.csv", exc_info=True,
+                    )
+                    metrics_fetch_failed = True
         finally:
             if stopped_early is None:
                 try:
@@ -346,6 +389,7 @@ async def run_colab_training(training_run_id: int) -> dict:
                     logger.warning(f"colab training run {training_run_id}: failed to stop session {session_name}", exc_info=True)
 
         # --- 4. Pull the result back into this TrainingRun --------------------------------------
+        metrics_csv_path = notebooks_dir / f"{session_name}_metrics_log.csv"
         if stopped_early is not None:
             # Same terminal status ("completed") a stop_requested local run ends up with --
             # celery_worker.py's _train_model breaks out of its epoch loop on stop_requested and
@@ -363,7 +407,22 @@ async def run_colab_training(training_run_id: int) -> dict:
             num_params = None
             best_path = stopped_best_path
             external_ref_extra = {"stopped_early": True}
-            epoch_metrics: list[dict] = []
+            # metrics_csv_path is the same file _poll_and_maybe_stop was refreshing every poll
+            # cycle -- its last download (the one just before stop_requested fired) is still
+            # sitting there, so a stopped-early run gets its epoch-by-epoch history too now
+            # instead of the zero TrainingRunMetric rows this path used to leave behind.
+            epoch_metrics, _ = _read_metrics_csv(metrics_csv_path)
+        elif metrics_fetch_failed:
+            epoch_metrics, last_row = _read_metrics_csv(metrics_csv_path)
+            if last_row is None:
+                raise RuntimeError(
+                    "metrics.json fetch failed after retries and no poll-cached metrics_log.csv "
+                    "is available either -- nothing to register"
+                )
+            best_epoch = last_row["best_epoch"]
+            val_loss = last_row["best_val_loss"]
+            num_params = None
+            external_ref_extra = {"metrics_fetch_failed": True}
         else:
             metadata = json.loads(metrics_path.read_text())
             best_epoch = metadata["best_epoch"]

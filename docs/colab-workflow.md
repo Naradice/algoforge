@@ -209,19 +209,26 @@ The manual CLI flow above (Steps 3–4) has no live progress — `colab exec` is
 call. But a run started with `execution_target="colab"` (i.e. going through
 `model/colab_trainer.py`'s `run_colab_training`, not the manual CLI steps by hand) gets both,
 via the same mechanism: while `colab_runner.exec_notebook` is blocked, a concurrent task
-(`_poll_and_maybe_stop`) polls the notebook's own `progress.json` (written every epoch — see
-`model/notebook_export.py`) every 20s via `colab download`, reflecting `current_epoch`/`val_loss`
-onto the `TrainingRun` live — the same fields `GET /training-runs/{id}/status` and the UI's
-training-run table already show for a local run. The same task also checks
-`TrainingRun.stop_requested` each cycle; `POST /training-runs/{id}/stop` (the same endpoint that
-stops a local run) sets it, and once seen, the task grabs the latest checkpoint it can and calls
-`colab stop` on the session — confirmed live that this reliably makes the blocked `colab exec`
-call exit non-zero within the poll interval, which is what lets the run actually be interrupted
-rather than just flagged for later. A stopped run ends up `status="completed"` (matching a
-stopped local run's own convention) with whatever `best_epoch`/`val_loss` progress.json last
-recorded, but with zero `TrainingRunMetric` rows (only the bulk metrics.json import on normal
-completion writes those, to avoid double-writing what polling already wrote to `TrainingRun`
-itself) — an accurate reflection of a run that didn't finish normally, not a bug.
+(`_poll_and_maybe_stop`) polls the notebook's own `metrics_log.csv` (the full epoch history,
+rewritten in full every epoch — see `model/notebook_export.py`) every 20s via `colab download`,
+reflecting the last row's `current_epoch`/`val_loss` onto the `TrainingRun` live — the same
+fields `GET /training-runs/{id}/status` and the UI's training-run table already show for a local
+run. The same task also checks `TrainingRun.stop_requested` each cycle; `POST
+/training-runs/{id}/stop` (the same endpoint that stops a local run) sets it, and once seen, the
+task grabs the latest checkpoint it can and calls `colab stop` on the session — confirmed live
+that this reliably makes the blocked `colab exec` call exit non-zero within the poll interval,
+which is what lets the run actually be interrupted rather than just flagged for later. A stopped
+run ends up `status="completed"` (matching a stopped local run's own convention) with whatever
+`best_epoch`/`val_loss` the CSV's last row recorded, and — since that same locally-downloaded CSV
+already holds the full epoch-by-epoch history up to that point, not just the latest row — a full
+set of `TrainingRunMetric` rows too (missing only whatever epochs happened after the last
+successful poll).
+
+The locally-downloaded `metrics_log.csv` copy serves a second purpose on a *normal* completion
+too: if the final `metrics.json` fetch (see "Timeout budget" below for the retry budget that
+guards it) fails even after exhausting that budget, `run_colab_training` falls back to this same
+file instead of discarding the whole run's history — training's own success is unaffected either
+way (`best.pt` is fetched, and validated to exist, independently of `metrics.json`).
 
 Verified live end to end: a 300-epoch run, `stop_requested` set mid-run, stopped within one poll
 cycle at epoch ~236 and registered as `completed` with `best_epoch=229` and
@@ -265,13 +272,19 @@ comes back `false`.
   the runtime became unreachable for progress polling for the last ~10 minutes of the run (`colab
   download` failing with "File or directory not found" for a file the notebook's own stdout
   confirmed it had already written), even though the concurrently-blocked `colab exec` itself
-  eventually returned successfully. `model/colab_runner.py`'s `download_with_retry` (used only
-  for the final, one-shot best.pt/metrics.json fetch, not the per-epoch progress poll — see its
-  docstring) patiently retries with backoff for several minutes to ride this out, since there is
-  no time pressure left once `colab exec` has already returned. This is a mitigation for a
-  connection reliability issue that is still not root-caused, not a fix for it — if colab-cli's
-  connection can go unreachable for longer than the retry budget, the underlying question of
-  *why* (a Colab-side runtime hiccup? colab-cli's own reconnect logic?) is still open.
+  eventually returned successfully. Two layers guard against losing a run's result to this:
+  `model/colab_runner.py`'s `download_with_retry` (used only for the final, one-shot
+  best.pt/metrics.json fetch, not the per-epoch progress poll — see its docstring) patiently
+  retries with backoff for several minutes, since there is no time pressure left once `colab
+  exec` has already returned; and if `metrics.json` still can't be fetched after that budget,
+  `run_colab_training` falls back to whatever `metrics_log.csv` `_poll_and_maybe_stop` last
+  downloaded successfully, so at most the last poll interval's epochs are lost rather than the
+  whole run's history (`best.pt` itself has no such fallback — a checkpoint's bytes can't be
+  reconstructed from a CSV, so its own `download_with_retry` failing is still fatal to the run).
+  This is a mitigation for a connection reliability issue that is still not root-caused, not a
+  fix for it — if colab-cli's connection can go unreachable for longer than the retry budget, the
+  underlying question of *why* (a Colab-side runtime hiccup? colab-cli's own reconnect logic?) is
+  still open.
 
   A more fundamental fix was considered and tried live: have the notebook upload its own result
   to Google Drive as its last cell (mirroring the existing dataset-snapshot download, in
