@@ -261,7 +261,34 @@ comes back `false`.
   CLI/connection-level failures) is unconfirmed.
 - Whether a long `colab exec` run risks Colab's own idle/runtime-length limits the same way the
   browser UI does is unconfirmed (the CLI advertises an automatic keep-alive daemon against
-  idle-out specifically).
+  idle-out specifically). Observed live on a real ~70-minute run: colab-cli's own connection to
+  the runtime became unreachable for progress polling for the last ~10 minutes of the run (`colab
+  download` failing with "File or directory not found" for a file the notebook's own stdout
+  confirmed it had already written), even though the concurrently-blocked `colab exec` itself
+  eventually returned successfully. `model/colab_runner.py`'s `download_with_retry` (used only
+  for the final, one-shot best.pt/metrics.json fetch, not the per-epoch progress poll — see its
+  docstring) patiently retries with backoff for several minutes to ride this out, since there is
+  no time pressure left once `colab exec` has already returned. This is a mitigation for a
+  connection reliability issue that is still not root-caused, not a fix for it — if colab-cli's
+  connection can go unreachable for longer than the retry budget, the underlying question of
+  *why* (a Colab-side runtime hiccup? colab-cli's own reconnect logic?) is still open.
+
+  A more fundamental fix was considered and tried live: have the notebook upload its own result
+  to Google Drive as its last cell (mirroring the existing dataset-snapshot download, in
+  reverse), so retrieval no longer depends on colab-cli's live connection to the runtime at all.
+  **Ruled out** — confirmed live (2026-09-04) that Colab's built-in, zero-extra-credential
+  `google.colab.auth.authenticate_user()` does not work inside an unattended `colab exec`: a
+  minimal test notebook calling only that function hung for 4+ minutes producing no output at
+  all (not even a print before the call), and had to be killed with `colab stop` — it was still
+  waiting on the interactive consent flow a real user would click through in a browser, which
+  nothing can supply here. (Side finding from the same test: `colab exec --timeout` did not
+  itself enforce that bound — the process kept running well past the 90s given it until the
+  session was stopped from the outside — worth keeping in mind separately from this auth
+  question.) The only remaining way to do a Drive-direct upload would be embedding this
+  project's own server-side OAuth refresh token into the generated notebook so it could refresh
+  and upload via plain HTTP itself — deliberately not done, since every other credential in this
+  pipeline stays server-side only, and this would be the first to leave that boundary. Retry with
+  backoff (above) is the standing solution.
 - `run_colab_training` has the same duplicate-execution Redis lock `_train_model` does (same
   12h TTL as the broker's visibility_timeout) — verified live: calling it a second time for a
   `training_run_id` already executing returns `{"skipped": "duplicate_execution"}` immediately

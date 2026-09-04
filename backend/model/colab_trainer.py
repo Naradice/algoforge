@@ -168,7 +168,11 @@ async def _poll_and_maybe_stop(
             logger.info(f"colab training run {training_run_id}: stop_requested -- stopping session {session_name}")
             best_path = notebooks_dir / f"{session_name}_best.pt"
             try:
-                await loop.run_in_executor(None, colab_runner.download, session_name, "best.pt", best_path)
+                # download_with_retry, not download: same one-shot "only copy" reasoning as the
+                # normal-completion fetch below -- a stop_requested run has no second chance at
+                # this checkpoint either. Still wrapped in try/except since this really is
+                # best-effort (the notebook may not have written a checkpoint at all yet).
+                await loop.run_in_executor(None, colab_runner.download_with_retry, session_name, "best.pt", best_path)
             except Exception:
                 logger.warning(f"colab training run {training_run_id}: no checkpoint available yet at stop time", exc_info=True)
                 best_path = None
@@ -328,8 +332,12 @@ async def run_colab_training(training_run_id: int) -> dict:
             best_path = notebooks_dir / f"{session_name}_best.pt"
             metrics_path = notebooks_dir / f"{session_name}_metrics.json"
             if stopped_early is None:
-                await loop.run_in_executor(None, colab_runner.download, session_name, "best.pt", best_path)
-                await loop.run_in_executor(None, colab_runner.download, session_name, "metrics.json", metrics_path)
+                # download_with_retry, not download: this is the one-shot fetch of a completed
+                # run's only copy of its result, with no further poll cycle to fall back on if it
+                # fails -- see colab_runner.download_with_retry's docstring for the live outage
+                # (~10 minutes) this is sized against.
+                await loop.run_in_executor(None, colab_runner.download_with_retry, session_name, "best.pt", best_path)
+                await loop.run_in_executor(None, colab_runner.download_with_retry, session_name, "metrics.json", metrics_path)
         finally:
             if stopped_early is None:
                 try:
