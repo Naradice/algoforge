@@ -145,6 +145,8 @@ class _DDMv1:
         self.spread = spread
         self.market_price: float = initial_price + spread
         self.trade_unit = trade_unit
+        self.min_volatility = min_volatility
+        self.max_volatility = max_volatility
         self.tick_time: float = 0.0
         self.tick_time_unit: float = tick_time
         self.price_history: list[float] = [self.market_price]
@@ -237,7 +239,12 @@ class _DDMv1:
         import itertools
         import time
 
-        keep = getattr(self, "wma", 0) + 2
+        # Retention must cover whichever lookback window is actually in use -- DDMv3's own WMA,
+        # and (when enabled) the stress-dependent spread's own moving-average window, which the
+        # book sets much longer (100-200) than a typical wma. Using only `wma` here would
+        # silently truncate price_history and corrupt _update_spread()'s moving average.
+        _spread_window = getattr(self, "spread_feedback_window", 0) if getattr(self, "spread_feedback_a", None) is not None else 0
+        keep = max(getattr(self, "wma", 0), _spread_window) + 2
         yielded = 0
         no_trade_streak = 0
         step = 0
@@ -296,6 +303,10 @@ class DDMv3(_DDMv1):
         wma: int | Iterable = 5,
         dealer_sensitive_min: float = -3.5,
         dealer_sensitive_max: float = -1.5,
+        spread_feedback_a: float | None = None,
+        spread_feedback_window: int = 150,
+        loss_limit: float | None = None,
+        loss_limit_c: float = 0.005,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -303,6 +314,50 @@ class DDMv3(_DDMv1):
             initial_price, spread, tick_time, time_noise_method, max_noise_factor,
         )
         self.price_history = [self.market_price]
+
+        # spread_feedback_a (opt-in, default None preserves existing behaviour exactly): a
+        # stress-dependent spread, z(n) = z(0) + a*|P(n) - P_m(n)|, per 高安・和泉・山田・水田
+        # 『マルチエージェントによる金融市場のシミュレーション』(コロナ社) eq. 4.28-4.33. z(0) is
+        # this constructor's own `spread` argument. The SAME z(n) is used both as the matching
+        # threshold in _contruct() (inherited, unchanged) and to amplify the random price-noise
+        # term in advance_order_price() below -- the book's own equations use one shared z(n) for
+        # both purposes (no per-agent index on z(n) in eq. 4.31), so this isn't a conflation of
+        # two different quantities, confirmed against the source before implementing. It does
+        # introduce a feedback loop absent from the base model (wider spread -> harder to match
+        # AND noisier prices -> potentially wider spread next step) -- expected to possibly
+        # destabilize some (delta, wma) combinations that were stable without it; that is a
+        # property to characterize, not a bug to suppress.
+        self.spread_feedback_a = spread_feedback_a
+        self.spread_feedback_window = spread_feedback_window
+        self._spread_z0 = spread
+
+        # loss_limit (opt-in, default None preserves existing behaviour exactly): forced,
+        # cascading position liquidation per 高安・和泉・山田・水田 §4.2.4, eq. 4.36-4.39. The
+        # book's dealers accumulate a running signed position S_i(n) and profit R_i(n); DDMv3's
+        # agents instead hold exactly +-1 and flip on every trade, so `position` here encodes
+        # *next-trade intent*, not current inventory sign -- confirmed against _contruct() and
+        # the pre-port original (stocknet/stocknet/datasets/simulator.py), where the matched
+        # position==1 agent is literally named `bought_agent_id` and flips to -1, i.e. after
+        # buying they hold long inventory but their `position` field now reflects their *selling*
+        # intent. entry_price[i] tracks the price at which agent i's *current* position value was
+        # last set; unrealized pnl is therefore position[i]*(entry_price[i]-market_price) (a
+        # position=-1 agent is holding long inventory bought at entry_price, and profits as price
+        # rises above it). Once pnl crosses -loss_limit, the agent is force-liquidated: instead of
+        # its normal probabilistic price update it steps by position[i]*loss_limit_c every tick --
+        # derived directly from _contruct()'s argmax/argmin selection (this moves it toward
+        # becoming the extremal quote, i.e. deliberately crossing the spread to force a fast
+        # match), not assumed from the book's sign convention alone. Once matched while
+        # liquidating, the agent resets as a fresh dealer (new random tend, cleared liquidation
+        # flag) per the book's "exits and a new zero-position dealer enters."
+        self.loss_limit = loss_limit
+        self.loss_limit_c = loss_limit_c
+        self.entry_price = self.agent_prices.copy()
+        self.in_liquidation = np.zeros(num_agent, dtype=bool)
+        # Events logged as (trade_count, agent_id, "trigger"|"release") -- trade_count (not
+        # tick_time) is the natural clock for cascade grouping, since it's the same unit every
+        # other DDM experiment this session measures horizons in.
+        self._liq_events: list[tuple[int, int, str]] = []
+        self._trade_count = 0
 
         if dealer_sensitive is None:
             self.dealer_sensitive = np.array(
@@ -328,11 +383,94 @@ class DDMv3(_DDMv1):
         diffs = [h[-i] - h[-i - 1] for i in range(1, self.wma + 1)]
         return float(np.dot(self.weight_array, diffs) / self._total_weight)
 
+    def _update_spread(self) -> None:
+        """z(n) = z(0) + a*|P(n) - P_m(n)| (eq. 4.31). No-op when the feedback is disabled, which
+        leaves self.spread permanently equal to _spread_z0 -- the noise_amp ratio in
+        advance_order_price() below is then exactly 1.0, reproducing the base model exactly."""
+        if self.spread_feedback_a is None:
+            return
+        window = self.price_history[-self.spread_feedback_window :]
+        if len(window) < 2:
+            return
+        p_now = self.price_history[-1]
+        p_ma = sum(window) / len(window)
+        self.spread = self._spread_z0 + self.spread_feedback_a * abs(p_now - p_ma)
+
+    def _update_liquidation(self) -> None:
+        """Mark agents newly crossing -loss_limit unrealized pnl as in_liquidation. No-op when
+        the mechanism is disabled, leaving in_liquidation permanently all-False."""
+        if self.loss_limit is None:
+            return
+        pnl = self.position * (self.entry_price - self.market_price)
+        newly = (~self.in_liquidation) & (pnl < -self.loss_limit)
+        if newly.any():
+            for idx in np.where(newly)[0]:
+                self._liq_events.append((self._trade_count, int(idx), "trigger"))
+            self.in_liquidation[newly] = True
+
+    def _common_step(self) -> tuple[float | None, float]:
+        """Same as _DDMv1._common_step, but updates the (possibly time-varying) spread and
+        liquidation status BEFORE the matching attempt, so _contruct() always sees current state."""
+        self._update_spread()
+        self._update_liquidation()
+        return super()._common_step()
+
+    def _contruct(self) -> bool:
+        """Same matching logic as _DDMv1._contruct, plus (when loss_limit is enabled) resetting
+        entry_price for whichever two agents just traded, and releasing/resetting either one that
+        was in_liquidation -- the book's "exits and a new zero-position dealer enters" (eq. 4.36
+        onward). No-op extra bookkeeping when loss_limit is None: output is otherwise identical
+        to the inherited method."""
+        long_mask = self.position == 1
+        short_mask = self.position == -1
+        if not long_mask.any() or not short_mask.any():
+            return False
+
+        long_prices = self.agent_prices[long_mask]
+        short_prices = self.agent_prices[short_mask]
+
+        ask_price = long_prices.max()
+        bid_price = short_prices.min() + self.spread
+
+        if ask_price >= bid_price:
+            self.market_price = (
+                (ask_price + bid_price) / 2 // self.trade_unit
+            ) * self.trade_unit
+            long_idx = np.where(long_mask)[0][np.argmax(long_prices)]
+            short_idx = np.where(short_mask)[0][np.argmin(short_prices)]
+            self.position[long_idx] = -1
+            self.position[short_idx] = 1
+            self._trade_count += 1
+
+            if self.loss_limit is not None:
+                for idx in (long_idx, short_idx):
+                    if self.in_liquidation[idx]:
+                        self.tend[idx] = random.uniform(self.min_volatility, self.max_volatility)
+                        self.in_liquidation[idx] = False
+                        self._liq_events.append((self._trade_count, int(idx), "release"))
+                    self.entry_price[idx] = self.market_price
+
+            return True
+        return False
+
     def advance_order_price(self) -> None:
-        """Advance agent prices with WMA trend-following feedback."""
+        """Advance agent prices with WMA trend-following feedback, and (when spread feedback is
+        enabled) an amplified random-noise term: (z(n)/z(0)) scales position*tend, mirroring eq.
+        4.33's (z(n)/z(0))*f_i(t) -- the trend-following term `follow` is intentionally NOT
+        scaled, matching the book's own equation. When loss_limit is enabled, any agent currently
+        in_liquidation gets a forced step (position*loss_limit_c) instead of its normal update."""
         wma = self._wma_diff()
         follow = self.dealer_sensitive * wma
-        self.agent_prices += self.position * self.tend + follow
+        noise_amp = self.spread / self._spread_z0
+        normal_update = self.position * self.tend * noise_amp + follow
+
+        if self.loss_limit is not None and self.in_liquidation.any():
+            forced_update = self.position * self.loss_limit_c
+            update = np.where(self.in_liquidation, forced_update, normal_update)
+        else:
+            update = normal_update
+
+        self.agent_prices += update
 
 
 # Public alias
