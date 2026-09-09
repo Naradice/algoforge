@@ -307,6 +307,8 @@ class DDMv3(_DDMv1):
         spread_feedback_window: int = 150,
         loss_limit: float | None = None,
         loss_limit_c: float = 0.005,
+        exogenous_shock_probability: float = 0.0,
+        exogenous_shock_size: float = 0.0,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -358,6 +360,31 @@ class DDMv3(_DDMv1):
         # other DDM experiment this session measures horizons in.
         self._liq_events: list[tuple[int, int, str]] = []
         self._trade_count = 0
+        self._step_count = 0
+        # Shock events logged as (step_count, direction, executed) -- step_count (not trade_count)
+        # since a drawn shock may fail to cross the spread and not become a trade at all.
+        self._shock_events: list[tuple[int, int, bool]] = []
+
+        # exogenous_shock_probability/_size (opt-in, default 0.0 preserves existing behaviour
+        # exactly): a one-off, unpredictable external buy/sell order per 高安・和泉・山田・水田
+        # §4.3/§4.4.1's exogenous-intervention mechanism, stripped to its simplest form (Bernoulli
+        # timing, random +-direction, fixed magnitude -- no news content/type/sentiment). Drawn
+        # from the SAME `random` module every other stochastic choice in this class uses (never an
+        # independent RNG), so a disabled shock (probability<=0) consumes zero extra draws and
+        # seeded runs stay reproducible either way. Denominated in PRICE units, not order size:
+        # DDMv3 has no separate quantity/depth dimension at all (every agent posts exactly one
+        # unit at one price), so price is the only unit that corresponds naturally to the existing
+        # order flow -- the same unit `tend`, `dealer_sensitive*wma`, and `loss_limit_c` already
+        # use. The shock is injected into _contruct()'s own ask_price/bid_price computation
+        # (widening whichever side an aggressive buyer/seller would cross first) BEFORE the
+        # existing `ask_price >= bid_price` check and market_price averaging -- it goes through
+        # the same matching and price-formation arithmetic as any other trade, rather than adding
+        # directly to market_price, so it can fail to cross (no trade this step) exactly like a
+        # real order can. Only the genuine agent on the non-shock side of a shock-driven trade is a
+        # real DDM agent -- the shock itself is a one-off event, not a persistent tracked dealer --
+        # so only that one agent's position/entry_price/loss-limit bookkeeping updates.
+        self.exogenous_shock_probability = exogenous_shock_probability
+        self.exogenous_shock_size = exogenous_shock_size
 
         if dealer_sensitive is None:
             self.dealer_sensitive = np.array(
@@ -411,16 +438,49 @@ class DDMv3(_DDMv1):
     def _common_step(self) -> tuple[float | None, float]:
         """Same as _DDMv1._common_step, but updates the (possibly time-varying) spread and
         liquidation status BEFORE the matching attempt, so _contruct() always sees current state."""
+        self._step_count += 1
         self._update_spread()
         self._update_liquidation()
         return super()._common_step()
 
+    def _maybe_exogenous_shock(self) -> tuple[int, float] | None:
+        """With probability exogenous_shock_probability, draw a one-off external buy(+1)/sell(-1)
+        order of magnitude exogenous_shock_size for THIS step's matching attempt only. Uses the
+        same `random` module as every other draw in this class (no independent RNG), and the
+        probability<=0 disabled case returns None before consuming any random draw at all, so
+        seeded reproducibility is untouched when the mechanism is off."""
+        if self.exogenous_shock_probability <= 0.0:
+            return None
+        if random.random() >= self.exogenous_shock_probability:
+            return None
+        direction = 1 if random.random() < 0.5 else -1
+        return direction, self.exogenous_shock_size
+
+    def _settle_matched_agent(self, idx: int) -> None:
+        """Loss-limit bookkeeping (entry_price reset, in_liquidation release + fresh-dealer
+        reset) for whichever REAL agent was just matched -- factored out so it applies identically
+        whether the counterparty was another real agent or a one-off exogenous shock (which has no
+        agent index of its own to settle). No-op (entry_price left untouched, same as before this
+        mechanism existed) when loss_limit is disabled -- entry_price is otherwise dead state."""
+        if self.loss_limit is None:
+            return
+        if self.in_liquidation[idx]:
+            self.tend[idx] = random.uniform(self.min_volatility, self.max_volatility)
+            self.in_liquidation[idx] = False
+            self._liq_events.append((self._trade_count, int(idx), "release"))
+        self.entry_price[idx] = self.market_price
+
     def _contruct(self) -> bool:
-        """Same matching logic as _DDMv1._contruct, plus (when loss_limit is enabled) resetting
-        entry_price for whichever two agents just traded, and releasing/resetting either one that
-        was in_liquidation -- the book's "exits and a new zero-position dealer enters" (eq. 4.36
-        onward). No-op extra bookkeeping when loss_limit is None: output is otherwise identical
-        to the inherited method."""
+        """Same matching logic as _DDMv1._contruct, plus (when enabled): resetting entry_price /
+        releasing in_liquidation for whichever agent(s) just traded (loss_limit, §4.2.4), and
+        injecting a one-off exogenous buy/sell order into THIS step's ask_price/bid_price before
+        the crossing check (exogenous_shock, §4.3/4.4.1) -- the shock widens whichever side an
+        aggressive buyer/seller would cross first, then flows through the SAME
+        `ask_price >= bid_price` check and market_price averaging as any other trade, so it can
+        fail to cross (no trade this step) exactly like a real order can; it is never added
+        directly to market_price. Only the genuine agent on the non-shock side of a shock-driven
+        trade is real and gets matched/settled -- the shock itself isn't a persistent agent. With
+        both mechanisms at their disabled defaults, this is byte-for-byte the inherited method."""
         long_mask = self.position == 1
         short_mask = self.position == -1
         if not long_mask.any() or not short_mask.any():
@@ -432,23 +492,39 @@ class DDMv3(_DDMv1):
         ask_price = long_prices.max()
         bid_price = short_prices.min() + self.spread
 
-        if ask_price >= bid_price:
+        shock = self._maybe_exogenous_shock()
+        shock_is_buy = shock is not None and shock[0] == 1
+        shock_is_sell = shock is not None and shock[0] == -1
+        if shock_is_buy:
+            ask_price = ask_price + shock[1]
+        elif shock_is_sell:
+            bid_price = bid_price - shock[1]
+
+        crossed = ask_price >= bid_price
+        if shock is not None:
+            self._shock_events.append((self._step_count, shock[0], bool(crossed)))
+
+        if crossed:
             self.market_price = (
                 (ask_price + bid_price) / 2 // self.trade_unit
             ) * self.trade_unit
-            long_idx = np.where(long_mask)[0][np.argmax(long_prices)]
-            short_idx = np.where(short_mask)[0][np.argmin(short_prices)]
-            self.position[long_idx] = -1
-            self.position[short_idx] = 1
             self._trade_count += 1
 
-            if self.loss_limit is not None:
-                for idx in (long_idx, short_idx):
-                    if self.in_liquidation[idx]:
-                        self.tend[idx] = random.uniform(self.min_volatility, self.max_volatility)
-                        self.in_liquidation[idx] = False
-                        self._liq_events.append((self._trade_count, int(idx), "release"))
-                    self.entry_price[idx] = self.market_price
+            if shock_is_buy:
+                short_idx = np.where(short_mask)[0][np.argmin(short_prices)]
+                self.position[short_idx] = 1
+                self._settle_matched_agent(short_idx)
+            elif shock_is_sell:
+                long_idx = np.where(long_mask)[0][np.argmax(long_prices)]
+                self.position[long_idx] = -1
+                self._settle_matched_agent(long_idx)
+            else:
+                long_idx = np.where(long_mask)[0][np.argmax(long_prices)]
+                short_idx = np.where(short_mask)[0][np.argmin(short_prices)]
+                self.position[long_idx] = -1
+                self.position[short_idx] = 1
+                self._settle_matched_agent(long_idx)
+                self._settle_matched_agent(short_idx)
 
             return True
         return False
