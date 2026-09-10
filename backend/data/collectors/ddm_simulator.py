@@ -15,7 +15,7 @@ Time handling mirrors the original exactly:
 
 Datasource config shape:
     {
-        "model":              "v3",       # "v1" or "v3"
+        "model":              "v3",       # "v1", "v3", or "v3_shock"
         "num_agent":          300,
         "max_volatility":     0.02,
         "min_volatility":     0.01,
@@ -28,10 +28,15 @@ Datasource config shape:
         "wma":                5,          # V3 only
         "dealer_sensitive_min": -3.5,     # V3 only
         "dealer_sensitive_max": -1.5,     # V3 only
+        "exogenous_shock_probability": 0.0015,  # v3_shock only (default when model=v3_shock)
+        "exogenous_shock_size": 0.3,      # v3_shock only
         "length":             1000,       # desired OHLC candle count
         "timeframe":          "M1",
         "seed":               42
     }
+
+"v3_shock" = v3 with a constant-rate exogenous order-flow shock (see collect() and
+docs/data-layer.md). Plain "v3" leaves it off and is bit-for-bit unchanged.
 """
 
 from __future__ import annotations
@@ -765,11 +770,25 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     if model_version == "v1":
         model: _DDMv1 = DDMv1(**common_kwargs)
     else:
+        # "v3_shock" turns the exogenous order-flow shock on by default -- a one-off external
+        # buy/sell order at a fixed per-trade probability (§4.3/§4.4.1; see the "From Regime
+        # Detection to Ensemble Forecasts" writeup, §10). It makes generated data reproduce real
+        # markets' short-horizon tail behaviour (interval coverage / tail-exceedance probability)
+        # that plain v3 under-produces. Constant rate, NOT the decaying variant from the
+        # forecast-calibration study: for open-ended data generation a constant rate keeps shocks
+        # arriving, whereas the decay makes them a brief early transient only. Every shock param
+        # is still overridable in config; plain "v3" leaves the shock off (probability 0.0 =>
+        # bit-for-bit identical to before this option existed).
+        shock_on = model_version == "v3_shock"
         model = DDMv3(
             **common_kwargs,
             wma=int(config.get("wma", 5)),
             dealer_sensitive_min=float(config.get("dealer_sensitive_min", -3.5)),
             dealer_sensitive_max=float(config.get("dealer_sensitive_max", -1.5)),
+            exogenous_shock_probability=float(
+                config.get("exogenous_shock_probability", 0.0015 if shock_on else 0.0)
+            ),
+            exogenous_shock_size=float(config.get("exogenous_shock_size", 0.3)),
         )
 
     out_dir = ARTIFACT_STORE / "datasets" / f"src_{datasource_id}" / "ddm_ticks"

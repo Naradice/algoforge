@@ -81,7 +81,7 @@ export const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: "to_ts", label: "To Date", type: "date", placeholder: "", hint: "Leave blank for today" },
   ],
   ddm_simulation: [
-    { key: "model", label: "Model Version", type: "select", options: ["v3", "v1"], hint: "V3 adds WMA trend-following feedback (original paper). V1 is the simpler base model — use to diagnose drift issues." },
+    { key: "model", label: "Model Version", type: "select", options: ["v3", "v3_shock", "v1"], hint: "V3 adds WMA trend-following feedback (original paper). V3_shock also injects occasional exogenous buy/sell order-flow shocks so the data reproduces real markets' short-horizon tail behaviour that plain V3 under-produces. V1 is the simpler base model — use to diagnose drift issues." },
     { key: "timeframe", label: "Timeframe", type: "select", options: TIMEFRAME_OPTIONS },
     { key: "initial_price", label: "Initial Price", type: "number", placeholder: "100.0" },
     { key: "spread", label: "Spread", type: "number", placeholder: "1.0", hint: "Bid-ask spread in price units" },
@@ -89,6 +89,8 @@ export const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: "max_volatility", label: "Max Volatility", type: "number", placeholder: "0.02", hint: "Upper bound of per-agent price tendency per step" },
     { key: "min_volatility", label: "Min Volatility", type: "number", placeholder: "0.01", hint: "Lower bound of per-agent price tendency per step" },
     { key: "trade_unit", label: "Trade Unit", type: "number", placeholder: "0.001", hint: "Minimum price increment (pips)" },
+    { key: "exogenous_shock_probability", label: "Shock Probability", type: "number", placeholder: "0.0015", hint: "V3_shock only: per-trade probability of an exogenous order-flow shock. Blank = 0.0015 (V3_shock) / off (V3)." },
+    { key: "exogenous_shock_size", label: "Shock Size", type: "number", placeholder: "0.3", hint: "V3_shock only: shock magnitude in price units. Blank = 0.3." },
     { key: "seed", label: "Random Seed", type: "number", placeholder: "42" },
   ],
   web_report: [

@@ -54,6 +54,7 @@ Generates synthetic OHLCV data using the Deterministic Dealer Model v3.
 ```
 
 Key parameters:
+- `model`: `v3` (default, WMA trend-following), `v3_shock` (see below), or `v1` (base model)
 - `length`: number of ticks to simulate
 - `tick_time`: simulated seconds per tick (controls time compression)
 - `timeframe`: OHLC aggregation period
@@ -61,6 +62,27 @@ Key parameters:
 
 Rule of thumb for row count: `rows ≈ length × tick_time / (timeframe_seconds)`.
 Example: 50000 ticks × 1s / 60s = ~833 M1 bars.
+
+#### `v3_shock` — tail-improved variant
+
+`model: "v3_shock"` runs DDM v3 with an **exogenous order-flow shock**: at a fixed per-trade
+probability, a one-off external buy/sell order is injected into the matching step (it goes
+through the normal `ask/bid` crossing and `market_price` averaging, and can fail to cross like
+any real order — it is never added directly to the price). This makes generated data reproduce
+real markets' short-horizon tail behaviour — interval coverage and tail-exceedance probability —
+that plain `v3` under-produces. Rationale and validation: "From Regime Detection to Ensemble
+Forecasts" writeup, §10 (mechanism) and §12–§13 (this configuration is a significantly better
+probabilistic forecast of real USDJPY than plain `v3`).
+
+Extra config keys (both optional, `v3_shock` only):
+- `exogenous_shock_probability` — per-trade shock probability. Default `0.0015`. `0.0` disables
+  it (making `v3_shock` identical to `v3`).
+- `exogenous_shock_size` — shock magnitude in price units. Default `0.3` (calibrated at the
+  default `spread`=1.0 / `initial_price`=100 scale — rescale if you change those substantially).
+
+A constant rate is used deliberately — the decaying-rate variant from the forecast-calibration
+study makes shocks a brief early transient only, which is wrong for open-ended data generation.
+Plain `v3` is unchanged and bit-for-bit reproducible as before.
 
 ### `synthetic_function`
 Generates a time series from a closed-form formula or simple recurrence — no external data, no
