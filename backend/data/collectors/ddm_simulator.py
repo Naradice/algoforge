@@ -309,6 +309,8 @@ class DDMv3(_DDMv1):
         loss_limit_c: float = 0.005,
         exogenous_shock_probability: float = 0.0,
         exogenous_shock_size: float = 0.0,
+        exogenous_shock_decay_tau: float | None = None,
+        exogenous_shock_floor_probability: float = 0.0,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -386,6 +388,23 @@ class DDMv3(_DDMv1):
         self.exogenous_shock_probability = exogenous_shock_probability
         self.exogenous_shock_size = exogenous_shock_size
 
+        # exogenous_shock_decay_tau/_floor_probability (opt-in, default None/0.0 preserves Step
+        # 4's constant-rate behaviour exactly -- Step 5). Step 4 found the constant-rate shock
+        # process fixes tail calibration at h=1 but severely over-disperses by h=24: the same
+        # elevated rate keeps compounding for the entire length of a long simulated path, with no
+        # mechanism to relax back down the way real news-driven volatility clusters are transient
+        # rather than sustained indefinitely. This makes the per-step probability decay
+        # exponentially in ELAPSED STEP COUNT (self._step_count) from
+        # exogenous_shock_probability down toward exogenous_shock_floor_probability with time
+        # constant exogenous_shock_decay_tau -- elevated near the start of a path (preserving the
+        # short-horizon calibration win) while a long path's later steps see a much lower rate
+        # (preventing runaway long-horizon over-dispersion). Deliberately still a fixed,
+        # deterministic function of elapsed time only -- NOT a function of price/regime state --
+        # so this stays a smaller deviation from item 8's minimal-mechanism constraint than a
+        # regime-dependent rate would be.
+        self.exogenous_shock_decay_tau = exogenous_shock_decay_tau
+        self.exogenous_shock_floor_probability = exogenous_shock_floor_probability
+
         if dealer_sensitive is None:
             self.dealer_sensitive = np.array(
                 [random.uniform(dealer_sensitive_min, dealer_sensitive_max) for _ in range(num_agent)]
@@ -443,15 +462,26 @@ class DDMv3(_DDMv1):
         self._update_liquidation()
         return super()._common_step()
 
+    def _current_shock_probability(self) -> float:
+        """exogenous_shock_probability, held constant (Step 4) unless exogenous_shock_decay_tau is
+        set, in which case it decays exponentially in elapsed step count toward
+        exogenous_shock_floor_probability (Step 5). decay_tau=None reduces to exactly the Step 4
+        constant-rate formula."""
+        if self.exogenous_shock_decay_tau is None:
+            return self.exogenous_shock_probability
+        decayed = self.exogenous_shock_probability - self.exogenous_shock_floor_probability
+        decayed *= np.exp(-self._step_count / self.exogenous_shock_decay_tau)
+        return self.exogenous_shock_floor_probability + decayed
+
     def _maybe_exogenous_shock(self) -> tuple[int, float] | None:
-        """With probability exogenous_shock_probability, draw a one-off external buy(+1)/sell(-1)
-        order of magnitude exogenous_shock_size for THIS step's matching attempt only. Uses the
-        same `random` module as every other draw in this class (no independent RNG), and the
-        probability<=0 disabled case returns None before consuming any random draw at all, so
+        """With probability _current_shock_probability(), draw a one-off external buy(+1)/
+        sell(-1) order of magnitude exogenous_shock_size for THIS step's matching attempt only.
+        Uses the same `random` module as every other draw in this class (no independent RNG), and
+        the probability<=0 disabled case returns None before consuming any random draw at all, so
         seeded reproducibility is untouched when the mechanism is off."""
         if self.exogenous_shock_probability <= 0.0:
             return None
-        if random.random() >= self.exogenous_shock_probability:
+        if random.random() >= self._current_shock_probability():
             return None
         direction = 1 if random.random() < 0.5 else -1
         return direction, self.exogenous_shock_size
