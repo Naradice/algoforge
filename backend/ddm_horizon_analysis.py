@@ -57,6 +57,10 @@ SPREAD_FEEDBACK_WINDOW: int = 150
 SHOCK_PROBABILITY: float = 0.0
 SHOCK_SIZE: float = 0.0
 
+# Step 5 shock-decay knobs (None/0.0 defaults reproduce Step 4's constant-rate shock exactly).
+SHOCK_DECAY_TAU: float | None = None
+SHOCK_FLOOR_PROBABILITY: float = 0.0
+
 
 def simulate_long_path(delta: float, wma: int, seed: int, num_agent: int = 300) -> np.ndarray | None:
     """One simulation covering MAX_HORIZON windows worth of candles. Returns the close-price
@@ -68,6 +72,7 @@ def simulate_long_path(delta: float, wma: int, seed: int, num_agent: int = 300) 
         dealer_sensitive_min=-3.5 + delta, dealer_sensitive_max=-1.5 + delta,
         spread_feedback_a=SPREAD_FEEDBACK_A, spread_feedback_window=SPREAD_FEEDBACK_WINDOW,
         exogenous_shock_probability=SHOCK_PROBABILITY, exogenous_shock_size=SHOCK_SIZE,
+        exogenous_shock_decay_tau=SHOCK_DECAY_TAU, exogenous_shock_floor_probability=SHOCK_FLOOR_PROBABILITY,
     )
     try:
         prices = model.simulate(n_trades=n_trades)["price"].values
@@ -169,7 +174,10 @@ def _cache_path() -> Path:
     if SPREAD_FEEDBACK_A is not None:
         parts.append(f"spreadA{SPREAD_FEEDBACK_A}_w{SPREAD_FEEDBACK_WINDOW}")
     if SHOCK_PROBABILITY != 0.0:
-        parts.append(f"shockP{SHOCK_PROBABILITY}_S{SHOCK_SIZE}")
+        shock_part = f"shockP{SHOCK_PROBABILITY}_S{SHOCK_SIZE}"
+        if SHOCK_DECAY_TAU is not None:
+            shock_part += f"_tau{SHOCK_DECAY_TAU}_floor{SHOCK_FLOOR_PROBABILITY}"
+        parts.append(shock_part)
     return base / f"ddm_horizon_stats_{'_'.join(parts)}.npz"
 
 
@@ -202,7 +210,8 @@ def run_phase1():
 
     print(f"\n=== Building DDM long-path ensemble stats (spread_feedback_a={SPREAD_FEEDBACK_A}, "
           f"window={SPREAD_FEEDBACK_WINDOW}, shock_probability={SHOCK_PROBABILITY}, "
-          f"shock_size={SHOCK_SIZE}) -- this takes a while ===")
+          f"shock_size={SHOCK_SIZE}, shock_decay_tau={SHOCK_DECAY_TAU}, "
+          f"shock_floor={SHOCK_FLOOR_PROBABILITY}) -- this takes a while ===")
     ddm_stats = build_ddm_horizon_stats(step3_results)
     cache_path = _cache_path()
     np.savez(cache_path, **_flatten_ddm_stats(ddm_stats))
@@ -257,12 +266,17 @@ if __name__ == "__main__":
     parser.add_argument("--shock-prob", type=float, default=0.0,
                          help="exogenous_shock_probability; 0.0 for the shock-free baseline")
     parser.add_argument("--shock-size", type=float, default=0.0, help="exogenous_shock_size")
+    parser.add_argument("--shock-decay-tau", type=float, default=None,
+                         help="exogenous_shock_decay_tau; omit for Step 4's constant-rate shock")
+    parser.add_argument("--shock-floor", type=float, default=0.0, help="exogenous_shock_floor_probability")
     args = parser.parse_args()
 
     SPREAD_FEEDBACK_A = args.spread_a
     SPREAD_FEEDBACK_WINDOW = args.spread_window
     SHOCK_PROBABILITY = args.shock_prob
     SHOCK_SIZE = args.shock_size
+    SHOCK_DECAY_TAU = args.shock_decay_tau
+    SHOCK_FLOOR_PROBABILITY = args.shock_floor
     DDM_STATS_CACHE = _cache_path()
 
     if args.mode == "phase1":
