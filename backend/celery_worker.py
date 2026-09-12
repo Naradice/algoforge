@@ -548,6 +548,17 @@ class _TrainingResolutionError(Exception):
         self.code = code
 
 
+def _apply_warm_start_checkpoint(model, checkpoint_path: str, store: Path, device: str) -> None:
+    """Loads another TrainingRun's saved weights into a freshly-built model, in place -- the
+    opt-in transfer-learning hook behind the `warm_start_checkpoint` hyperparam (see call site in
+    _train_model). Split out from _train_model so it's unit-testable without the surrounding
+    DB/dataset machinery. checkpoint_path is artifact-store-relative, same convention as
+    TrainingCheckpoint.artifact_path (e.g. "models/{model_id}/training_{run_id}/best.pt")."""
+    import torch  # lazy, same convention as _train_model -- see its own `import torch` for why
+    ckpt = torch.load(store / checkpoint_path, map_location=device)
+    model.load_state_dict(ckpt["model_state"])
+
+
 def _json_safe(value):
     """NaN/Inf are valid Python floats but not valid JSON -- Postgres' JSONB column rejects the
     literal "Infinity"/"NaN" tokens asyncpg's encoder produces for them, crashing the whole
@@ -804,6 +815,19 @@ async def _train_model(training_run_id: int) -> dict:
             # architecture (absorbed by build_model's **kwargs).
             effective_config["seq_len"] = dataset.effective_seq_len
             model = build_model(architecture, effective_config, device=device)
+            # warm_start_checkpoint: opt-in transfer-learning hook -- loads another run's saved
+            # weights into this freshly-built model before any optimizer/training state is
+            # created, so fine-tuning always starts with a clean optimizer (required for an
+            # apples-to-apples "same optimizer, same budget" comparison against a from-scratch
+            # run at the same hyperparams). No shape checks beyond what load_state_dict raises on
+            # mismatch: the caller is responsible for giving the warm-started run the same
+            # feature_cols/tgt_feature_cols/obs_len/pred_len/architecture config as the run that
+            # produced the checkpoint. See _apply_warm_start_checkpoint's docstring for the path
+            # convention.
+            warm_start_checkpoint = hp.get("warm_start_checkpoint")
+            if warm_start_checkpoint:
+                _apply_warm_start_checkpoint(model, warm_start_checkpoint, store, device)
+                logger.info(f"Training run {training_run_id} warm-started from {warm_start_checkpoint}")
         except Exception as e:
             async with factory() as db:
                 await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
