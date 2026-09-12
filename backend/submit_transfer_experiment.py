@@ -410,19 +410,19 @@ async def _run_smoke() -> None:
 
 
 async def _run_full(seeds: list[int]) -> None:
+    # Both conditions local: the colab split (condition B via execution_target="colab", see
+    # docs/colab-workflow.md) is implemented and verified via a local cell-extraction proxy test,
+    # but blocked for a REAL run right now by an expired Google Drive OAuth token that needs an
+    # interactive browser re-login (docs/colab-workflow.md "One-time setup" step 1) -- pass
+    # execution_target="colab" to run_condition_b once that's done, to parallelize condition A/B
+    # across the `training`/`colab` queues instead of running both serially here.
     print("=== condition A (full, local) ===")
     await run_condition_a(seeds, max_steps=FINETUNE_MAX_STEPS, val_every_steps=FINETUNE_VAL_EVERY_STEPS)
-    print("=== condition B (full, colab) ===")
-    # Condition B on the `colab` queue, condition A on `training` -- separate queues/workers so
-    # they run in parallel instead of sequentially on one machine (see docs/colab-workflow.md's
-    # warm_start_checkpoint note; B chosen for colab since it's the larger of the two total step
-    # counts -- pretrain + 3x fine-tune -- so this is the split most likely to shorten overall
-    # wall-clock rather than just moving the bottleneck).
+    print("=== condition B (full, local) ===")
     await run_condition_b(
         seeds, pretrain_seed=42,
         pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
         finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
-        execution_target="colab",
     )
 
 
