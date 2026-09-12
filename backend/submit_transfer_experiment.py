@@ -318,7 +318,7 @@ async def _ensure_model() -> int:
         return model.id
 
 
-async def _submit(model_id: int, dataset_id: int, hyperparams: dict) -> int:
+async def _submit(model_id: int, dataset_id: int, hyperparams: dict, execution_target: str = "local") -> int:
     import database
     from model.repository import model_repo
     from celery_app import enqueue
@@ -326,12 +326,13 @@ async def _submit(model_id: int, dataset_id: int, hyperparams: dict) -> int:
     async with database.async_session_factory() as db:
         run = await model_repo.create_training_run(
             db, model_id=model_id, dataset_id=dataset_id,
-            preprocessed_dataset_id=None, hyperparams=hyperparams, execution_target="local",
+            preprocessed_dataset_id=None, hyperparams=hyperparams, execution_target=execution_target,
         )
         await db.commit()
         run_id = run.id
-    await enqueue("train_model", run_id)
-    print(f"Submitted TrainingRun id={run_id} dataset_id={dataset_id} hyperparams={hyperparams}")
+    task_name = "colab_train_model" if execution_target == "colab" else "train_model"
+    await enqueue(task_name, run_id)
+    print(f"Submitted TrainingRun id={run_id} dataset_id={dataset_id} execution_target={execution_target} hyperparams={hyperparams}")
     return run_id
 
 
@@ -343,14 +344,14 @@ def _require_dataset_ids() -> None:
         )
 
 
-async def run_condition_a(seeds: list[int], max_steps: int, val_every_steps: int) -> list[int]:
+async def run_condition_a(seeds: list[int], max_steps: int, val_every_steps: int, execution_target: str = "local") -> list[int]:
     """Condition A: USDJPY from scratch."""
     model_id = await _ensure_model()
     run_ids = []
     for seed in seeds:
         hp = _finetune_hp(seed, warm_start_checkpoint=None)
         hp["max_steps"], hp["val_every_steps"] = max_steps, val_every_steps
-        run_ids.append(await _submit(model_id, USDJPY_DATASET_ID, hp))
+        run_ids.append(await _submit(model_id, USDJPY_DATASET_ID, hp, execution_target))
     return run_ids
 
 
@@ -358,12 +359,14 @@ async def run_condition_b(
     seeds: list[int], pretrain_seed: int,
     pretrain_max_steps: int, pretrain_val_every_steps: int,
     finetune_max_steps: int, finetune_val_every_steps: int,
+    execution_target: str = "local",
 ) -> tuple[int, list[int]]:
     """Condition B: DDM pretrain (single seed) -> USDJPY fine-tune (one run per seed in `seeds`).
 
     Waits for the pretrain run to reach a terminal status before submitting fine-tune runs, since
-    they need its best.pt checkpoint path. Requires a `training`-queue Celery worker to actually
-    be running -- this function only submits/polls, it does not run the training itself.
+    they need its best.pt checkpoint path. Requires a Celery worker on the matching queue
+    (`training` for execution_target="local", `colab` for "colab") to actually be running --
+    this function only submits/polls, it does not run the training itself.
     """
     import database
     from sqlalchemy import select
@@ -371,10 +374,10 @@ async def run_condition_b(
 
     model_id = await _ensure_model()
     pretrain_hp = _pretrain_hp(pretrain_seed, pretrain_max_steps, pretrain_val_every_steps)
-    pretrain_run_id = await _submit(model_id, DDM_DATASET_ID, pretrain_hp)
+    pretrain_run_id = await _submit(model_id, DDM_DATASET_ID, pretrain_hp, execution_target)
 
     print(f"Waiting for pretrain run {pretrain_run_id} to complete "
-          f"(requires a `training`-queue Celery worker running)...")
+          f"(requires a `{execution_target}`-queue Celery worker running)...")
     while True:
         async with database.async_session_factory() as db:
             run = (await db.execute(select(TrainingRun).where(TrainingRun.id == pretrain_run_id))).scalar_one()
@@ -390,7 +393,7 @@ async def run_condition_b(
     for seed in seeds:
         hp = _finetune_hp(seed, warm_start_checkpoint=checkpoint_path)
         hp["max_steps"], hp["val_every_steps"] = finetune_max_steps, finetune_val_every_steps
-        finetune_run_ids.append(await _submit(model_id, USDJPY_DATASET_ID, hp))
+        finetune_run_ids.append(await _submit(model_id, USDJPY_DATASET_ID, hp, execution_target))
     return pretrain_run_id, finetune_run_ids
 
 
@@ -407,14 +410,33 @@ async def _run_smoke() -> None:
 
 
 async def _run_full(seeds: list[int]) -> None:
-    print("=== condition A (full) ===")
+    print("=== condition A (full, local) ===")
     await run_condition_a(seeds, max_steps=FINETUNE_MAX_STEPS, val_every_steps=FINETUNE_VAL_EVERY_STEPS)
-    print("=== condition B (full) ===")
+    print("=== condition B (full, colab) ===")
+    # Condition B on the `colab` queue, condition A on `training` -- separate queues/workers so
+    # they run in parallel instead of sequentially on one machine (see docs/colab-workflow.md's
+    # warm_start_checkpoint note; B chosen for colab since it's the larger of the two total step
+    # counts -- pretrain + 3x fine-tune -- so this is the split most likely to shorten overall
+    # wall-clock rather than just moving the bottleneck).
     await run_condition_b(
         seeds, pretrain_seed=42,
         pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
         finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
+        execution_target="colab",
     )
+
+
+async def _run_colab_smoke() -> None:
+    """Minimal REAL-Colab check (not the extracted-cells local proxy already validated) -- one
+    small DDM pretrain run via execution_target="colab", to confirm the actual colab-cli/Drive
+    round trip works end-to-end (session creation, dataset snapshot export+download, the
+    generated notebook's own execution, checkpoint retrieval) before committing to the full run's
+    4-job colab sequence. Requires a `colab`-queue Celery worker running."""
+    model_id = await _ensure_model()
+    hp = _pretrain_hp(seed=42, max_steps=300, val_every_steps=100)
+    run_id = await _submit(model_id, DDM_DATASET_ID, hp, execution_target="colab")
+    print(f"Submitted colab smoke run {run_id} -- poll its status via the API or DB; "
+          f"see docs/colab-workflow.md Step 3 for what to expect.")
 
 
 def main():
@@ -433,11 +455,13 @@ def main():
         # connection whose loop already closed (same pitfall submit_regime_training.py's
         # submit_many() docstring already documents).
         asyncio.run(_run_smoke())
+    elif mode == "colab-smoke":
+        asyncio.run(_run_colab_smoke())
     elif mode == "full":
         seeds = [int(s) for s in sys.argv[2:]] if len(sys.argv) > 2 else SEEDS_FULL
         asyncio.run(_run_full(seeds))
     else:
-        raise SystemExit(f"unknown mode {mode!r}, expected 'prepare-data', 'smoke', or 'full'")
+        raise SystemExit(f"unknown mode {mode!r}, expected 'prepare-data', 'smoke', 'colab-smoke', or 'full'")
 
 
 if __name__ == "__main__":
