@@ -42,8 +42,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # ---------------------------------------------------------------------------
 # Fill these in after `prepare-data` prints the registered dataset ids.
 # ---------------------------------------------------------------------------
-USDJPY_DATASET_ID: int | None = None
-DDM_DATASET_ID: int | None = None
+USDJPY_DATASET_ID: int | None = 51
+DDM_DATASET_ID: int | None = 52
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
@@ -51,12 +51,29 @@ ML_MODEL_ID: int | None = None
 VOL_PERIOD = 20  # bars; also fixes the tgt_feature_cols column name "vol_{VOL_PERIOD}"
 
 USDJPY_SYMBOL = "USDJPY=X"  # yfinance forex ticker format (plain "USDJPY" resolves to no data)
-USDJPY_TIMEFRAME = "M1"     # matches the scope already fixed for this follow-up in
-                             # docs/research-seed-five-axes-of-scaling.md's seed-q1
+# "M1" matches the scope already fixed for this follow-up in
+# docs/research-seed-five-axes-of-scaling.md's seed-q1
+USDJPY_TIMEFRAME = "M1"
 
-DDM_PRETRAIN_ROWS = 300_000  # pretraining budget is explicitly NOT required to match condition
-                              # A's data volume -- only the fine-tune side must match (user's own
-                              # Phase 2 spec) -- picked independently, generous since it's "free".
+# Pretraining budget is explicitly NOT required to match condition A's data volume -- only the
+# fine-tune side must match (user's own Phase 2 spec) -- picked independently, generous since
+# it's "free".
+#
+# Generated as many SHORT independent runs concatenated together, NOT one long continuous run:
+# a single DDMv3 trajectory long enough to cover DDM_PRETRAIN_ROWS candles (num_agent=300-500,
+# tried directly against ddm_simulator.collect()'s wall-clock-bounded simulate_stream) reliably
+# hit "DDM simulation stalled ... Agent prices likely diverged" -- WMA-feedback price divergence
+# over a long single horizon, the same failure mode already on record in project memory ("DDM
+# Simulator -- small agent count WMA divergence", "DDM is non-stationary over large data
+# volumes"). generate_regime_datasets.py's established fix is exactly this: many short, freshly-
+# seeded runs (divergence risk resets each run) concatenated with timestamp gaps, relying on
+# OHLCWindowDataset's require_contiguous to keep windows from crossing a run boundary.
+DDM_PRETRAIN_ROWS = 300_000
+DDM_CANDLES_PER_RUN = 5_000
+DDM_N_RUNS = DDM_PRETRAIN_ROWS // DDM_CANDLES_PER_RUN
+DDM_TRADES_PER_CANDLE = 20
+DDM_GAP_SECONDS = 86_400  # 1 day -- far outside the 60s M1 stride, unambiguous gap
+DDM_NUM_AGENT = 500
 
 SEEDS_FULL = [42, 43, 44]
 
@@ -138,6 +155,70 @@ def _pretrain_hp(seed: int, max_steps: int, val_every_steps: int) -> dict:
     }
 
 
+def _simulate_ddm_pretrain_data():
+    """DDM_N_RUNS independent, freshly-seeded DDMv3 (v3_shock params) runs of
+    DDM_CANDLES_PER_RUN candles each, concatenated with a timestamp gap between every pair --
+    see DDM_PRETRAIN_ROWS's comment for why not one long run. Returns (combined_df, from_ts,
+    to_ts). Mirrors generate_regime_datasets.py's simulate/trades_to_ohlc/build_combined, which
+    established this exact pattern for the same reason (avoiding DDMv3's long-horizon WMA
+    divergence)."""
+    import numpy as np
+    import pandas as pd
+    from data.collectors.ddm_simulator import DDMv3
+
+    n_trades_per_run = DDM_CANDLES_PER_RUN * DDM_TRADES_PER_CANDLE
+    cursor_ts = pd.Timestamp("2000-01-03 00:00:00", tz="UTC")
+    blocks = []
+    for run_idx in range(DDM_N_RUNS):
+        seed = 1000 + run_idx
+        np.random.seed(seed)
+        model = DDMv3(
+            num_agent=DDM_NUM_AGENT, max_volatility=0.02, min_volatility=0.01, wma=5,
+            dealer_sensitive_min=-3.5, dealer_sensitive_max=-1.5,
+            exogenous_shock_probability=0.0015, exogenous_shock_size=0.3,
+        )
+        prices = model.simulate(n_trades=n_trades_per_run)["price"].values
+
+        n = (len(prices) // DDM_TRADES_PER_CANDLE) * DDM_TRADES_PER_CANDLE
+        grouped = prices[:n].reshape(-1, DDM_TRADES_PER_CANDLE)
+        ohlc = pd.DataFrame({
+            "open": grouped[:, 0], "high": grouped.max(axis=1), "low": grouped.min(axis=1),
+            "close": grouped[:, -1], "volume": float(DDM_TRADES_PER_CANDLE),
+        }).iloc[:DDM_CANDLES_PER_RUN]
+
+        idx = cursor_ts + pd.to_timedelta(np.arange(len(ohlc)) * 60, unit="s")
+        ohlc.index = idx
+        ohlc.index.name = "datetime"
+        blocks.append(ohlc)
+        cursor_ts = idx[-1] + pd.Timedelta(seconds=DDM_GAP_SECONDS)
+        print(f"  DDM pretrain run {run_idx + 1}/{DDM_N_RUNS}: {len(ohlc)} candles")
+
+    combined = pd.concat(blocks)
+    return combined, combined.index[0].to_pydatetime(), combined.index[-1].to_pydatetime()
+
+
+def _read_cached_yfinance_ohlc(symbol: str, timeframe: str):
+    """Read finance_client's on-disk yfinance CSV cache directly, bypassing
+    YahooClient.download()/CSVClient._get_ohlc_from_client()'s length=None bulk-retrieval path --
+    that path is built around the CSV client's simulation-stepping API (self._step_index,
+    "CSV data exhausted") and returns only 1 row for a fresh index=0 request instead of the
+    full cached history. ohlc.collect() still has to be called first (see prepare_datasets) to
+    make YahooClient.__init__'s incremental __get_rates() actually populate/refresh this cache
+    file on disk -- that part works fine and is the only part actually needed."""
+    import pandas as pd
+    from finance_client import frames as Frame
+    from data.collectors.ohlc import _FRAME_MAP
+
+    frame = _FRAME_MAP.get(timeframe, Frame.D1)
+    frame_str = Frame.to_str(frame)
+    cache_path = Path.cwd() / "data_source" / "yfinance" / f"yfinance_{symbol}_{frame_str}.csv"
+    df = pd.read_csv(cache_path, parse_dates=["Datetime"], index_col="Datetime")
+    df.index.name = "datetime"
+    df.columns = [c.lower() for c in df.columns]
+    df = df[["open", "high", "low", "close", "volume"]].sort_index()
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Phase 1: data prep -- no Celery worker required, calls collect() directly and registers the
 # Dataset row the same way celery_worker.py's run_collection_job does for a non-incremental,
@@ -158,50 +239,55 @@ async def prepare_datasets() -> None:
         await db.flush()
         await db.refresh(usdjpy_source)
 
-        ddm_source = Datasource(
-            name="DDM v3_shock (transfer experiment pretrain)",
-            type="ddm_simulation",
-            config={"model": "v3_shock", "num_agent": 300, "length": DDM_PRETRAIN_ROWS,
-                    "timeframe": "M1", "seed": 42},
-        )
-        db.add(ddm_source)
-        await db.flush()
-        await db.refresh(ddm_source)
         await db.commit()
-        usdjpy_source_id, ddm_source_id = usdjpy_source.id, ddm_source.id
+        usdjpy_source_id = usdjpy_source.id
 
-    print(f"Created Datasource id={usdjpy_source_id} (USDJPY) and id={ddm_source_id} (DDM)")
+    print(f"Created Datasource id={usdjpy_source_id} (USDJPY)")
 
-    from data.collectors import ohlc, ddm_simulator
+    from data.collectors import ohlc
 
     print("Collecting USDJPY via yfinance (M1 intraday history is provider-limited -- expect "
           "only the last several weeks, not years)...")
-    usdjpy_result = ohlc.collect(usdjpy_source_id, {
-        "client": "yfinance", "symbol": USDJPY_SYMBOL, "timeframe": USDJPY_TIMEFRAME,
-    })
+    try:
+        ohlc.collect(usdjpy_source_id, {
+            "client": "yfinance", "symbol": USDJPY_SYMBOL, "timeframe": USDJPY_TIMEFRAME,
+        })
+    except RuntimeError:
+        # "No data returned" can fire on collect()'s own (broken) length=None read; the on-disk
+        # cache it refreshed as a side effect is what we actually read below.
+        pass
+    usdjpy_df = _read_cached_yfinance_ohlc(USDJPY_SYMBOL, USDJPY_TIMEFRAME)
 
-    print(f"Simulating DDM v3_shock ({DDM_PRETRAIN_ROWS} candles)...")
-    ddm_result = ddm_simulator.collect(ddm_source_id, {
-        "model": "v3_shock", "num_agent": 300, "length": DDM_PRETRAIN_ROWS,
-        "timeframe": "M1", "seed": 42,
-    })
+    ddm_combined, ddm_from_ts, ddm_to_ts = _simulate_ddm_pretrain_data()
 
     async with database.async_session_factory() as db:
+        import os
+        store = Path(os.getenv("ARTIFACT_STORE_PATH", "../artifacts")).resolve()
+        usdjpy_artifact_rel = f"datasets/src_{usdjpy_source_id}/{USDJPY_SYMBOL.replace('/', '_')}_{USDJPY_TIMEFRAME}.parquet"
+        (store / usdjpy_artifact_rel).parent.mkdir(parents=True, exist_ok=True)
+        usdjpy_df.to_parquet(store / usdjpy_artifact_rel)
+
         usdjpy_ds = Dataset(
             datasource_id=usdjpy_source_id, name="USDJPY M1 (transfer experiment)",
             symbol=USDJPY_SYMBOL, timeframe=USDJPY_TIMEFRAME,
-            from_ts=usdjpy_result.from_ts, to_ts=usdjpy_result.to_ts,
-            row_count=usdjpy_result.row_count, artifact_path=usdjpy_result.artifact_path,
+            from_ts=usdjpy_df.index[0].to_pydatetime(), to_ts=usdjpy_df.index[-1].to_pydatetime(),
+            row_count=len(usdjpy_df), artifact_path=usdjpy_artifact_rel,
             status="ready",
         )
+        db.add(usdjpy_ds)
+
+        ddm_artifact_rel = "datasets/derived/ddm_v3_shock_transfer_pretrain.parquet"
+        (store / ddm_artifact_rel).parent.mkdir(parents=True, exist_ok=True)
+        ddm_combined.to_parquet(store / ddm_artifact_rel)
+
         ddm_ds = Dataset(
-            datasource_id=ddm_source_id, name="DDM v3_shock (transfer experiment pretrain)",
+            datasource_id=None, name="DDM v3_shock (transfer experiment pretrain)",
             symbol="DDM-SYNTH", timeframe="M1",
-            from_ts=ddm_result.from_ts, to_ts=ddm_result.to_ts,
-            row_count=ddm_result.row_count, artifact_path=ddm_result.artifact_path,
+            from_ts=ddm_from_ts, to_ts=ddm_to_ts,
+            row_count=len(ddm_combined), artifact_path=ddm_artifact_rel,
             status="ready",
         )
-        db.add_all([usdjpy_ds, ddm_ds])
+        db.add(ddm_ds)
         await db.commit()
         await db.refresh(usdjpy_ds)
         await db.refresh(ddm_ds)
@@ -308,6 +394,29 @@ async def run_condition_b(
     return pretrain_run_id, finetune_run_ids
 
 
+async def _run_smoke() -> None:
+    seeds = [42]
+    print("=== condition A (smoke) ===")
+    await run_condition_a(seeds, max_steps=1000, val_every_steps=200)
+    print("=== condition B (smoke) ===")
+    await run_condition_b(
+        seeds, pretrain_seed=42,
+        pretrain_max_steps=1000, pretrain_val_every_steps=200,
+        finetune_max_steps=1000, finetune_val_every_steps=200,
+    )
+
+
+async def _run_full(seeds: list[int]) -> None:
+    print("=== condition A (full) ===")
+    await run_condition_a(seeds, max_steps=FINETUNE_MAX_STEPS, val_every_steps=FINETUNE_VAL_EVERY_STEPS)
+    print("=== condition B (full) ===")
+    await run_condition_b(
+        seeds, pretrain_seed=42,
+        pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
+        finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
+    )
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "smoke"
 
@@ -318,25 +427,15 @@ def main():
     _require_dataset_ids()
 
     if mode == "smoke":
-        seeds = [42]
-        print("=== condition A (smoke) ===")
-        asyncio.run(run_condition_a(seeds, max_steps=1000, val_every_steps=200))
-        print("=== condition B (smoke) ===")
-        asyncio.run(run_condition_b(
-            seeds, pretrain_seed=42,
-            pretrain_max_steps=1000, pretrain_val_every_steps=200,
-            finetune_max_steps=1000, finetune_val_every_steps=200,
-        ))
+        # Single asyncio.run() for the whole run, not one per condition -- database.
+        # async_session_factory's pooled connections bind to whichever event loop created them,
+        # so a separate asyncio.run() per condition leaves condition B trying to reuse a
+        # connection whose loop already closed (same pitfall submit_regime_training.py's
+        # submit_many() docstring already documents).
+        asyncio.run(_run_smoke())
     elif mode == "full":
         seeds = [int(s) for s in sys.argv[2:]] if len(sys.argv) > 2 else SEEDS_FULL
-        print("=== condition A (full) ===")
-        asyncio.run(run_condition_a(seeds, max_steps=FINETUNE_MAX_STEPS, val_every_steps=FINETUNE_VAL_EVERY_STEPS))
-        print("=== condition B (full) ===")
-        asyncio.run(run_condition_b(
-            seeds, pretrain_seed=42,
-            pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
-            finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
-        ))
+        asyncio.run(_run_full(seeds))
     else:
         raise SystemExit(f"unknown mode {mode!r}, expected 'prepare-data', 'smoke', or 'full'")
 

@@ -153,6 +153,11 @@ def _collect_yfinance(
     df = _normalise_index(df)
     df = _filter_date_range(df, from_dt, to_dt)
 
+    # FX pairs (e.g. "USDJPY=X") have no real trade volume -- yfinance omits the column
+    # entirely for these tickers rather than returning zeros, unlike equities/crypto.
+    if "Volume" not in df.columns:
+        df["Volume"] = 0
+
     if timeframe == "H4":
         df = df.resample("4h").agg(
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}

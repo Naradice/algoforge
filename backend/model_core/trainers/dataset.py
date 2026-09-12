@@ -399,21 +399,42 @@ class OHLCWindowDataset:
         if normalize == "returns":
             data = np.log(data + 1e-8)
             return np.diff(data, axis=0)
+        elif normalize == "returns_zscore":
+            # Plain "returns" leaves log-returns at their natural (often tiny, e.g. ~1e-3 for a
+            # low-volatility synthetic series) scale, which a freshly-initialized nn.Linear input
+            # projection (weights/bias both ~O(1) under default init) barely registers next to
+            # its own bias term -- starves the input-connected weights of a usable gradient
+            # signal relative to everything else in the network. Standardizing after differencing
+            # (not before -- zscore alone would standardize price *levels*, discarding the
+            # return structure entirely) fixes the scale without changing the return series' shape.
+            data = np.log(data + 1e-8)
+            diffed = np.diff(data, axis=0)
+            # nanmean/nanstd (not mean/std): a preprocessing-derived column (e.g. an indicator's
+            # rolling-window warm-up) can carry a handful of leading NaN rows -- plain mean()/
+            # std() propagate a single NaN into the statistic itself, silently turning the ENTIRE
+            # normalized column to NaN instead of just those rows (caught live: an all-NaN
+            # val_loss on a run using preprocessing's "volatility" indicator with normalize=
+            # "zscore" -- see docs/model-layer.md's warm_start_checkpoint entry for the run this
+            # surfaced on). NaN rows stay NaN afterward, same as "returns"/"diff" already do.
+            mu = np.nanmean(diffed, axis=0)
+            sigma = np.nanstd(diffed, axis=0)
+            sigma = np.where(sigma == 0, 1.0, sigma)
+            return (diffed - mu) / sigma
         elif normalize == "diff":
             return np.diff(data, axis=0)
         elif normalize == "minmax":
-            mn, mx = data.min(axis=0), data.max(axis=0)
+            mn, mx = np.nanmin(data, axis=0), np.nanmax(data, axis=0)
             rng = np.where(mx - mn == 0, 1.0, mx - mn)
             return (data - mn) / rng
         elif normalize == "zscore":
-            mu = data.mean(axis=0)
-            sigma = data.std(axis=0)
+            mu = np.nanmean(data, axis=0)
+            sigma = np.nanstd(data, axis=0)
             sigma = np.where(sigma == 0, 1.0, sigma)
             return (data - mu) / sigma
         elif normalize == "robust":
-            median = np.median(data, axis=0)
-            q25 = np.percentile(data, 25, axis=0)
-            q75 = np.percentile(data, 75, axis=0)
+            median = np.nanmedian(data, axis=0)
+            q25 = np.nanpercentile(data, 25, axis=0)
+            q75 = np.nanpercentile(data, 75, axis=0)
             iqr = np.where(q75 - q25 == 0, 1.0, q75 - q25)
             return (data - median) / iqr
         return data

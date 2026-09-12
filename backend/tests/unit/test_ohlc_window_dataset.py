@@ -54,6 +54,25 @@ class TestNormalizeDiff:
         assert abs(ds_diff._train_tgt.mean()) < abs(ds_none._train_tgt.mean())
 
 
+class TestNormalizeNanRobustness:
+    """A preprocessing-derived column (e.g. an indicator's rolling-window warm-up, or DDM's
+    require_contiguous gap handling) can carry a handful of leading NaN rows. Regression test
+    for a real bug: plain mean()/std()/min()/max()/percentile() propagate a single NaN into the
+    statistic itself, silently turning the ENTIRE normalized column to NaN (an all-NaN val_loss
+    on a real run) instead of leaving just those rows NaN like "returns"/"diff" already do."""
+
+    @pytest.mark.parametrize("mode", ["zscore", "minmax", "robust", "returns_zscore"])
+    def test_leading_nan_does_not_poison_whole_column(self, mode):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        data = np.concatenate([[np.nan] * 5, np.arange(1.0, 96.0)]).reshape(-1, 1)
+        result = OHLCWindowDataset._apply_normalize(data, mode)
+
+        n_nan_expected = 5 if mode != "returns_zscore" else 5  # elementwise ops don't grow NaN count
+        assert np.isnan(result).sum() <= n_nan_expected
+        assert np.isfinite(result[n_nan_expected:]).all()
+
+
 def _make_sine_parquet_with_vol(path, n=600, period=60, amplitude=0.5, base=100.0):
     """Like _make_sine_parquet, but with an extra 'vol' column independent of close, for
     exercising tgt_feature_cols (predicting a different column than the model's input)."""
