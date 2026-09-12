@@ -85,9 +85,30 @@ or deleted.
 `momentum`/`weight_decay`, `disable_lr_scheduler`, `shuffle`, `lr_warmup_epochs`,
 `early_stop_patience`, and `divergence_factor` are all wired into the generated notebook
 identically to `celery_worker.py`'s `_train_model` and verified end-to-end (`divergence_factor`
-and `early_stop_patience` each confirmed to actually fire, not just fail to error). `max_steps`
-step-based training (an epoch-free research mode -- see `docs/model-layer.md`) is not
-implemented here.
+and `early_stop_patience` each confirmed to actually fire, not just fail to error).
+
+`max_steps` step-based training (an epoch-free research mode — see `docs/model-layer.md`) IS
+implemented: when set, the generated notebook runs the same infinite-reshuffled-stream loop
+(`get_step_trainer_fn`, `val_every_steps`, `early_stop_patience_checks`) as a local `max_steps`
+run instead of the epoch loop, so a budget-matched comparison can have one side run locally and
+the other on Colab. `tgt_feature_cols`/`src_normalize`/`require_contiguous`/`max_rows`/
+`split_seed` are also now threaded through to the generated `OHLCWindowDataset(...)` call (a
+prior oversight, not a deliberate restriction — nothing had exercised a cross-column target or a
+row-cap override via Colab before). Verified by extracting the generated cells and running them
+directly (bypassing the Drive download, pointed at a local file) against a real dataset: produced
+bit-for-bit identical `val_loss` to the equivalent local Celery-driven run at every logged step —
+not yet verified against a live `colab exec` round-trip.
+
+`warm_start_checkpoint` (see `docs/model-layer.md`) is also implemented: `colab_trainer.py`
+uploads the referenced local checkpoint to Drive (same transport as the dataset snapshot —
+`colab_runner.py` has no "push a file into the session" primitive, only `download`), and the
+generated notebook downloads + sha256-verifies it, then calls `model.load_state_dict(...)`
+immediately after `build_model(...)` and before the optimizer is constructed — same placement as
+`celery_worker.py`'s `_apply_warm_start_checkpoint`, so a Colab fine-tune run's optimizer state
+still starts clean. `check_colab_supported` fails fast (422) if the referenced checkpoint file
+doesn't exist locally, before any Drive upload or Colab runtime is provisioned. Verified the same
+way as `max_steps` above (extracted-cells local run, not yet a live Colab round-trip) — the
+checkpoint load reproduced the exact same starting `val_loss` a local warm-started run got.
 
 **Hyperparameter search** (`POST /training-runs/search` / MCP `start_hyperparameter_search`):
 `execution_target="colab"` runs every combination the grid expands into on Colab — each is

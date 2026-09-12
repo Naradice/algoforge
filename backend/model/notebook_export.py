@@ -72,6 +72,25 @@ DEFAULT_HYPERPARAMS = {
     "early_stop_patience": None,
     "divergence_factor": None,
     "seed": 42,
+    # tgt_feature_cols/src_normalize/require_contiguous/max_rows/split_seed: OHLCWindowDataset
+    # constructor params that were simply never threaded through to this generator's dataset
+    # cell before -- not a deliberate restriction like token_level="cluster"'s extra install
+    # step, just an oversight (nothing here exercised cross-column targets or a row-cap override
+    # until the DDM->USDJPY transfer experiment needed both). Defaults match OHLCWindowDataset's
+    # own so an unset value behaves exactly as before.
+    "tgt_feature_cols": None,
+    "src_normalize": None,
+    "require_contiguous": False,
+    "max_rows": None,
+    "split_seed": 42,
+    # max_steps/val_every_steps/early_stop_patience_checks: step-denominated training loop (see
+    # celery_worker.py's _train_model) -- an infinite reshuffled stream of windows for exactly
+    # max_steps gradient updates, validation/checkpointing/early-stopping keyed to a step counter
+    # instead of an epoch boundary. None (default) keeps the existing epochs-based loop exactly
+    # as before; see the training-loop cell below for the branch.
+    "max_steps": None,
+    "val_every_steps": 5000,
+    "early_stop_patience_checks": None,
 }
 
 
@@ -116,6 +135,8 @@ def build_notebook(
     snapshot_url: str,
     snapshot_sha256: str,
     hyperparams: dict,
+    warm_start_checkpoint_url: str | None = None,
+    warm_start_checkpoint_sha256: str | None = None,
 ) -> nbf.NotebookNode:
     """*model_config* is the MLModel's own config (architecture-shape params like hidden_dim/
     num_layers — see model_core/architectures/__init__.py's ARCHITECTURE_DEFAULTS) — kept
@@ -211,6 +232,31 @@ assert _actual == SNAPSHOT_SHA256, (
 print("snapshot OK:", _actual)
 """))
 
+    if warm_start_checkpoint_url is not None:
+        # Same transport as the dataset snapshot above (Drive upload + urlretrieve + sha256
+        # verify) -- colab-cli has no "push a local file into the session" primitive
+        # (model/colab_runner.py only implements download), so a warm-start checkpoint reaches
+        # the Colab runtime the same way the dataset itself does: uploaded to Drive by
+        # colab_trainer.py's run_colab_training before this notebook is generated, downloaded by
+        # the notebook itself at execution time.
+        cells.append(nbf.v4.new_code_cell(f"""WARM_START_URL = {warm_start_checkpoint_url!r}
+WARM_START_SHA256 = {warm_start_checkpoint_sha256!r}
+WARM_START_PATH = "warm_start.pt"
+
+urllib.request.urlretrieve(WARM_START_URL, WARM_START_PATH)
+
+_digest = hashlib.sha256()
+with open(WARM_START_PATH, "rb") as f:
+    for chunk in iter(lambda: f.read(1024 * 1024), b""):
+        _digest.update(chunk)
+_actual = _digest.hexdigest()
+assert _actual == WARM_START_SHA256, (
+    f"warm-start checkpoint hash mismatch: expected {{WARM_START_SHA256}}, got {{_actual}} -- "
+    "the file may have changed since this notebook was generated, or downloaded incorrectly"
+)
+print("warm-start checkpoint OK:", _actual)
+"""))
+
     # repr(), not json.dumps() -- json.dumps renders None/True/False as null/true/false, which
     # is JSON syntax, not Python. That's invisible until a value is actually None (no default
     # here was until token_level/embedding_dim were added), at which point the generated cell
@@ -225,7 +271,9 @@ import torch
 import torch.nn as nn
 
 from model_core.architectures import build_model
-from model_core.trainers import OHLCWindowDataset, get_default_criterion, get_trainer_fns
+from model_core.trainers import (
+    OHLCWindowDataset, get_default_criterion, get_step_trainer_fn, get_trainer_fns,
+)
 
 ARCHITECTURE = {architecture!r}
 HYPERPARAMS = {hp_json}
@@ -241,14 +289,28 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print("device:", device)
 """))
 
-    cells.append(nbf.v4.new_code_cell("""dataset = OHLCWindowDataset(
+    _warm_start_load = """
+# warm_start_checkpoint: loads another run's saved weights into this freshly-built model before
+# any optimizer state is created, so fine-tuning starts with pretrained weights but a clean
+# optimizer -- same placement/rationale as celery_worker.py's _apply_warm_start_checkpoint.
+_ckpt = torch.load(WARM_START_PATH, map_location=device)
+model.load_state_dict(_ckpt["model_state"])
+print("warm-started from", WARM_START_PATH)
+""" if warm_start_checkpoint_url is not None else ""
+
+    cells.append(nbf.v4.new_code_cell(f"""dataset = OHLCWindowDataset(
     LOCAL_PATH,
     obs_len=HYPERPARAMS["obs_len"],
     pred_len=HYPERPARAMS["pred_len"],
     feature_cols=HYPERPARAMS["feature_cols"],
+    tgt_feature_cols=HYPERPARAMS["tgt_feature_cols"],
     normalize=HYPERPARAMS["normalize"],
+    src_normalize=HYPERPARAMS["src_normalize"],
     val_split=HYPERPARAMS["val_split"],
     split_mode=HYPERPARAMS["split_mode"],
+    split_seed=HYPERPARAMS["split_seed"],
+    require_contiguous=HYPERPARAMS["require_contiguous"],
+    max_rows=HYPERPARAMS["max_rows"],
     preprocessing=HYPERPARAMS["preprocessing"],
     token_level=HYPERPARAMS["token_level"],
     n_bins=HYPERPARAMS["n_bins"],
@@ -259,7 +321,7 @@ print("device:", device)
     device=device,
 )
 
-_model_kwargs = {
+_model_kwargs = {{
     **MODEL_CONFIG,
     "input_dim": dataset.n_features,
     "output_dim": dataset.n_features,
@@ -268,7 +330,7 @@ _model_kwargs = {
     # for why this is needed (decoder_only) and harmless for every other architecture.
     # Same call celery_worker.py's _train_model makes -- not a separate calculation.
     "seq_len": dataset.effective_seq_len,
-}
+}}
 # token_level (see OHLCWindowDataset): when set, src is a stream of integer token ids rather
 # than continuous features -- pass the fitted vocab size through so the model builds an
 # embedding front-end instead of its usual continuous input path. Same condition
@@ -278,6 +340,7 @@ if dataset.vocab_size is not None:
     _model_kwargs["embedding_dim"] = HYPERPARAMS["embedding_dim"]
 
 model = build_model(ARCHITECTURE, _model_kwargs, device=device)
+{_warm_start_load}
 num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("num_params:", num_params)
 
@@ -289,17 +352,17 @@ print("num_params:", num_params)
 _optimizer_name = str(HYPERPARAMS["optimizer"]).lower()
 _weight_decay = HYPERPARAMS["weight_decay"]
 if _optimizer_name == "sgd":
-    _opt_kwargs = {"momentum": HYPERPARAMS["momentum"]}
+    _opt_kwargs = {{"momentum": HYPERPARAMS["momentum"]}}
     if _weight_decay is not None:
         _opt_kwargs["weight_decay"] = float(_weight_decay)
     optimizer = torch.optim.SGD(model.parameters(), lr=HYPERPARAMS["lr"], **_opt_kwargs)
 elif _optimizer_name == "adamw":
-    _opt_kwargs = {"betas": (HYPERPARAMS["beta1"], HYPERPARAMS["beta2"])}
+    _opt_kwargs = {{"betas": (HYPERPARAMS["beta1"], HYPERPARAMS["beta2"])}}
     if _weight_decay is not None:
         _opt_kwargs["weight_decay"] = float(_weight_decay)
     optimizer = torch.optim.AdamW(model.parameters(), lr=HYPERPARAMS["lr"], **_opt_kwargs)
 else:
-    _opt_kwargs = {"betas": (HYPERPARAMS["beta1"], HYPERPARAMS["beta2"])}
+    _opt_kwargs = {{"betas": (HYPERPARAMS["beta1"], HYPERPARAMS["beta2"])}}
     if _weight_decay is not None:
         _opt_kwargs["weight_decay"] = float(_weight_decay)
     optimizer = torch.optim.Adam(model.parameters(), lr=HYPERPARAMS["lr"], **_opt_kwargs)
@@ -319,10 +382,7 @@ scheduler = (
 )
 """))
 
-    cells.append(nbf.v4.new_code_cell("""import csv
-import json
-import os
-
+    _epoch_loop = """
 _target_lr = HYPERPARAMS["lr"]
 _lr_warmup_epochs = HYPERPARAMS["lr_warmup_epochs"]
 _early_stop_patience = HYPERPARAMS["early_stop_patience"]
@@ -389,8 +449,71 @@ for epoch in range(1, HYPERPARAMS["epochs"] + 1):
     if _divergence_factor is not None and val_loss > best_val_loss * _divergence_factor:
         print(f"diverged at epoch {epoch}: val={val_loss:.6f} exceeds {_divergence_factor}x best ({best_val_loss:.6f}) -- stopping")
         break
+"""
 
-metadata = {
+    # max_steps: opt-in escape hatch that removes "epoch" from the loop entirely -- an infinite,
+    # reshuffled stream of training windows (get_step_trainer_fn) for exactly max_steps gradient
+    # updates, with validation/checkpointing/early-stopping keyed to a step counter
+    # (val_every_steps) instead of a pass through the dataset. Exact mirror of celery_worker.py's
+    # _train_model max_steps branch -- see its comments for the full rationale (step-matched
+    # comparisons across datasets of different sizes). "epoch" in epoch_metrics/metrics_log.csv
+    # here means the validation-check index (n_checks), same convention as
+    # TrainingCheckpoint.epoch for a local max_steps run -- multiply by val_every_steps to
+    # recover the actual step count.
+    _step_loop = """
+_max_steps = HYPERPARAMS["max_steps"]
+_val_every_steps = HYPERPARAMS["val_every_steps"]
+_early_stop_patience_checks = HYPERPARAMS["early_stop_patience_checks"]
+_divergence_factor = HYPERPARAMS["divergence_factor"]
+step_train_fn = get_step_trainer_fn(ARCHITECTURE)
+
+checks_since_improvement = 0
+epoch_metrics = []
+best_val_loss = float("inf")
+best_epoch = 0
+steps_done = 0
+n_checks = 0
+
+while steps_done < _max_steps:
+    chunk = min(_val_every_steps, _max_steps - steps_done)
+    train_loss = step_train_fn(model, dataset, optimizer, criterion, HYPERPARAMS["batch_size"], chunk)
+    steps_done += chunk
+    n_checks += 1
+    val_loss = eval_fn(model, dataset, criterion, HYPERPARAMS["batch_size"])
+
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        best_epoch = n_checks
+        checks_since_improvement = 0
+        torch.save({"epoch": n_checks, "step": steps_done, "model_state": model.state_dict(), "val_loss": val_loss}, "best.pt")
+    else:
+        checks_since_improvement += 1
+    epoch_metrics.append({
+        "epoch": n_checks, "train_loss": train_loss, "val_loss": val_loss,
+        "best_epoch": best_epoch, "best_val_loss": best_val_loss,
+    })
+    with open("metrics_log.csv.tmp", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["epoch", "train_loss", "val_loss", "best_epoch", "best_val_loss"])
+        writer.writeheader()
+        writer.writerows(epoch_metrics)
+    os.replace("metrics_log.csv.tmp", "metrics_log.csv")
+    print(f"step {steps_done}/{_max_steps} (check {n_checks}): train={train_loss:.6f} val={val_loss:.6f}")
+
+    if _early_stop_patience_checks is not None and checks_since_improvement >= _early_stop_patience_checks:
+        print(f"early-stopped at step {steps_done} (no improvement for {_early_stop_patience_checks} checks, best={best_val_loss:.6f} @ check {best_epoch})")
+        break
+    if _divergence_factor is not None and val_loss > best_val_loss * _divergence_factor:
+        print(f"diverged at step {steps_done}: val={val_loss:.6f} exceeds {_divergence_factor}x best ({best_val_loss:.6f}) -- stopping")
+        break
+"""
+
+    _training_loop = _step_loop if hp.get("max_steps") is not None else _epoch_loop
+
+    cells.append(nbf.v4.new_code_cell(f"""import csv
+import json
+import os
+{_training_loop}
+metadata = {{
     "dataset_id": DATASET_ID,
     "hyperparams": HYPERPARAMS,
     "model_config": MODEL_CONFIG,
@@ -398,12 +521,12 @@ metadata = {
     "best_epoch": best_epoch,
     "val_loss": best_val_loss,
     "num_params": num_params,
-    "external_ref": {
+    "external_ref": {{
         "platform": "colab",
         "git_commit": GIT_COMMIT,
         "dataset_snapshot_sha256": SNAPSHOT_SHA256,
-    },
-}
+    }},
+}}
 with open("metrics.json", "w") as f:
     json.dump(metadata, f, indent=2)
 

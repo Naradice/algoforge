@@ -125,6 +125,15 @@ def check_colab_supported(architecture: str, preprocessed_dataset_id: int | None
             "code": "COLAB_UNSUPPORTED_SPLIT_MODE",
             "message": f"split_mode must be 'chronological' or 'regime_controlled' (OHLCWindowDataset's only two), got {split_mode!r}",
         })
+    warm_start_checkpoint = hyperparams.get("warm_start_checkpoint")
+    if warm_start_checkpoint:
+        store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts")).resolve()
+        if not (store / warm_start_checkpoint).is_file():
+            raise HTTPException(status_code=422, detail={
+                "code": "COLAB_WARM_START_CHECKPOINT_NOT_FOUND",
+                "message": f"warm_start_checkpoint {warm_start_checkpoint!r} not found under {store} -- "
+                           "check the path (same convention as TrainingCheckpoint.artifact_path)",
+            })
 
 
 async def _poll_and_maybe_stop(
@@ -299,6 +308,34 @@ async def run_colab_training(training_run_id: int) -> dict:
         if snapshot.status != "uploaded" or not snapshot.export_ref or "url" not in snapshot.export_ref:
             raise RuntimeError(f"snapshot {snapshot.id} did not upload successfully: {snapshot.export_ref}")
 
+        # --- 1b. Upload a warm-start checkpoint to Drive, if this run wants one -----------------
+        # Same transport as the dataset snapshot above -- colab-cli has no "push a local file
+        # into the session" primitive (colab_runner.py only implements download), so a
+        # pretrain-then-fine-tune checkpoint reaches the Colab runtime the same way the dataset
+        # itself does: uploaded here, downloaded by the generated notebook at execution time
+        # (see notebook_export.py's warm-start cell).
+        warm_start_checkpoint_url = None
+        warm_start_checkpoint_sha256 = None
+        warm_start_checkpoint = hyperparams.get("warm_start_checkpoint")
+        if warm_start_checkpoint:
+            import hashlib
+
+            from data import gdrive_export
+
+            store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts")).resolve()
+            checkpoint_path = store / warm_start_checkpoint
+            if not checkpoint_path.is_file():
+                raise RuntimeError(f"warm_start_checkpoint {warm_start_checkpoint!r} not found at {checkpoint_path}")
+            digest = hashlib.sha256()
+            with open(checkpoint_path, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            warm_start_checkpoint_sha256 = digest.hexdigest()
+            uploaded = await loop.run_in_executor(
+                None, gdrive_export.upload, checkpoint_path, f"{session_name}_warm_start.pt"
+            )
+            warm_start_checkpoint_url = uploaded["url"]
+
         # --- 2. Generate the notebook ------------------------------------------------------------
         timeout_seconds = float(hyperparams.get("colab_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))
         notebook_hyperparams = {k: v for k, v in hyperparams.items() if k != "colab_timeout_seconds"}
@@ -317,6 +354,8 @@ async def run_colab_training(training_run_id: int) -> dict:
             snapshot_url=snapshot.export_ref["url"],
             snapshot_sha256=snapshot.sha256,
             hyperparams=notebook_hyperparams,
+            warm_start_checkpoint_url=warm_start_checkpoint_url,
+            warm_start_checkpoint_sha256=warm_start_checkpoint_sha256,
         )
         nbf.write(nb, str(notebook_path))
         logger.info(f"colab training run {training_run_id}: generated {notebook_path}")
