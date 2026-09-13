@@ -42,7 +42,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # ---------------------------------------------------------------------------
 # Fill these in after `prepare-data` prints the registered dataset ids.
 # ---------------------------------------------------------------------------
-USDJPY_DATASET_ID: int | None = 51
+# dataset id=29 "USDJPY" (M1, 2,239,284 rows, 2016-08-31 -> 2022-08-31) -- a real, full-history
+# dataset already registered in this project (the same one the "Five Axes of Scaling"
+# investigation's usdjpy_1min_volatility.parquet derives from), NOT the ~1-month yfinance
+# snippet `prepare-data` used to collect fresh (dataset id=51, 29,611 rows) -- yfinance's M1
+# endpoint is provider-limited to recent history only; there was no need to hit it at all once
+# this was found. Note: dataset 29's own derived sibling (id=30, "usdjpy_1min_volatility") has
+# precomputed rv/log_rv columns, but their exact formula isn't documented anywhere in this repo
+# and empirically isn't just a plain rolling-std-of-returns at any clean window (correlation
+# ~0.91 at best against several tried, never 1.0) -- reusing an unverified legacy column would
+# also break target-formula consistency with DDM's side. Using our own preprocessing
+# "volatility" indicator (see BASE_HP below) on dataset 29's raw OHLC instead keeps the target
+# definition IDENTICAL between DDM and USDJPY, which matters more for a fair transfer comparison
+# than reusing whatever the original undocumented rv/log_rv computation was.
+USDJPY_DATASET_ID: int | None = 29
 DDM_DATASET_ID: int | None = 52
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
@@ -50,10 +63,16 @@ ML_MODEL_ID: int | None = None
 
 VOL_PERIOD = 20  # bars; also fixes the tgt_feature_cols column name "vol_{VOL_PERIOD}"
 
+# Only used by `prepare-data`'s (now unnecessary, kept only as a documented fallback -- see
+# USDJPY_DATASET_ID's comment above) fresh yfinance collection path.
 USDJPY_SYMBOL = "USDJPY=X"  # yfinance forex ticker format (plain "USDJPY" resolves to no data)
-# "M1" matches the scope already fixed for this follow-up in
-# docs/research-seed-five-axes-of-scaling.md's seed-q1
 USDJPY_TIMEFRAME = "M1"
+
+# Row cap applied to BOTH datasets via BASE_HP's max_rows (DDM's 300k-row dataset is unaffected;
+# this caps USDJPY's 2.24M-row real history to a recent, still-substantial 1M-row / ~2-year
+# slice instead of silently falling back to OHLCWindowDataset's own 50,000-row default -- see
+# CLAUDE.md's "Always pass max_rows explicitly" standing lesson).
+MAX_ROWS = 1_000_000
 
 # Pretraining budget is explicitly NOT required to match condition A's data volume -- only the
 # fine-tune side must match (user's own Phase 2 spec) -- picked independently, generous since
@@ -117,17 +136,30 @@ BASE_HP = {
     # transform. Without this, most of any transfer effect (or lack of one) could just be a
     # trivial output-scale mismatch the fine-tune run has to relearn regardless of pretraining.
     "normalize": "zscore",
-    "split_mode": "chronological",
+    # "regime_controlled" (not "chronological"): the first full run on the real 1M-row USDJPY
+    # dataset (TrainingRuns 1432-1438) showed every condition-A seed's best val_loss landing at
+    # the very first checkpoint then degrading monotonically -- diagnosed as a real train/val
+    # regime shift, not noise (chronological split puts validation mostly in 2022's USDJPY
+    # volatility surge, a different regime than the 2019-2021 training period). This sanity-check
+    # rerun (user-requested, see conversation) stratifies train/val by the target's own value
+    # distribution instead of by time (OHLCWindowDataset's regime_controlled mode -- deciles of
+    # each window's target level, split within each decile), so a genuine transfer effect isn't
+    # confounded with "which condition happens to handle the 2022 regime better." Trade-off
+    # (documented on the mode itself in dataset.py): no longer a walk-forward evaluation, an
+    # in-distribution one -- appropriate for isolating the pretraining question, not a claim this
+    # is now a deployable forecast.
+    "split_mode": "regime_controlled",
     "require_contiguous": True,
+    "max_rows": MAX_ROWS,
     "val_split": 0.2,
     "batch_size": 64,
     "disable_lr_scheduler": True,
     # NOTE: vol_{PERIOD}'s first (PERIOD-1) rows are NaN (rolling std warm-up) -- preprocessing.py
     # doesn't drop them and OHLCWindowDataset's require_contiguous gap-mask is timestamp-gap-based,
-    # not NaN-based, so a handful of early windows can carry a NaN target. With PERIOD=20 against
-    # a dataset of hundreds of thousands of rows this is noise-level (occasionally pollutes one
-    # train_loss checkpoint average via np.mean, never val_loss since val is the chronological
-    # tail) -- verify this doesn't show up as a NaN val_loss during the smoke run before ignoring it.
+    # not NaN-based, so a handful of early windows can carry a NaN target. Verified directly (see
+    # conversation) that with max_rows=1,000,000 on both the USDJPY and DDM datasets used here,
+    # zero windows in either the train or val split actually carry a NaN target -- the leading
+    # NaN block is a negligible ~19 rows out of hundreds of thousands and gets diluted away.
 }
 
 
