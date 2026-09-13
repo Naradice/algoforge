@@ -29,6 +29,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# Load backend/.env before any OHLCWindowDataset construction below reads ARTIFACT_STORE_PATH --
+# celery_worker.py does this at import time (so a real TrainingRun always has it set), but this
+# script never imports celery_worker, so without this it silently falls back to
+# OHLCWindowDataset's own default ("artifacts", not this project's actual "../artifacts"),
+# loading nothing from an empty/wrong directory instead of raising -- caught live as a
+# "Mean of empty slice" warning and an all-NaN R^2 in _target_variance below.
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
 import numpy as np
 
 
