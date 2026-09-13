@@ -1,9 +1,15 @@
-"""Compare condition A (USDJPY from scratch) vs condition B (DDM pretrain -> USDJPY fine-tune)
-TrainingRuns produced by submit_transfer_experiment.py.
+"""Compare N conditions (e.g. A: USDJPY from scratch, B: DDM pretrain -> USDJPY fine-tune,
+C: synthetic-mixture pretrain -> USDJPY fine-tune) of TrainingRuns produced by
+submit_transfer_experiment.py.
 
 Usage:
-    python analyze_transfer_experiment.py <condition_a_run_id> [<condition_a_run_id> ...] \\
-        -- <condition_b_finetune_run_id> [<condition_b_finetune_run_id> ...]
+    python analyze_transfer_experiment.py <A_run_id> [<A_run_id> ...] \\
+        -- <B_run_id> [<B_run_id> ...] \\
+        [-- <C_run_id> [<C_run_id> ...] ...]
+
+Each `--`-separated group is one condition, labelled A, B, C, ... in the order given. Two
+groups (the original A-vs-B usage) still work exactly as before; a third (or more) group is
+just another condition compared the same way.
 
 Reports, per the user's Phase 2 spec (final val_loss/R2, initial-post-fine-tune performance,
 steps-to-best convergence speed, and cross-seed mean/std for each condition):
@@ -16,14 +22,15 @@ steps-to-best convergence speed, and cross-seed mean/std for each condition):
   - cross-seed mean/std of best val_loss within each condition
 
 A paired significance check (bootstrap + Diebold-Mariano-style, following
-backend/ddm_step5_significance.py's approach) is left as a follow-up if the two conditions'
-numbers turn out close enough that "did B actually beat A" isn't visually obvious from this
-table alone -- with only 3 seeds per condition a full resampling test needs the per-window
-losses, not just the summary stats this script pulls.
+backend/ddm_step5_significance.py's approach) is left as a follow-up if two conditions'
+numbers turn out close enough that "did one actually beat the other" isn't visually obvious
+from this table alone -- with only 3 seeds per condition a full resampling test needs the
+per-window losses, not just the summary stats this script pulls.
 """
 from __future__ import annotations
 
 import asyncio
+import string
 import sys
 from pathlib import Path
 
@@ -100,23 +107,25 @@ def _summarize(run, metrics: list) -> dict:
     }
 
 
-async def analyze(condition_a_ids: list[int], condition_b_ids: list[int]) -> None:
+async def analyze(condition_groups: list[tuple[str, list[int]]]) -> None:
+    """condition_groups: [(label, [run_id, ...]), ...] -- one entry per `--`-separated group."""
     import database
 
+    target_var = None
+    all_summaries: list[tuple[str, list[dict]]] = []
+
     async with database.async_session_factory() as db:
-        a_summaries, b_summaries = [], []
-        target_var = None
-        for run_id in condition_a_ids:
-            run, metrics = await _fetch_run_and_metrics(db, run_id)
-            if target_var is None:
-                target_var = await _target_variance(run.dataset_id, run.hyperparams)
-            a_summaries.append(_summarize(run, metrics))
-        for run_id in condition_b_ids:
-            run, metrics = await _fetch_run_and_metrics(db, run_id)
-            b_summaries.append(_summarize(run, metrics))
+        for label, run_ids in condition_groups:
+            summaries = []
+            for run_id in run_ids:
+                run, metrics = await _fetch_run_and_metrics(db, run_id)
+                if target_var is None:
+                    target_var = await _target_variance(run.dataset_id, run.hyperparams)
+                summaries.append(_summarize(run, metrics))
+            all_summaries.append((label, summaries))
 
     def _report(label: str, summaries: list[dict]) -> None:
-        print(f"\n=== {label} ===")
+        print(f"\n=== Condition {label} ===")
         for s in summaries:
             r2 = (1 - s["best_val_loss"] / target_var) if (s["best_val_loss"] is not None and target_var) else None
             print(
@@ -132,26 +141,43 @@ async def analyze(condition_a_ids: list[int], condition_b_ids: list[int]) -> Non
         if best_losses:
             print(f"  cross-seed best_val_loss: mean={np.mean(best_losses):.6f} std={np.std(best_losses):.6f}")
 
-    _report("Condition A (USDJPY from scratch)", a_summaries)
-    _report("Condition B (DDM pretrain -> USDJPY fine-tune)", b_summaries)
+    for label, summaries in all_summaries:
+        _report(label, summaries)
 
-    a_best = [s["best_val_loss"] for s in a_summaries if s["best_val_loss"] is not None]
-    b_best = [s["best_val_loss"] for s in b_summaries if s["best_val_loss"] is not None]
-    if a_best and b_best:
-        print(f"\nMean best_val_loss: A={np.mean(a_best):.6f}  B={np.mean(b_best):.6f}  "
-              f"(B {'better' if np.mean(b_best) < np.mean(a_best) else 'worse or equal'} than A)")
+    means = {}
+    for label, summaries in all_summaries:
+        best = [s["best_val_loss"] for s in summaries if s["best_val_loss"] is not None]
+        if best:
+            means[label] = float(np.mean(best))
+
+    if len(means) >= 2:
+        print()
+        baseline_label = next(iter(means))
+        for label, mean_val in means.items():
+            marker = "" if label == baseline_label else (
+                f" ({'better' if mean_val < means[baseline_label] else 'worse or equal'} than {baseline_label})"
+            )
+            print(f"Mean best_val_loss: {label}={mean_val:.6f}{marker}")
 
 
 def main():
     args = sys.argv[1:]
     if "--" not in args:
         raise SystemExit(__doc__)
-    sep = args.index("--")
-    condition_a_ids = [int(x) for x in args[:sep]]
-    condition_b_ids = [int(x) for x in args[sep + 1:]]
-    if not condition_a_ids or not condition_b_ids:
+
+    groups: list[list[int]] = [[]]
+    for arg in args:
+        if arg == "--":
+            groups.append([])
+        else:
+            groups[-1].append(int(arg))
+
+    if len(groups) < 2 or any(not g for g in groups):
         raise SystemExit(__doc__)
-    asyncio.run(analyze(condition_a_ids, condition_b_ids))
+
+    labels = list(string.ascii_uppercase[: len(groups)])
+    condition_groups = list(zip(labels, groups))
+    asyncio.run(analyze(condition_groups))
 
 
 if __name__ == "__main__":

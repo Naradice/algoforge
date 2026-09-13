@@ -57,6 +57,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # than reusing whatever the original undocumented rv/log_rv computation was.
 USDJPY_DATASET_ID: int | None = 29
 DDM_DATASET_ID: int | None = 52
+# Condition C's mixture pretrain dataset -- filled in by `prepare-mixture-data`.
+MIXTURE_DATASET_ID: int | None = None
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
@@ -93,6 +95,12 @@ DDM_N_RUNS = DDM_PRETRAIN_ROWS // DDM_CANDLES_PER_RUN
 DDM_TRADES_PER_CANDLE = 20
 DDM_GAP_SECONDS = 86_400  # 1 day -- far outside the 60s M1 stride, unambiguous gap
 DDM_NUM_AGENT = 500
+
+# Condition C (priority (2)): DDM + Sine + Delay(Mackey-Glass) + XOR(temporal) + LFSR(8-bit),
+# each contributing an equal share so the mixture's TOTAL row count equals DDM_PRETRAIN_ROWS --
+# see _build_synthetic_mixture_data's docstring for why (isolating "more structural diversity"
+# from "more data" is the whole point of comparing B vs C, per the user's own Phase 3/4 note).
+MIXTURE_ROWS_PER_SOURCE = DDM_PRETRAIN_ROWS // 5  # 60_000 at current DDM_PRETRAIN_ROWS
 
 SEEDS_FULL = [42, 43, 44]
 
@@ -187,22 +195,26 @@ def _pretrain_hp(seed: int, max_steps: int, val_every_steps: int) -> dict:
     }
 
 
-def _simulate_ddm_pretrain_data():
-    """DDM_N_RUNS independent, freshly-seeded DDMv3 (v3_shock params) runs of
-    DDM_CANDLES_PER_RUN candles each, concatenated with a timestamp gap between every pair --
-    see DDM_PRETRAIN_ROWS's comment for why not one long run. Returns (combined_df, from_ts,
-    to_ts). Mirrors generate_regime_datasets.py's simulate/trades_to_ohlc/build_combined, which
-    established this exact pattern for the same reason (avoiding DDMv3's long-horizon WMA
-    divergence)."""
+def _simulate_ddm_segment(total_rows: int, candles_per_run: int = DDM_CANDLES_PER_RUN,
+                           cursor_ts=None, seed_offset: int = 1000):
+    """n_runs = total_rows // candles_per_run independent, freshly-seeded DDMv3 (v3_shock
+    params) runs of candles_per_run candles each, concatenated with a timestamp gap between
+    every pair -- see DDM_PRETRAIN_ROWS's comment for why not one long run. Returns
+    (combined_df, from_ts, to_ts). Mirrors generate_regime_datasets.py's simulate/trades_to_ohlc/
+    build_combined, which established this exact pattern for the same reason (avoiding DDMv3's
+    long-horizon WMA divergence). seed_offset lets condition C's smaller DDM slice use a
+    disjoint seed range from condition B's full-size pretrain, so they're not literally the same
+    trajectories truncated."""
     import numpy as np
     import pandas as pd
     from data.collectors.ddm_simulator import DDMv3
 
-    n_trades_per_run = DDM_CANDLES_PER_RUN * DDM_TRADES_PER_CANDLE
-    cursor_ts = pd.Timestamp("2000-01-03 00:00:00", tz="UTC")
+    n_runs = total_rows // candles_per_run
+    n_trades_per_run = candles_per_run * DDM_TRADES_PER_CANDLE
+    cursor_ts = cursor_ts if cursor_ts is not None else pd.Timestamp("2000-01-03 00:00:00", tz="UTC")
     blocks = []
-    for run_idx in range(DDM_N_RUNS):
-        seed = 1000 + run_idx
+    for run_idx in range(n_runs):
+        seed = seed_offset + run_idx
         np.random.seed(seed)
         model = DDMv3(
             num_agent=DDM_NUM_AGENT, max_volatility=0.02, min_volatility=0.01, wma=5,
@@ -216,14 +228,94 @@ def _simulate_ddm_pretrain_data():
         ohlc = pd.DataFrame({
             "open": grouped[:, 0], "high": grouped.max(axis=1), "low": grouped.min(axis=1),
             "close": grouped[:, -1], "volume": float(DDM_TRADES_PER_CANDLE),
-        }).iloc[:DDM_CANDLES_PER_RUN]
+        }).iloc[:candles_per_run]
 
         idx = cursor_ts + pd.to_timedelta(np.arange(len(ohlc)) * 60, unit="s")
         ohlc.index = idx
         ohlc.index.name = "datetime"
         blocks.append(ohlc)
         cursor_ts = idx[-1] + pd.Timedelta(seconds=DDM_GAP_SECONDS)
-        print(f"  DDM pretrain run {run_idx + 1}/{DDM_N_RUNS}: {len(ohlc)} candles")
+        print(f"  DDM segment run {run_idx + 1}/{n_runs}: {len(ohlc)} candles")
+
+    combined = pd.concat(blocks)
+    return combined, combined.index[-1] + pd.Timedelta(seconds=DDM_GAP_SECONDS)
+
+
+def _simulate_ddm_pretrain_data():
+    """DDM-only pretrain dataset (DDM_PRETRAIN_ROWS candles) -- see _simulate_ddm_segment."""
+    combined, _next_cursor = _simulate_ddm_segment(DDM_PRETRAIN_ROWS)
+    return combined, combined.index[0].to_pydatetime(), combined.index[-1].to_pydatetime()
+
+
+def _generate_synthetic_segment(function: str, length: int, seed: int, cursor_ts, **extra_config):
+    """One synthetic_function.py series (sine/delay/xor/lfsr), as a flat-candle OHLC DataFrame
+    re-indexed to start at cursor_ts -- calls the collector's own _generate_series directly
+    (not collect(), which writes its own standalone file/datasource-keyed artifact; here we only
+    want the raw values to fold into one combined mixture dataset, same reasoning as
+    _simulate_ddm_segment building its own OHLC rather than going through ddm_simulator.collect()).
+    Returns (df, next_cursor_ts)."""
+    import numpy as np
+    import pandas as pd
+    from data.collectors.synthetic_function import _generate_series
+
+    period = float(extra_config.get("period", 50))
+    amplitude = float(extra_config.get("amplitude", 1.0))
+    freq_ratio = float(extra_config.get("freq_ratio", 5))
+    tau = float(extra_config.get("tau", 17))
+    lfsr_bits = int(extra_config.get("lfsr_bits", 8))
+    base_price = float(extra_config.get("base_price", 100.0))
+
+    values = base_price + _generate_series(
+        function, length, period, amplitude, freq_ratio, tau=tau, lfsr_bits=lfsr_bits, seed=seed
+    )
+    idx = cursor_ts + pd.to_timedelta(np.arange(length) * 60, unit="s")
+    df = pd.DataFrame({
+        "open": values, "high": values, "low": values, "close": values,
+        "volume": np.ones(length),
+    }, index=idx)
+    df.index.name = "datetime"
+    next_cursor = idx[-1] + pd.Timedelta(seconds=DDM_GAP_SECONDS)
+    print(f"  synthetic segment {function!r}: {length} candles")
+    return df, next_cursor
+
+
+def _build_synthetic_mixture_data():
+    """Sine + Delay(Mackey-Glass) + XOR(temporal) + LFSR(8-bit) + DDM(v3_shock), each
+    MIXTURE_ROWS_PER_SOURCE candles, concatenated with a timestamp gap between every segment --
+    condition C's pretraining data. Total rows == DDM_PRETRAIN_ROWS (condition B's pretrain
+    volume) by construction: the whole point of comparing B vs C is "same total pretraining
+    volume, different composition" (per the user's own Phase 3/4 methodology note --
+    separate 'more DDM data' from 'more structural diversity'), not "C also has more data than
+    B." Returns (combined_df, from_ts, to_ts)."""
+    import pandas as pd
+
+    cursor_ts = pd.Timestamp("2000-01-03 00:00:00", tz="UTC")
+    blocks = []
+
+    sine_df, cursor_ts = _generate_synthetic_segment(
+        "sine", MIXTURE_ROWS_PER_SOURCE, seed=2001, cursor_ts=cursor_ts, period=50, amplitude=1.0
+    )
+    blocks.append(sine_df)
+
+    delay_df, cursor_ts = _generate_synthetic_segment(
+        "delay", MIXTURE_ROWS_PER_SOURCE, seed=2002, cursor_ts=cursor_ts, tau=17
+    )
+    blocks.append(delay_df)
+
+    xor_df, cursor_ts = _generate_synthetic_segment(
+        "xor", MIXTURE_ROWS_PER_SOURCE, seed=2003, cursor_ts=cursor_ts, amplitude=1.0
+    )
+    blocks.append(xor_df)
+
+    lfsr_df, cursor_ts = _generate_synthetic_segment(
+        "lfsr", MIXTURE_ROWS_PER_SOURCE, seed=2004, cursor_ts=cursor_ts, lfsr_bits=8, amplitude=1.0
+    )
+    blocks.append(lfsr_df)
+
+    ddm_df, cursor_ts = _simulate_ddm_segment(
+        MIXTURE_ROWS_PER_SOURCE, candles_per_run=DDM_CANDLES_PER_RUN, cursor_ts=cursor_ts, seed_offset=3000
+    )
+    blocks.append(ddm_df)
 
     combined = pd.concat(blocks)
     return combined, combined.index[0].to_pydatetime(), combined.index[-1].to_pydatetime()
@@ -331,6 +423,39 @@ async def prepare_datasets() -> None:
     print("\nPaste these into USDJPY_DATASET_ID / DDM_DATASET_ID at the top of this file.")
 
 
+async def prepare_mixture_data() -> None:
+    """Condition C's pretraining dataset: Sine + Delay + XOR + LFSR + DDM, MIXTURE_ROWS_PER_SOURCE
+    candles each -- see _build_synthetic_mixture_data. No Celery worker or Datasource row needed
+    (same direct-register pattern as the DDM-only dataset in prepare_datasets)."""
+    import os
+
+    import database
+    from data.models import Dataset
+
+    mixture_combined, mixture_from_ts, mixture_to_ts = _build_synthetic_mixture_data()
+
+    async with database.async_session_factory() as db:
+        store = Path(os.getenv("ARTIFACT_STORE_PATH", "../artifacts")).resolve()
+        artifact_rel = "datasets/derived/synthetic_mixture_transfer_pretrain.parquet"
+        (store / artifact_rel).parent.mkdir(parents=True, exist_ok=True)
+        mixture_combined.to_parquet(store / artifact_rel)
+
+        mixture_ds = Dataset(
+            datasource_id=None, name="Synthetic mixture (transfer experiment pretrain, condition C)",
+            symbol="MIXED-SYNTH", timeframe="M1",
+            from_ts=mixture_from_ts, to_ts=mixture_to_ts,
+            row_count=len(mixture_combined), artifact_path=artifact_rel,
+            status="ready",
+        )
+        db.add(mixture_ds)
+        await db.commit()
+        await db.refresh(mixture_ds)
+
+    print(f"Mixture dataset id={mixture_ds.id} row_count={mixture_ds.row_count} "
+          f"span={mixture_ds.from_ts} .. {mixture_ds.to_ts}")
+    print("\nPaste this into MIXTURE_DATASET_ID at the top of this file.")
+
+
 # ---------------------------------------------------------------------------
 # Phase 2: submit TrainingRuns
 # ---------------------------------------------------------------------------
@@ -387,13 +512,16 @@ async def run_condition_a(seeds: list[int], max_steps: int, val_every_steps: int
     return run_ids
 
 
-async def run_condition_b(
+async def run_pretrain_then_finetune(
+    pretrain_dataset_id: int,
     seeds: list[int], pretrain_seed: int,
     pretrain_max_steps: int, pretrain_val_every_steps: int,
     finetune_max_steps: int, finetune_val_every_steps: int,
     execution_target: str = "local",
 ) -> tuple[int, list[int]]:
-    """Condition B: DDM pretrain (single seed) -> USDJPY fine-tune (one run per seed in `seeds`).
+    """Shared by condition B (pretrain_dataset_id=DDM_DATASET_ID) and condition C
+    (pretrain_dataset_id=MIXTURE_DATASET_ID): pretrain (single seed) on pretrain_dataset_id ->
+    USDJPY fine-tune (one run per seed in `seeds`).
 
     Waits for the pretrain run to reach a terminal status before submitting fine-tune runs, since
     they need its best.pt checkpoint path. Requires a Celery worker on the matching queue
@@ -406,7 +534,7 @@ async def run_condition_b(
 
     model_id = await _ensure_model()
     pretrain_hp = _pretrain_hp(pretrain_seed, pretrain_max_steps, pretrain_val_every_steps)
-    pretrain_run_id = await _submit(model_id, DDM_DATASET_ID, pretrain_hp, execution_target)
+    pretrain_run_id = await _submit(model_id, pretrain_dataset_id, pretrain_hp, execution_target)
 
     print(f"Waiting for pretrain run {pretrain_run_id} to complete "
           f"(requires a `{execution_target}`-queue Celery worker running)...")
@@ -434,8 +562,8 @@ async def _run_smoke() -> None:
     print("=== condition A (smoke) ===")
     await run_condition_a(seeds, max_steps=1000, val_every_steps=200)
     print("=== condition B (smoke) ===")
-    await run_condition_b(
-        seeds, pretrain_seed=42,
+    await run_pretrain_then_finetune(
+        DDM_DATASET_ID, seeds, pretrain_seed=42,
         pretrain_max_steps=1000, pretrain_val_every_steps=200,
         finetune_max_steps=1000, finetune_val_every_steps=200,
     )
@@ -446,13 +574,32 @@ async def _run_full(seeds: list[int]) -> None:
     # docs/colab-workflow.md) is implemented and verified via a local cell-extraction proxy test,
     # but blocked for a REAL run right now by an expired Google Drive OAuth token that needs an
     # interactive browser re-login (docs/colab-workflow.md "One-time setup" step 1) -- pass
-    # execution_target="colab" to run_condition_b once that's done, to parallelize condition A/B
-    # across the `training`/`colab` queues instead of running both serially here.
+    # execution_target="colab" to run_pretrain_then_finetune once that's done, to parallelize
+    # condition A/B across the `training`/`colab` queues instead of running both serially here.
     print("=== condition A (full, local) ===")
     await run_condition_a(seeds, max_steps=FINETUNE_MAX_STEPS, val_every_steps=FINETUNE_VAL_EVERY_STEPS)
     print("=== condition B (full, local) ===")
-    await run_condition_b(
-        seeds, pretrain_seed=42,
+    await run_pretrain_then_finetune(
+        DDM_DATASET_ID, seeds, pretrain_seed=42,
+        pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
+        finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
+    )
+
+
+async def _run_condition_c(seeds: list[int]) -> None:
+    """Priority (2), minimal 3-condition design (user-requested): condition C only -- A and B
+    already exist from the regime_controlled sanity-check rerun (TrainingRuns 1439-1441 and
+    1442-1445). Pretrains on the synthetic mixture (MIXTURE_DATASET_ID) instead of DDM alone,
+    then fine-tunes on USDJPY with the exact same budget/seeds/architecture as A and B so the
+    three conditions are directly comparable."""
+    if MIXTURE_DATASET_ID is None:
+        raise SystemExit(
+            "MIXTURE_DATASET_ID is not set -- run `prepare-mixture-data` first, "
+            "then paste the printed dataset id into this file."
+        )
+    print("=== condition C (mixture pretrain -> USDJPY fine-tune) ===")
+    await run_pretrain_then_finetune(
+        MIXTURE_DATASET_ID, seeds, pretrain_seed=42,
         pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
         finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
     )
@@ -477,6 +624,9 @@ def main():
     if mode == "prepare-data":
         asyncio.run(prepare_datasets())
         return
+    if mode == "prepare-mixture-data":
+        asyncio.run(prepare_mixture_data())
+        return
 
     _require_dataset_ids()
 
@@ -492,8 +642,14 @@ def main():
     elif mode == "full":
         seeds = [int(s) for s in sys.argv[2:]] if len(sys.argv) > 2 else SEEDS_FULL
         asyncio.run(_run_full(seeds))
+    elif mode == "condition-c":
+        seeds = [int(s) for s in sys.argv[2:]] if len(sys.argv) > 2 else SEEDS_FULL
+        asyncio.run(_run_condition_c(seeds))
     else:
-        raise SystemExit(f"unknown mode {mode!r}, expected 'prepare-data', 'smoke', 'colab-smoke', or 'full'")
+        raise SystemExit(
+            f"unknown mode {mode!r}, expected 'prepare-data', 'prepare-mixture-data', "
+            f"'smoke', 'colab-smoke', 'full', or 'condition-c'"
+        )
 
 
 if __name__ == "__main__":
