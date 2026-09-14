@@ -58,7 +58,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 USDJPY_DATASET_ID: int | None = 29
 DDM_DATASET_ID: int | None = 52
 # Condition C's mixture pretrain dataset -- filled in by `prepare-mixture-data`.
-MIXTURE_DATASET_ID: int | None = None
+MIXTURE_DATASET_ID: int | None = 53
+# Phase 4 component ablation: D1-D4 = DDM 240K + one component at 60K (see conversation --
+# isolates "does adding this one component to DDM help" from C's "all four at once" result,
+# though not that component's synergy with the others). Filled in by `prepare-ablation-data`.
+D1_DATASET_ID: int | None = None  # DDM 240K + Sine 60K
+D2_DATASET_ID: int | None = None  # DDM 240K + Delay 60K
+D3_DATASET_ID: int | None = None  # DDM 240K + XOR 60K
+D4_DATASET_ID: int | None = None  # DDM 240K + LFSR 60K
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
@@ -101,6 +108,13 @@ DDM_NUM_AGENT = 500
 # see _build_synthetic_mixture_data's docstring for why (isolating "more structural diversity"
 # from "more data" is the whole point of comparing B vs C, per the user's own Phase 3/4 note).
 MIXTURE_ROWS_PER_SOURCE = DDM_PRETRAIN_ROWS // 5  # 60_000 at current DDM_PRETRAIN_ROWS
+
+# Phase 4 component ablation (user-requested): D1-D4 each replace ABLATION_COMPONENT_ROWS worth
+# of condition B's all-DDM pretrain with one synthetic component, keeping the SAME total
+# DDM_PRETRAIN_ROWS -- e.g. D1 = DDM_240K + Sine_60K vs B's DDM_300K, so "does adding Sine help"
+# is isolated from "is there just less DDM now" (there's less DDM, but the same total volume).
+ABLATION_COMPONENT_ROWS = MIXTURE_ROWS_PER_SOURCE  # 60_000
+ABLATION_DDM_ROWS = DDM_PRETRAIN_ROWS - ABLATION_COMPONENT_ROWS  # 240_000
 
 SEEDS_FULL = [42, 43, 44]
 
@@ -279,46 +293,67 @@ def _generate_synthetic_segment(function: str, length: int, seed: int, cursor_ts
     return df, next_cursor
 
 
-def _build_synthetic_mixture_data():
-    """Sine + Delay(Mackey-Glass) + XOR(temporal) + LFSR(8-bit) + DDM(v3_shock), each
-    MIXTURE_ROWS_PER_SOURCE candles, concatenated with a timestamp gap between every segment --
-    condition C's pretraining data. Total rows == DDM_PRETRAIN_ROWS (condition B's pretrain
-    volume) by construction: the whole point of comparing B vs C is "same total pretraining
-    volume, different composition" (per the user's own Phase 3/4 methodology note --
-    separate 'more DDM data' from 'more structural diversity'), not "C also has more data than
-    B." Returns (combined_df, from_ts, to_ts)."""
+# Fixed per-component seeds/config so the same underlying synthetic sub-data is reused (not
+# re-drawn) across every condition that includes that component -- e.g. condition C's 60K-row
+# Sine segment (seed=2001) and D1's 60K-row Sine segment are byte-identical; only the DDM row
+# count and overall composition differ between conditions. DDM's seed_offset is likewise shared
+# (3000, 3001, 2, ...) so a smaller DDM allocation (e.g. condition C's 60K = seeds 3000-3011) is
+# always a strict prefix of a larger one (e.g. D1-D4's 240K = seeds 3000-3047) -- not required
+# for correctness, just keeps "which DDM trajectories are in this mixture" interpretable.
+_SYNTHETIC_COMPONENT_CONFIG = {
+    "sine": {"seed": 2001, "period": 50, "amplitude": 1.0},
+    "delay": {"seed": 2002, "tau": 17},
+    "xor": {"seed": 2003, "amplitude": 1.0},
+    "lfsr": {"seed": 2004, "lfsr_bits": 8, "amplitude": 1.0},
+}
+
+
+def _build_mixture_data(component_rows: dict):
+    """General mixture builder: component_rows maps a component name ("ddm", "sine", "delay",
+    "xor", or "lfsr") to how many candles of it to include, e.g. {"ddm": 240_000, "sine": 60_000}
+    for condition D1 (Phase 4's component-ablation design -- see conversation). Components are
+    concatenated in a fixed order (ddm, sine, delay, xor, lfsr -- whichever are present) with a
+    timestamp gap between every segment, same as _build_synthetic_mixture_data (condition C's
+    all-five-equal special case, now just one call to this with all five keys at
+    MIXTURE_ROWS_PER_SOURCE each). Returns (combined_df, from_ts, to_ts)."""
     import pandas as pd
 
     cursor_ts = pd.Timestamp("2000-01-03 00:00:00", tz="UTC")
     blocks = []
 
-    sine_df, cursor_ts = _generate_synthetic_segment(
-        "sine", MIXTURE_ROWS_PER_SOURCE, seed=2001, cursor_ts=cursor_ts, period=50, amplitude=1.0
-    )
-    blocks.append(sine_df)
+    if component_rows.get("ddm"):
+        ddm_df, cursor_ts = _simulate_ddm_segment(
+            component_rows["ddm"], candles_per_run=DDM_CANDLES_PER_RUN, cursor_ts=cursor_ts, seed_offset=3000
+        )
+        blocks.append(ddm_df)
 
-    delay_df, cursor_ts = _generate_synthetic_segment(
-        "delay", MIXTURE_ROWS_PER_SOURCE, seed=2002, cursor_ts=cursor_ts, tau=17
-    )
-    blocks.append(delay_df)
+    for name in ("sine", "delay", "xor", "lfsr"):
+        rows = component_rows.get(name)
+        if not rows:
+            continue
+        cfg = _SYNTHETIC_COMPONENT_CONFIG[name]
+        df, cursor_ts = _generate_synthetic_segment(name, rows, cursor_ts=cursor_ts, **cfg)
+        blocks.append(df)
 
-    xor_df, cursor_ts = _generate_synthetic_segment(
-        "xor", MIXTURE_ROWS_PER_SOURCE, seed=2003, cursor_ts=cursor_ts, amplitude=1.0
-    )
-    blocks.append(xor_df)
-
-    lfsr_df, cursor_ts = _generate_synthetic_segment(
-        "lfsr", MIXTURE_ROWS_PER_SOURCE, seed=2004, cursor_ts=cursor_ts, lfsr_bits=8, amplitude=1.0
-    )
-    blocks.append(lfsr_df)
-
-    ddm_df, cursor_ts = _simulate_ddm_segment(
-        MIXTURE_ROWS_PER_SOURCE, candles_per_run=DDM_CANDLES_PER_RUN, cursor_ts=cursor_ts, seed_offset=3000
-    )
-    blocks.append(ddm_df)
+    if not blocks:
+        raise ValueError("component_rows must specify at least one component with rows > 0")
 
     combined = pd.concat(blocks)
     return combined, combined.index[0].to_pydatetime(), combined.index[-1].to_pydatetime()
+
+
+def _build_synthetic_mixture_data():
+    """Condition C: Sine + Delay(Mackey-Glass) + XOR(temporal) + LFSR(8-bit) + DDM(v3_shock),
+    each MIXTURE_ROWS_PER_SOURCE candles. Total rows == DDM_PRETRAIN_ROWS (condition B's
+    pretrain volume) by construction: the whole point of comparing B vs C is "same total
+    pretraining volume, different composition" (per the user's own Phase 3/4 methodology note --
+    separate 'more DDM data' from 'more structural diversity'), not "C also has more data than
+    B." Thin wrapper over _build_mixture_data -- kept as its own function since it's referenced
+    by name in docs/commit history and the already-registered dataset it produced (id=53)."""
+    return _build_mixture_data({
+        "ddm": MIXTURE_ROWS_PER_SOURCE, "sine": MIXTURE_ROWS_PER_SOURCE,
+        "delay": MIXTURE_ROWS_PER_SOURCE, "xor": MIXTURE_ROWS_PER_SOURCE, "lfsr": MIXTURE_ROWS_PER_SOURCE,
+    })
 
 
 def _read_cached_yfinance_ohlc(symbol: str, timeframe: str):
@@ -454,6 +489,60 @@ async def prepare_mixture_data() -> None:
     print(f"Mixture dataset id={mixture_ds.id} row_count={mixture_ds.row_count} "
           f"span={mixture_ds.from_ts} .. {mixture_ds.to_ts}")
     print("\nPaste this into MIXTURE_DATASET_ID at the top of this file.")
+
+
+async def _register_mixture_dataset(name: str, artifact_name: str, component_rows: dict) -> int:
+    """Builds one _build_mixture_data(component_rows) result and registers it as a Dataset --
+    shared by prepare_ablation_data for D1-D4. Returns the new Dataset's id."""
+    import os
+
+    import database
+    from data.models import Dataset
+
+    combined, from_ts, to_ts = _build_mixture_data(component_rows)
+
+    async with database.async_session_factory() as db:
+        store = Path(os.getenv("ARTIFACT_STORE_PATH", "../artifacts")).resolve()
+        artifact_rel = f"datasets/derived/{artifact_name}.parquet"
+        (store / artifact_rel).parent.mkdir(parents=True, exist_ok=True)
+        combined.to_parquet(store / artifact_rel)
+
+        ds = Dataset(
+            datasource_id=None, name=name, symbol="MIXED-SYNTH", timeframe="M1",
+            from_ts=from_ts, to_ts=to_ts, row_count=len(combined), artifact_path=artifact_rel,
+            status="ready",
+        )
+        db.add(ds)
+        await db.commit()
+        await db.refresh(ds)
+
+    print(f"{name}: dataset id={ds.id} row_count={ds.row_count} span={ds.from_ts} .. {ds.to_ts}")
+    return ds.id
+
+
+async def prepare_ablation_data() -> None:
+    """Phase 4 component ablation (user-requested): D1-D4 = DDM ABLATION_DDM_ROWS + one
+    component at ABLATION_COMPONENT_ROWS, isolating "does adding this one component to DDM
+    help" one at a time, before condition C's "all four at once" result is decomposed further.
+    No Celery worker needed -- same direct-register pattern as prepare_mixture_data."""
+    d1 = await _register_mixture_dataset(
+        "D1: DDM 240K + Sine 60K (ablation)", "ablation_d1_ddm_sine",
+        {"ddm": ABLATION_DDM_ROWS, "sine": ABLATION_COMPONENT_ROWS},
+    )
+    d2 = await _register_mixture_dataset(
+        "D2: DDM 240K + Delay 60K (ablation)", "ablation_d2_ddm_delay",
+        {"ddm": ABLATION_DDM_ROWS, "delay": ABLATION_COMPONENT_ROWS},
+    )
+    d3 = await _register_mixture_dataset(
+        "D3: DDM 240K + XOR 60K (ablation)", "ablation_d3_ddm_xor",
+        {"ddm": ABLATION_DDM_ROWS, "xor": ABLATION_COMPONENT_ROWS},
+    )
+    d4 = await _register_mixture_dataset(
+        "D4: DDM 240K + LFSR 60K (ablation)", "ablation_d4_ddm_lfsr",
+        {"ddm": ABLATION_DDM_ROWS, "lfsr": ABLATION_COMPONENT_ROWS},
+    )
+    print(f"\nPaste these into D1_DATASET_ID={d1} / D2_DATASET_ID={d2} / "
+          f"D3_DATASET_ID={d3} / D4_DATASET_ID={d4} at the top of this file.")
 
 
 # ---------------------------------------------------------------------------
@@ -605,6 +694,33 @@ async def _run_condition_c(seeds: list[int]) -> None:
     )
 
 
+_D_DATASET_IDS = {"d1": lambda: D1_DATASET_ID, "d2": lambda: D2_DATASET_ID,
+                  "d3": lambda: D3_DATASET_ID, "d4": lambda: D4_DATASET_ID}
+_D_LABELS = {"d1": "D1 (DDM 240K + Sine 60K)", "d2": "D2 (DDM 240K + Delay 60K)",
+             "d3": "D3 (DDM 240K + XOR 60K)", "d4": "D4 (DDM 240K + LFSR 60K)"}
+
+
+async def _run_condition_d(which: str, seeds: list[int]) -> None:
+    """Phase 4 component ablation (user-requested): one of D1-D4 -- pretrain on DDM
+    ABLATION_DDM_ROWS + one synthetic component at ABLATION_COMPONENT_ROWS, then fine-tune on
+    USDJPY with the exact same budget/seeds/architecture as A/B/C. Run each of d1/d2/d3/d4
+    separately (`condition-d d1`, etc.) rather than all four in one process -- each is already a
+    multi-hour job on this machine's single local worker; running them as separate invocations
+    means a crash/restart partway through only loses the one in flight, not the whole batch."""
+    dataset_id = _D_DATASET_IDS[which]()
+    if dataset_id is None:
+        raise SystemExit(
+            f"{which.upper()}_DATASET_ID is not set -- run `prepare-ablation-data` first, "
+            "then paste the printed dataset ids into this file."
+        )
+    print(f"=== condition {_D_LABELS[which]} pretrain -> USDJPY fine-tune ===")
+    await run_pretrain_then_finetune(
+        dataset_id, seeds, pretrain_seed=42,
+        pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
+        finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
+    )
+
+
 async def _run_colab_smoke() -> None:
     """Minimal REAL-Colab check (not the extracted-cells local proxy already validated) -- one
     small DDM pretrain run via execution_target="colab", to confirm the actual colab-cli/Drive
@@ -627,6 +743,9 @@ def main():
     if mode == "prepare-mixture-data":
         asyncio.run(prepare_mixture_data())
         return
+    if mode == "prepare-ablation-data":
+        asyncio.run(prepare_ablation_data())
+        return
 
     _require_dataset_ids()
 
@@ -645,10 +764,17 @@ def main():
     elif mode == "condition-c":
         seeds = [int(s) for s in sys.argv[2:]] if len(sys.argv) > 2 else SEEDS_FULL
         asyncio.run(_run_condition_c(seeds))
+    elif mode == "condition-d":
+        if len(sys.argv) < 3 or sys.argv[2] not in _D_DATASET_IDS:
+            raise SystemExit("usage: condition-d <d1|d2|d3|d4> [seed ...]")
+        which = sys.argv[2]
+        seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
+        asyncio.run(_run_condition_d(which, seeds))
     else:
         raise SystemExit(
             f"unknown mode {mode!r}, expected 'prepare-data', 'prepare-mixture-data', "
-            f"'smoke', 'colab-smoke', 'full', or 'condition-c'"
+            f"'prepare-ablation-data', 'smoke', 'colab-smoke', 'full', 'condition-c', "
+            f"or 'condition-d <d1|d2|d3|d4>'"
         )
 
 
