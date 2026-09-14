@@ -62,10 +62,10 @@ MIXTURE_DATASET_ID: int | None = 53
 # Phase 4 component ablation: D1-D4 = DDM 240K + one component at 60K (see conversation --
 # isolates "does adding this one component to DDM help" from C's "all four at once" result,
 # though not that component's synergy with the others). Filled in by `prepare-ablation-data`.
-D1_DATASET_ID: int | None = None  # DDM 240K + Sine 60K
-D2_DATASET_ID: int | None = None  # DDM 240K + Delay 60K
-D3_DATASET_ID: int | None = None  # DDM 240K + XOR 60K
-D4_DATASET_ID: int | None = None  # DDM 240K + LFSR 60K
+D1_DATASET_ID: int | None = 54  # DDM 240K + Sine 60K
+D2_DATASET_ID: int | None = 55  # DDM 240K + Delay 60K
+D3_DATASET_ID: int | None = 56  # DDM 240K + XOR 60K
+D4_DATASET_ID: int | None = 57  # DDM 240K + LFSR 60K
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
