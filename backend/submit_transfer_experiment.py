@@ -721,6 +721,28 @@ async def _run_condition_d(which: str, seeds: list[int]) -> None:
     )
 
 
+async def _run_replicate_pretrain(which: str, pretrain_seed: int, finetune_seeds: list[int]) -> None:
+    """Pretrain-seed replication (user-requested robustness check on D1's surprising ~39% loss
+    reduction, which so far rests on a SINGLE pretrain seed): re-pretrain the SAME mixture
+    composition/dataset with a different pretrain_seed (model weight-init/shuffle seed -- the
+    underlying synthetic data itself, e.g. D1's DDM+Sine rows, is unchanged, since
+    _build_mixture_data's per-component seeds are fixed constants, not this seed), then
+    fine-tune at finetune_seeds. If repeated pretrain seeds all land near the original result,
+    the effect is a property of the composition; if they scatter back toward B/C's range, the
+    original checkpoint was a lucky draw. The existing pretrain_seed=42 row (D1: TrainingRuns
+    1450->1451) is NOT resubmitted here -- reused as-is, per the user's own instruction."""
+    dataset_id = _D_DATASET_IDS[which]()
+    if dataset_id is None:
+        raise SystemExit(f"{which.upper()}_DATASET_ID is not set -- run `prepare-ablation-data` first.")
+    print(f"=== {_D_LABELS[which]} pretrain seed={pretrain_seed} replication "
+          f"-> USDJPY fine-tune {finetune_seeds} ===")
+    await run_pretrain_then_finetune(
+        dataset_id, finetune_seeds, pretrain_seed=pretrain_seed,
+        pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
+        finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
+    )
+
+
 async def _run_colab_smoke() -> None:
     """Minimal REAL-Colab check (not the extracted-cells local proxy already validated) -- one
     small DDM pretrain run via execution_target="colab", to confirm the actual colab-cli/Drive
@@ -770,11 +792,19 @@ def main():
         which = sys.argv[2]
         seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
         asyncio.run(_run_condition_d(which, seeds))
+    elif mode == "replicate-pretrain":
+        if len(sys.argv) < 4 or sys.argv[2] not in _D_DATASET_IDS:
+            raise SystemExit("usage: replicate-pretrain <d1|d2|d3|d4> <pretrain_seed> [finetune_seed ...]")
+        which = sys.argv[2]
+        pretrain_seed = int(sys.argv[3])
+        finetune_seeds = [int(s) for s in sys.argv[4:]] if len(sys.argv) > 4 else [42]
+        asyncio.run(_run_replicate_pretrain(which, pretrain_seed, finetune_seeds))
     else:
         raise SystemExit(
             f"unknown mode {mode!r}, expected 'prepare-data', 'prepare-mixture-data', "
             f"'prepare-ablation-data', 'smoke', 'colab-smoke', 'full', 'condition-c', "
-            f"or 'condition-d <d1|d2|d3|d4>'"
+            f"'condition-d <d1|d2|d3|d4>', or "
+            f"'replicate-pretrain <d1|d2|d3|d4> <pretrain_seed> [finetune_seed ...]'"
         )
 
 
