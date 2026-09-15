@@ -66,6 +66,15 @@ D1_DATASET_ID: int | None = 54  # DDM 240K + Sine 60K
 D2_DATASET_ID: int | None = 55  # DDM 240K + Delay 60K
 D3_DATASET_ID: int | None = 56  # DDM 240K + XOR 60K
 D4_DATASET_ID: int | None = 57  # DDM 240K + LFSR 60K
+# Phase 4a Sine dose-response sweep (user-requested, following D1/D2's confirmed "smooth
+# structure helps" finding): DDM 300K (=B) -> DDM 240K+Sine 60K (=D1) -> ... -> Sine 300K,
+# holding total volume fixed at DDM_PRETRAIN_ROWS throughout, varying only the DDM/Sine split.
+# E1/E2/E3 fill in the middle of the curve; E4 is the pure-Sine endpoint. Filled in by
+# `prepare-dose-response-data`.
+E1_DATASET_ID: int | None = None  # DDM 180K + Sine 120K
+E2_DATASET_ID: int | None = None  # DDM 120K + Sine 180K
+E3_DATASET_ID: int | None = None  # DDM 60K + Sine 240K
+E4_DATASET_ID: int | None = None  # Sine 300K (pure)
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
@@ -545,6 +554,31 @@ async def prepare_ablation_data() -> None:
           f"D3_DATASET_ID={d3} / D4_DATASET_ID={d4} at the top of this file.")
 
 
+async def prepare_dose_response_data() -> None:
+    """Phase 4a Sine dose-response sweep (user-requested): E1-E3 fill in the DDM/Sine ratio
+    curve between B (DDM 300K, all-DDM) and D1 (DDM 240K + Sine 60K, already confirmed
+    dramatic); E4 is the pure-Sine endpoint (no DDM at all). Same total DDM_PRETRAIN_ROWS
+    volume throughout -- only the split changes. No Celery worker needed."""
+    e1 = await _register_mixture_dataset(
+        "E1: DDM 180K + Sine 120K (dose-response)", "dose_response_e1_ddm180_sine120",
+        {"ddm": 180_000, "sine": 120_000},
+    )
+    e2 = await _register_mixture_dataset(
+        "E2: DDM 120K + Sine 180K (dose-response)", "dose_response_e2_ddm120_sine180",
+        {"ddm": 120_000, "sine": 180_000},
+    )
+    e3 = await _register_mixture_dataset(
+        "E3: DDM 60K + Sine 240K (dose-response)", "dose_response_e3_ddm60_sine240",
+        {"ddm": 60_000, "sine": 240_000},
+    )
+    e4 = await _register_mixture_dataset(
+        "E4: Sine 300K pure (dose-response)", "dose_response_e4_sine300",
+        {"sine": DDM_PRETRAIN_ROWS},
+    )
+    print(f"\nPaste these into E1_DATASET_ID={e1} / E2_DATASET_ID={e2} / "
+          f"E3_DATASET_ID={e3} / E4_DATASET_ID={e4} at the top of this file.")
+
+
 # ---------------------------------------------------------------------------
 # Phase 2: submit TrainingRuns
 # ---------------------------------------------------------------------------
@@ -694,23 +728,39 @@ async def _run_condition_c(seeds: list[int]) -> None:
     )
 
 
-_D_DATASET_IDS = {"d1": lambda: D1_DATASET_ID, "d2": lambda: D2_DATASET_ID,
-                  "d3": lambda: D3_DATASET_ID, "d4": lambda: D4_DATASET_ID}
-_D_LABELS = {"d1": "D1 (DDM 240K + Sine 60K)", "d2": "D2 (DDM 240K + Delay 60K)",
-             "d3": "D3 (DDM 240K + XOR 60K)", "d4": "D4 (DDM 240K + LFSR 60K)"}
+_D_DATASET_IDS = {
+    "d1": lambda: D1_DATASET_ID, "d2": lambda: D2_DATASET_ID,
+    "d3": lambda: D3_DATASET_ID, "d4": lambda: D4_DATASET_ID,
+    # Phase 4a Sine dose-response sweep -- same lookup dict/CLI plumbing as D1-D4, since
+    # _run_condition_d/_run_replicate_pretrain don't care which phase a dataset belongs to.
+    "e1": lambda: E1_DATASET_ID, "e2": lambda: E2_DATASET_ID,
+    "e3": lambda: E3_DATASET_ID, "e4": lambda: E4_DATASET_ID,
+}
+_D_LABELS = {
+    "d1": "D1 (DDM 240K + Sine 60K)", "d2": "D2 (DDM 240K + Delay 60K)",
+    "d3": "D3 (DDM 240K + XOR 60K)", "d4": "D4 (DDM 240K + LFSR 60K)",
+    "e1": "E1 (DDM 180K + Sine 120K)", "e2": "E2 (DDM 120K + Sine 180K)",
+    "e3": "E3 (DDM 60K + Sine 240K)", "e4": "E4 (Sine 300K pure)",
+}
+_PREPARE_HINT = {
+    "d1": "prepare-ablation-data", "d2": "prepare-ablation-data",
+    "d3": "prepare-ablation-data", "d4": "prepare-ablation-data",
+    "e1": "prepare-dose-response-data", "e2": "prepare-dose-response-data",
+    "e3": "prepare-dose-response-data", "e4": "prepare-dose-response-data",
+}
 
 
 async def _run_condition_d(which: str, seeds: list[int]) -> None:
-    """Phase 4 component ablation (user-requested): one of D1-D4 -- pretrain on DDM
-    ABLATION_DDM_ROWS + one synthetic component at ABLATION_COMPONENT_ROWS, then fine-tune on
-    USDJPY with the exact same budget/seeds/architecture as A/B/C. Run each of d1/d2/d3/d4
-    separately (`condition-d d1`, etc.) rather than all four in one process -- each is already a
+    """Phase 4 component ablation / Phase 4a Sine dose-response (user-requested): one of
+    D1-D4/E1-E4 -- pretrain on the corresponding mixture dataset, then fine-tune on USDJPY with
+    the exact same budget/seeds/architecture as A/B/C. Run each condition separately
+    (`condition-d d1`, `condition-d e2`, etc.) rather than batched -- each is already a
     multi-hour job on this machine's single local worker; running them as separate invocations
     means a crash/restart partway through only loses the one in flight, not the whole batch."""
     dataset_id = _D_DATASET_IDS[which]()
     if dataset_id is None:
         raise SystemExit(
-            f"{which.upper()}_DATASET_ID is not set -- run `prepare-ablation-data` first, "
+            f"{which.upper()}_DATASET_ID is not set -- run `{_PREPARE_HINT[which]}` first, "
             "then paste the printed dataset ids into this file."
         )
     print(f"=== condition {_D_LABELS[which]} pretrain -> USDJPY fine-tune ===")
@@ -733,7 +783,7 @@ async def _run_replicate_pretrain(which: str, pretrain_seed: int, finetune_seeds
     1450->1451) is NOT resubmitted here -- reused as-is, per the user's own instruction."""
     dataset_id = _D_DATASET_IDS[which]()
     if dataset_id is None:
-        raise SystemExit(f"{which.upper()}_DATASET_ID is not set -- run `prepare-ablation-data` first.")
+        raise SystemExit(f"{which.upper()}_DATASET_ID is not set -- run `{_PREPARE_HINT[which]}` first.")
     print(f"=== {_D_LABELS[which]} pretrain seed={pretrain_seed} replication "
           f"-> USDJPY fine-tune {finetune_seeds} ===")
     await run_pretrain_then_finetune(
@@ -768,6 +818,9 @@ def main():
     if mode == "prepare-ablation-data":
         asyncio.run(prepare_ablation_data())
         return
+    if mode == "prepare-dose-response-data":
+        asyncio.run(prepare_dose_response_data())
+        return
 
     _require_dataset_ids()
 
@@ -788,13 +841,13 @@ def main():
         asyncio.run(_run_condition_c(seeds))
     elif mode == "condition-d":
         if len(sys.argv) < 3 or sys.argv[2] not in _D_DATASET_IDS:
-            raise SystemExit("usage: condition-d <d1|d2|d3|d4> [seed ...]")
+            raise SystemExit("usage: condition-d <d1|d2|d3|d4|e1|e2|e3|e4> [seed ...]")
         which = sys.argv[2]
         seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
         asyncio.run(_run_condition_d(which, seeds))
     elif mode == "replicate-pretrain":
         if len(sys.argv) < 4 or sys.argv[2] not in _D_DATASET_IDS:
-            raise SystemExit("usage: replicate-pretrain <d1|d2|d3|d4> <pretrain_seed> [finetune_seed ...]")
+            raise SystemExit("usage: replicate-pretrain <d1|d2|d3|d4|e1|e2|e3|e4> <pretrain_seed> [finetune_seed ...]")
         which = sys.argv[2]
         pretrain_seed = int(sys.argv[3])
         finetune_seeds = [int(s) for s in sys.argv[4:]] if len(sys.argv) > 4 else [42]
@@ -802,8 +855,8 @@ def main():
     else:
         raise SystemExit(
             f"unknown mode {mode!r}, expected 'prepare-data', 'prepare-mixture-data', "
-            f"'prepare-ablation-data', 'smoke', 'colab-smoke', 'full', 'condition-c', "
-            f"'condition-d <d1|d2|d3|d4>', or "
+            f"'prepare-ablation-data', 'prepare-dose-response-data', 'smoke', 'colab-smoke', "
+            f"'full', 'condition-c', 'condition-d <d1|d2|d3|d4|e1|e2|e3|e4>', or "
             f"'replicate-pretrain <d1|d2|d3|d4> <pretrain_seed> [finetune_seed ...]'"
         )
 
