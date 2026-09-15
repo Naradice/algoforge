@@ -71,10 +71,10 @@ D4_DATASET_ID: int | None = 57  # DDM 240K + LFSR 60K
 # holding total volume fixed at DDM_PRETRAIN_ROWS throughout, varying only the DDM/Sine split.
 # E1/E2/E3 fill in the middle of the curve; E4 is the pure-Sine endpoint. Filled in by
 # `prepare-dose-response-data`.
-E1_DATASET_ID: int | None = None  # DDM 180K + Sine 120K
-E2_DATASET_ID: int | None = None  # DDM 120K + Sine 180K
-E3_DATASET_ID: int | None = None  # DDM 60K + Sine 240K
-E4_DATASET_ID: int | None = None  # Sine 300K (pure)
+E1_DATASET_ID: int | None = 58  # DDM 180K + Sine 120K
+E2_DATASET_ID: int | None = 59  # DDM 120K + Sine 180K
+E3_DATASET_ID: int | None = 60  # DDM 60K + Sine 240K
+E4_DATASET_ID: int | None = 61  # Sine 300K (pure)
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
