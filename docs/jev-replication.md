@@ -186,6 +186,30 @@ module's own docstring).
   `agent_loop.py`'s queue-slot acquisition, and `jev_bert_v1` missing from the Agent Loop's own
   architecture whitelist/prompt) — none of which had ever been exercised by a real, live,
   non-mocked MCP client before this investigation.
-- Phase 2 onward: not started. Immediate next step for Phase 1 itself: iterate hyperparameters
-  (via the same Agent Loop, now that it works) to see whether `accuracy_urgency`/`ece` clear their
-  bars with more epochs or a tuned learning rate, before treating Phase 1 as concluded either way.
+  A follow-up research question asked the Agent Loop to run a hyperparameter search
+  (`start_hyperparameter_search`, `search_grid={"lr": [3e-5, 5e-5], "batch_size": [16, 32]}`,
+  4 combinations) against the same dataset/architecture/success_criteria. Result: **all four
+  combinations cleared every threshold**, comfortably — `accuracy_category` 0.925–0.95 (≥0.5),
+  `accuracy_urgency` 0.65–0.8 (≥0.4), `correlation_refund_requested` 0.92–0.996 (≥0.5), `ece`
+  0.064–0.10 (≤0.15), `brier_score` 0.069–0.083 (≤0.3) — best run (lowest val_loss): `lr=5e-5,
+  batch_size=32`. `success_criteria_met=True`, session concluded with outcome `success`.
+
+  **Phase 1 conclusion: BERT + typed heads (Model A) can reproduce Jev-style typed decisions on
+  this task, given reasonable hyperparameters** — the default learning rate (2e-5) alone
+  undershot two of five thresholds; a short, cheap hyperparameter search closed the gap
+  decisively rather than marginally. Read with the caveat already on record above: this measures
+  reproducing the *labeling LLM's* judgments on a 200-example synthetic dataset, not Jev's own,
+  and results this strong on so little data warrant checking for overfitting/memorization before
+  treating them as a ceiling on what Model A can do generally (Phase 2's scaling work, and a
+  larger held-out set, are the natural next checks, not just declaring victory).
+
+  Getting a hyperparameter search itself to complete also surfaced (and fixed) a third
+  study_manager bug: `_run_train_cycle`'s `acquire_queue_slots(queue, n)` had no cap relative to
+  the queue's own configured concurrency limit, so a search_grid larger than that limit (the
+  Reason+Decide LLM produced an 8-combination grid at one point, ignoring its own prompt's "keep
+  it small" guidance) deadlocked forever instead of failing — fixed to reject an over-large grid
+  up front with a clear error, and the prompt now states the limit as a hard cap (4) rather than
+  a soft suggestion. Also fixed: the LLM invented a nonexistent `pretrained_name`
+  ("JEV-BERT-base") for one attempt — the prompt now states this must be a real HuggingFace Hub
+  id, defaulting to `bert-base-uncased`.
+- Phase 2 onward: not started.
