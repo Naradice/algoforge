@@ -11,7 +11,7 @@ from .dataset import OHLCWindowDataset, compute_effective_characteristics
 from .arima_trainer import ARIMA_ARCHITECTURES, order_from_config, load_series_for_arima, fit_and_evaluate_arima
 from .typed_decision import (
     TYPED_DECISION_ARCHITECTURES, TypedDecisionDataset, collate_typed_decisions,
-    compute_losses, score_from_logits, compute_calibration_metrics,
+    compute_losses, score_from_logits, compute_calibration_metrics, flatten_calibration_metrics,
 )
 
 # Architectures whose train_epoch/eval_epoch compute their own internal loss (GAN's adversarial

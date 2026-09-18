@@ -741,7 +741,8 @@ async def _run_typed_decision_training(factory, training_run_id: int, model_id: 
     from model.models import MLModel, ModelValidation, TrainingRun, TrainingRunMetric
     from model_core.architectures.jev_bert import JevBertModel
     from model_core.trainers.typed_decision import (
-        collate_typed_decisions, compute_calibration_metrics, compute_losses, TypedDecisionDataset,
+        collate_typed_decisions, compute_calibration_metrics, compute_losses, flatten_calibration_metrics,
+        TypedDecisionDataset,
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -836,6 +837,11 @@ async def _run_typed_decision_training(factory, training_run_id: int, model_id: 
     best_state = torch.load(best_path, map_location=device)
     model.load_state_dict(best_state["model_state"])
     calibration_metrics = compute_calibration_metrics(model, dataset, dataset.val_indices, batch_size, device)
+    # flatten_calibration_metrics: study_manager's Agent Loop (_check_success_criteria) does a
+    # flat metrics.get(criterion["metric"]) lookup with no nested-path support -- see that
+    # function's docstring for why a Research Brief's success_criteria (e.g. "accuracy_category")
+    # could never match ModelValidation.metrics without this.
+    flat_metrics = flatten_calibration_metrics(calibration_metrics)
 
     artifact_rel = str(best_path.relative_to(store))
     async with factory() as db:
@@ -848,7 +854,7 @@ async def _run_typed_decision_training(factory, training_run_id: int, model_id: 
         run_row = result.fetchone()
         db.add(ModelValidation(
             model_id=model_id, training_run_id=training_run_id, dataset_id=run_row.dataset_id,
-            metrics={"calibration": calibration_metrics},
+            metrics=flat_metrics,
         ))
         await dispatch(db, "training.completed", {
             "training_run_id": training_run_id, "model_id": model_id, "val_loss": best_val_loss, "best_epoch": best_epoch,

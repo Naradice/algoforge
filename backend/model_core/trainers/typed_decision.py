@@ -228,6 +228,24 @@ def _brier_score(confidences: list[float], correctness: list[float]) -> float:
     return sum((c - y) ** 2 for c, y in zip(confidences, correctness)) / len(confidences)
 
 
+def _correlation(xs: list[float], ys: list[float]) -> float:
+    """Pearson correlation -- for a noul question, xs is the predicted probability and ys is the
+    actual 0/1 label, making this the point-biserial correlation: unlike ECE/Brier (which check
+    whether the probability is CALIBRATED), this checks whether it's discriminative at all (does
+    it track the label in the first place). NaN if there's no variance in either series (e.g.
+    every prediction identical, or every label the same class) -- undefined, not zero."""
+    n = len(xs)
+    if n < 2:
+        return float("nan")
+    mean_x, mean_y = sum(xs) / n, sum(ys) / n
+    cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    var_x = sum((x - mean_x) ** 2 for x in xs)
+    var_y = sum((y - mean_y) ** 2 for y in ys)
+    if var_x == 0 or var_y == 0:
+        return float("nan")
+    return cov / (var_x * var_y) ** 0.5
+
+
 @torch.no_grad()
 def compute_calibration_metrics(model, dataset: TypedDecisionDataset, indices: list[int],
                                  batch_size: int, device: str) -> dict:
@@ -271,5 +289,33 @@ def compute_calibration_metrics(model, dataset: TypedDecisionDataset, indices: l
         }
         if spec["type"] != "noul":
             entry["accuracy"] = sum(correct) / len(correct) if correct else float("nan")
+        else:
+            # correctness holds the raw 0/1 label for noul (not a match/no-match flag like
+            # choice/score above), so this is genuinely corr(predicted probability, true label).
+            entry["correlation"] = _correlation(confs, correct)
         result[qid] = entry
     return result
+
+
+def flatten_calibration_metrics(per_question: dict) -> dict:
+    """Adds flat, question-id-suffixed top-level keys (accuracy_<qid>, ece_<qid>, brier_<qid>,
+    correlation_<qid> for noul) alongside the nested per-question breakdown, plus overall
+    expected_calibration_error/brier_score (unweighted mean ECE/Brier across all questions) --
+    for study_manager's Agent Loop, whose _check_success_criteria does a flat
+    metrics.get(criterion["metric"]) lookup with no nested-path support (confirmed live:
+    without this, a Research Brief's success_criteria like {"metric": "accuracy_category", ...}
+    could never match this function's naturally-nested {"category": {"accuracy": ...}} output).
+    Returned dict is what actually gets written to ModelValidation.metrics -- the nested form is
+    kept under "calibration" for anything that wants the structured view instead.
+    """
+    flat: dict = {"calibration": per_question}
+    eces, briers = [], []
+    for qid, entry in per_question.items():
+        for key in ("accuracy", "ece", "brier", "correlation"):
+            if key in entry:
+                flat[f"{key}_{qid}"] = entry[key]
+        eces.append(entry["ece"])
+        briers.append(entry["brier"])
+    flat["expected_calibration_error"] = sum(eces) / len(eces) if eces else float("nan")
+    flat["brier_score"] = sum(briers) / len(briers) if briers else float("nan")
+    return flat
