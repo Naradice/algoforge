@@ -34,10 +34,43 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-5s %(name)s — %(message)s",
 )
 
+# Built before FastAPI(...) below (not inline with the app.mount() call further down, where this
+# used to live) so its own lifespan context manager can be wired into the parent app at
+# construction time -- confirmed live (2026-09-18) that skipping this makes every real MCP
+# session fail immediately with `mcp.shared.exceptions.McpError: Session terminated` on
+# session.initialize(), because FastMCP's streamable-HTTP transport (http_app(), the only one of
+# these four candidate names this fastmcp version actually has) starts its session manager from
+# that lifespan -- mounting the ASGI app alone, without also running its lifespan, leaves that
+# session manager never started. A study_manager Agent Loop session hit this on every real (not
+# mocked) MCP call before this fix: Survey came back all `{"error": "Session terminated"}`.
+#
+# path="/" (http_app's own kwarg) is the second half of that same fix: with no path given,
+# http_app() registers its OWN internal route at "/mcp" (confirmed live by inspecting
+# app.routes), so mounting that whole app at app.mount("/mcp", ...) below made the only working
+# URL "/mcp/mcp", not "/mcp" -- every request to the documented "/mcp" endpoint hit Starlette's
+# add-trailing-slash redirect instead (307 to "/mcp/", which 404s, since the sub-app's real route
+# was "/mcp", not "/" either). path="/" makes the sub-app's own route "/", so mounting it at
+# "/mcp" gives exactly "/mcp" as the combined path, matching what mcp-guide.md and every existing
+# client (study_manager's ALGOFORGE_MCP_URL, Claude Desktop configs) already assume.
+_mcp_mounted = False
+_mcp_asgi = None
+for _attr in ("get_asgi_app", "http_app", "sse_app", "asgi_app"):
+    _fn = getattr(mcp, _attr, None)
+    if _fn is not None:
+        try:
+            _mcp_asgi = _fn(path="/") if _attr == "http_app" else (_fn() if callable(_fn) else _fn)
+            _mcp_mounted = True
+            break
+        except Exception:
+            _mcp_asgi = None
+if not _mcp_mounted:
+    logging.getLogger("main").warning("MCP server could not be mounted — upgrade fastmcp or run it standalone")
+
 app = FastAPI(
     title="AlgoForge API",
     version="0.1.0",
     description="Unified algorithmic trading platform — Strategy · Model · Data",
+    lifespan=getattr(_mcp_asgi, "lifespan", None) if _mcp_mounted else None,
 )
 
 app.add_middleware(
@@ -61,21 +94,11 @@ app.include_router(tr_router, prefix=API_PREFIX)
 app.include_router(pd_router, prefix=API_PREFIX)
 app.include_router(model_config_router, prefix=API_PREFIX)
 
-# MCP server — accessible at /mcp (SSE transport for Claude Desktop)
-# Try known API names across fastmcp versions; skip gracefully if unavailable.
-_mcp_mounted = False
-for _attr in ("get_asgi_app", "http_app", "sse_app", "asgi_app"):
-    _fn = getattr(mcp, _attr, None)
-    if _fn is not None:
-        try:
-            _mcp_asgi = _fn() if callable(_fn) else _fn
-            app.mount("/mcp", MCPAuthMiddleware(_mcp_asgi))
-            _mcp_mounted = True
-            break
-        except Exception:
-            pass
-if not _mcp_mounted:
-    logging.getLogger("main").warning("MCP server could not be mounted — upgrade fastmcp or run it standalone")
+# MCP server — accessible at /mcp (SSE transport for Claude Desktop). _mcp_asgi was built above,
+# before FastAPI(...), so its lifespan could be wired in at construction time -- see that
+# comment for why.
+if _mcp_mounted:
+    app.mount("/mcp", MCPAuthMiddleware(_mcp_asgi))
 
 
 _HTTP_CODE_MAP: dict[int, str] = {
