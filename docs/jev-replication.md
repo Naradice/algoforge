@@ -170,10 +170,22 @@ module's own docstring).
 ## Status
 
 - Phase 0: done (spec above).
-- Phase 1: primitives implemented and verified working end-to-end against a real (small,
-  disposable) dataset/model/training-run through algoforge's actual REST API and Celery tasks —
-  collector → `TypedDecisionDataset` → `JevBertModel` forward/backward → calibration metrics all
-  confirmed live. **Not yet run as an actual study_manager-driven investigation** — that
-  submission (a real research question through study_manager's BRIEFING → approval → Agent Loop,
-  per this doc's opening note) is the next step, not something this engineering pass did itself.
-- Phase 2 onward: not started.
+- Phase 1: primitives implemented and **run as a real study_manager-driven investigation**,
+  end to end, exactly as intended (see this doc's opening note) — submit research question →
+  BRIEFING (found the dataset/architecture on its own via a live MCP survey, once R-12 below was
+  fixed) → human-edited brief approval → Agent Loop's own `create_model`/`start_training_run` via
+  MCP → Wait → Evaluate against `success_criteria` → Markdown report. First real result (model
+  146, training_run 1501, `bert-base-uncased`, 10 epochs, 200-example dataset, default
+  hyperparams): `accuracy_category=0.70`, `correlation_refund_requested=0.82`,
+  `brier_score=0.13` all cleared their thresholds; `accuracy_urgency=0.35` (needed ≥0.4) and
+  `ece=0.167` (needed ≤0.15) narrowly missed theirs — a genuine, partial first-pass replication,
+  not a clean pass or a clean failure. Getting here required fixing two significant,
+  previously-undiscovered AlgoForge bugs (see `docs/requirements.md`'s new R-12: `/mcp` was never
+  actually reachable by any real client, and every write-performing MCP tool silently rolled back
+  its own writes) plus two study_manager-side fixes (a SQLite session-scoping deadlock in
+  `agent_loop.py`'s queue-slot acquisition, and `jev_bert_v1` missing from the Agent Loop's own
+  architecture whitelist/prompt) — none of which had ever been exercised by a real, live,
+  non-mocked MCP client before this investigation.
+- Phase 2 onward: not started. Immediate next step for Phase 1 itself: iterate hyperparameters
+  (via the same Agent Loop, now that it works) to see whether `accuracy_urgency`/`ece` clear their
+  bars with more epochs or a tuned learning rate, before treating Phase 1 as concluded either way.
