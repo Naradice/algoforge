@@ -31,7 +31,7 @@ async def get_run_logs(
         level:    Minimum log level: DEBUG | INFO | WARNING | ERROR | CRITICAL
         limit:    Maximum number of entries to return (newest first, max 200).
     """
-    from database import async_session_factory
+    from database import db_session
     from log_models import Log
 
     limit = min(limit, 200)
@@ -48,7 +48,7 @@ async def get_run_logs(
 
     q = q.order_by(Log.created_at.desc()).limit(limit)
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (await db.execute(q)).scalars().all()
 
     return [
@@ -78,7 +78,7 @@ async def search_logs(
         level: Minimum log level to include (default: WARNING).
         limit: Max entries to return (max 200).
     """
-    from database import async_session_factory
+    from database import db_session
     from log_models import Log
 
     limit = min(limit, 200)
@@ -90,7 +90,7 @@ async def search_logs(
         .limit(limit)
     )
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (await db.execute(q)).scalars().all()
 
     return [
@@ -120,7 +120,7 @@ async def get_log_summary(
         run_id:   Optional run ID to scope the summary. If None, summarises all logs.
         run_type: 'strategy' | 'training' | 'collection'
     """
-    from database import async_session_factory
+    from database import db_session
     from log_models import Log
 
     q = sa.select(Log)
@@ -132,7 +132,7 @@ async def get_log_summary(
         elif run_type == "collection":
             q = q.where(Log.collection_job_id == run_id)
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (await db.execute(q)).scalars().all()
 
     counts_by_level: dict[str, int] = {}

@@ -133,7 +133,76 @@ Agent Service becomes the reason to build it sooner.
 
 ---
 
+### R-11. Agent Loop's `collect` decision can only collect on an existing datasource, not create one — P2
+
+**Evidence:** `study_manager/backend/agent_loop.py`'s `collect` decision requires a `datasource_id`
+(`_run_collect_cycle` rejects the cycle if one isn't given) and calls only the `collect_data` MCP
+tool — there is no `create_datasource` call anywhere in the Agent Loop, even though
+`create_datasource(name, type, config)` exists and is documented in `mcp-guide.md`. Found while
+setting up `docs/jev-replication.md`'s investigation: its `llm_typed_decisions` datasource type
+didn't exist yet for any research question to reference, and the Agent Loop has no decision that
+would have created it.
+
+**Impact:** a research question whose BRIEFING correctly identifies "no suitable dataset exists yet,
+one needs to be created with datasource type X" cannot act on that on its own — a human has to
+create the datasource once (via the REST API or UI) before the Agent Loop's `train`/`collect`
+decisions have anything to reference. This is a real gap for the "fully autonomous, no human setup
+step" version of the research loop this service is meant to be a step toward (see
+`docs/jev-replication.md`'s own opening note on why it's being run through study_manager at all).
+Not a blocker for a single investigation whose datasource is set up once by hand, which is how
+Jev replication Phase 1 is proceeding.
+
+**Proposed fix:** either (a) add a `create_datasource` option to the Decide schema's `collect`
+decision (BRIEFING or Reason+Decide would need to supply `type`/`config`, which raises the same
+"LLM might hallucinate an unsupported datasource type" concern `create_model`'s architecture
+enum already has to guard against), or (b) treat "propose a new datasource type/config for human
+setup" as a distinct output of BRIEFING itself, surfaced for approval alongside the brief rather
+than attempted autonomously mid-loop.
+
+---
+
 ## Resolved
+
+### R-12. `/mcp` was never actually reachable, and every write-performing MCP tool silently rolled back — P0 (blocker) — resolved 2026-09-18
+
+Two independent, stacked bugs, both apparently present since this MCP layer was built — found only
+now because study_manager's first real (non-mocked) research question was the first live client to
+ever exercise a write-performing tool end to end (study_manager's own test suite mocks MCP
+entirely; R-3's fix confirmed auth worked, not that a tool call itself could complete).
+
+**Bug 1 — `/mcp` itself:** `main.py` mounted FastMCP's `http_app()` without wiring its lifespan
+into the parent `FastAPI(...)` (its session manager never started, so every session failed at
+`initialize()` with `mcp.shared.exceptions.McpError: Session terminated`) and without `path="/"`
+(so `http_app()`'s own internal route landed at `/mcp/mcp`, not `/mcp` — a request to the
+documented `/mcp` hit a 307-to-`/mcp/` that itself 404'd). Fixed by building the ASGI app before
+`FastAPI(...)` so `lifespan=` could be passed at construction, and passing `http_app(path="/")`.
+
+**Bug 2 — no tool ever committed a write:** every MCP tool used bare
+`async with async_session_factory() as db:` directly, which (unlike the REST routers' own
+`Depends(get_db)`, which explicitly calls `await session.commit()` after the handler runs) never
+commits on its own — SQLAlchemy's default on a clean `__aexit__` with no explicit commit is to roll
+back. `create_model`, `start_training_run`, `create_datasource`, `deploy_model`, `create_strategy`,
+and every other write-performing tool across `mcp_server/tools/{model,data,strategy,logs}.py`
+appeared to succeed (returned a real-looking id, obtained via `flush()` inside the now-discarded
+transaction) while silently discarding the write — a follow-up call referencing that id (e.g.
+`start_training_run(model_id=...)` right after `create_model`) got `404: MODEL_NOT_FOUND`. Fixed
+with a new `database.db_session()` (an `@asynccontextmanager` with the same commit/rollback
+contract as `get_db()`, for callers that aren't FastAPI routes), swapped in for
+`async_session_factory()` everywhere across all four tool files.
+
+Verified live end to end after both fixes: a real study_manager Agent Loop session (submit research
+question → BRIEFING → approve → `create_model`/`start_training_run` via MCP → wait → evaluate →
+report) completed a full cycle against `docs/jev-replication.md`'s Phase 1 investigation, with the
+trained model and its calibration metrics genuinely persisted and queryable afterward.
+
+**Related, found in the same investigation (study_manager side, not algoforge, so tracked in
+study_manager's own code rather than here):** `agent_loop.py`'s `_run_train_cycle`/
+`_run_backtest_cycle`/`_run_collect_cycle` called `scheduler.acquire_queue_slot(s)` (which opens
+its own short-lived DB session) from inside an already-open `async_session_factory()` session,
+which self-deadlocked against study_manager's SQLite dev DB's connection pool once a real
+(non-instant) job was involved for the first time; and study_manager's own `_TRAIN_ARCHITECTURES`
+tuple + `_DECIDE_SYSTEM_PROMPT` needed `jev_bert_v1` added before the Agent Loop's Reason+Decide
+call could ever choose it.
 
 ### R-1. Webhooks are registered but never fired — P0 (blocker) — resolved 2026-07-31
 

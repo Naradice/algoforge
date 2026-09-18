@@ -13,10 +13,10 @@ async def list_strategies() -> list[dict]:
     List all strategies in the system with their current status and last run summary.
     Use this first to discover available strategies before drilling down.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.models import Strategy, StrategyRun
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         strategies = (
             await db.execute(
                 sa.select(Strategy).order_by(Strategy.created_at.desc())
@@ -61,10 +61,10 @@ async def get_strategy_definition(strategy_id: int) -> dict:
     Args:
         strategy_id: ID of the strategy.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.models import Strategy
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         s = (
             await db.execute(sa.select(Strategy).where(Strategy.id == strategy_id))
         ).scalar_one_or_none()
@@ -90,12 +90,12 @@ async def get_strategy_runs(strategy_id: int, limit: int = 10) -> list[dict]:
         strategy_id: ID of the strategy.
         limit:       Max number of runs to return (max 50).
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.models import StrategyRun
 
     limit = min(limit, 50)
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (
             await db.execute(
                 sa.select(StrategyRun)
@@ -133,10 +133,10 @@ async def get_run_metrics(run_id: int) -> dict:
     Args:
         run_id: ID of the strategy run.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.models import RunMetric, StrategyRun
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         run = (
             await db.execute(sa.select(StrategyRun).where(StrategyRun.id == run_id))
         ).scalar_one_or_none()
@@ -167,12 +167,12 @@ async def get_run_trades(run_id: int, limit: int = 20) -> list[dict]:
         run_id: ID of the strategy run.
         limit:  Max trades to return, newest first (max 100).
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.models import Trade
 
     limit = min(limit, 100)
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (
             await db.execute(
                 sa.select(Trade)
@@ -235,11 +235,11 @@ async def create_strategy(name: str, definition: dict, description: str = "") ->
         definition:  Strategy definition dict (symbol, indicators, entry, exit, risk).
         description: Optional notes.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.service import strategy_service
     from strategy.models import StrategyCreate
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         body = StrategyCreate(name=name, description=description, definition=definition)
         s = await strategy_service.create_strategy(db, body)
         return {"id": s.id, "name": s.name, "status": s.status}
@@ -254,11 +254,11 @@ async def update_strategy(strategy_id: int, definition: dict) -> dict:
         strategy_id: ID of the strategy to update.
         definition:  New strategy definition dict.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.service import strategy_service
     from strategy.models import StrategyUpdate
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         body = StrategyUpdate(definition=definition)
         s = await strategy_service.update_strategy(db, strategy_id, body)
         return {"id": s.id, "name": s.name, "status": s.status}
@@ -300,12 +300,12 @@ async def start_strategy_run(
         from_ts:            ISO datetime to start from (backtest only).
         to_ts:              ISO datetime to end at (backtest only).
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.service import strategy_service
     from strategy.models import StrategyRunCreate
     from celery_app import enqueue
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         body = StrategyRunCreate(
             mode=mode, dataset_id=dataset_id,
             broker_client=broker_client,
@@ -330,10 +330,10 @@ async def get_run_status(strategy_id: int, run_id: int) -> dict:
         strategy_id: Strategy ID.
         run_id:      Run ID returned by start_strategy_run.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.service import strategy_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         run = await strategy_service.get_run(db, strategy_id, run_id)
     return {
         "status": run.status,
@@ -351,10 +351,10 @@ async def compare_runs(strategy_id: int, run_ids: list[int]) -> dict:
         strategy_id: Strategy ID.
         run_ids:     List of run IDs to compare.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.service import strategy_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         return await strategy_service.compare_runs(db, strategy_id, run_ids)
 
 
@@ -367,10 +367,10 @@ async def stop_strategy_run(strategy_id: int, run_id: int) -> dict:
         strategy_id: Strategy ID.
         run_id:      Run ID to stop.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.service import strategy_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         run = await strategy_service.stop_run(db, strategy_id, run_id)
     return {"run_id": run.id, "status": run.status}
 
@@ -385,11 +385,11 @@ async def send_strategy_chat(strategy_id: int, run_id: int, message: str) -> dic
         run_id:      Run ID.
         message:     Message text to send.
     """
-    from database import async_session_factory
+    from database import db_session
     from strategy.service import strategy_service
     from strategy.models import ChatMessageCreate
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         msg = await strategy_service.send_chat_message(db, strategy_id, run_id, ChatMessageCreate(message=message))
     return {"id": msg.id, "role": msg.role, "message": msg.message}
 
@@ -431,14 +431,14 @@ async def run_parameter_sweep(
         - "analysis": plain-English interpretation of the results
     """
     import asyncio
-    from database import async_session_factory
+    from database import db_session
     from strategy.service import strategy_service
     from strategy.models import StrategyRunCreate
     from celery_app import enqueue
 
     # Launch all variants
     run_ids: list[tuple[str, int]] = []
-    async with async_session_factory() as db:
+    async with db_session() as db:
         for v in variants:
             label = v.get("label", f"variant_{len(run_ids)}")
             risk = {**(base_risk or {}), **(v.get("risk_override") or {})}
@@ -463,7 +463,7 @@ async def run_parameter_sweep(
     while pending and elapsed < deadline:
         await asyncio.sleep(poll_interval)
         elapsed += poll_interval
-        async with async_session_factory() as db:
+        async with db_session() as db:
             for label, rid in list(pending.items()):
                 run = await strategy_service.get_run(db, strategy_id, rid)
                 if run.status in ("completed", "error", "stopped"):
@@ -471,7 +471,7 @@ async def run_parameter_sweep(
 
     # Collect results
     results = []
-    async with async_session_factory() as db:
+    async with db_session() as db:
         for label, rid in run_ids:
             try:
                 m = await strategy_service.get_metrics(db, strategy_id, rid)
@@ -521,10 +521,10 @@ async def register_webhook(url: str, events: list[str], secret: str) -> dict:
         events: List of event names to subscribe to.
         secret: HMAC secret for payload verification.
     """
-    from database import async_session_factory
+    from database import db_session
     from webhooks.models import WebhookRegistration
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         obj = WebhookRegistration(url=url, events=events, secret=secret)
         db.add(obj)
         await db.flush()

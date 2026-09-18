@@ -318,4 +318,13 @@ def flatten_calibration_metrics(per_question: dict) -> dict:
         briers.append(entry["brier"])
     flat["expected_calibration_error"] = sum(eces) / len(eces) if eces else float("nan")
     flat["brier_score"] = sum(briers) / len(briers) if briers else float("nan")
+    # Short aliases -- a Research Brief's success_criteria names are LLM-generated fresh each
+    # BRIEFING run, so "ece"/"brier" (vs. "expected_calibration_error"/"brier_score") is a
+    # difference in wording, not in what's being asked for; cheap to cover both without trying to
+    # anticipate every possible phrasing (a mismatch on something this function can't reasonably
+    # guess, e.g. asking for "accuracy" on a noul question -- which has no such thing, only a
+    # probability -- is a brief error to fix via PATCH .../brief before approval, not something
+    # to paper over here with a fabricated number).
+    flat["ece"] = flat["expected_calibration_error"]
+    flat["brier"] = flat["brier_score"]
     return flat

@@ -13,10 +13,10 @@ async def list_models() -> list[dict]:
     List all ML models with their architecture and deployment status.
     Use this to find model IDs before calling other model tools.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.models import MLModel
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (
             await db.execute(sa.select(MLModel).order_by(MLModel.created_at.desc()))
         ).scalars().all()
@@ -43,10 +43,10 @@ async def get_model_training_runs(model_id: int) -> list[dict]:
     Args:
         model_id: ID of the ML model.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.models import TrainingRun
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (
             await db.execute(
                 sa.select(TrainingRun)
@@ -81,10 +81,10 @@ async def get_model_validations(model_id: int) -> list[dict]:
     Args:
         model_id: ID of the ML model.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.models import ModelValidation
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (
             await db.execute(
                 sa.select(ModelValidation)
@@ -118,10 +118,10 @@ async def compare_model_runs(model_id: int) -> dict:
     Args:
         model_id: ID of the ML model.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.models import TrainingRun, ModelValidation
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         runs = (
             await db.execute(
                 sa.select(TrainingRun)
@@ -189,11 +189,11 @@ async def create_model(name: str, architecture: str, config: dict) -> dict:
         architecture: Architecture type: "seq2seq_transformer", "lstm", "timegan", "rl_agent".
         config:       Architecture-specific configuration dict.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
     from model.models import MLModelCreate
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         body = MLModelCreate(name=name, architecture=architecture, config=config)
         m = await model_service.create_model(db, body)
         return {"id": m.id, "name": m.name, "architecture": m.architecture, "status": m.status}
@@ -234,12 +234,12 @@ async def start_training_run(
                                     an unsupported combination raises immediately rather than
                                     starting a run that would fail partway through.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
     from model.models import TrainingRunCreate
     from celery_app import enqueue
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         body = TrainingRunCreate(
             dataset_id=dataset_id, preprocessed_dataset_id=preprocessed_dataset_id,
             hyperparams=hyperparams, execution_target=execution_target,
@@ -261,10 +261,10 @@ async def list_preprocessed_datasets(dataset_id: int | None = None) -> list[dict
     Args:
         dataset_id: Optional — only recipes built on this raw dataset.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         items, _ = await model_service.list_preprocessed_datasets(db, dataset_id=dataset_id, limit=200)
 
     return [
@@ -293,10 +293,10 @@ async def get_preprocessed_dataset(preprocessed_dataset_id: int) -> dict:
     Args:
         preprocessed_dataset_id: ID of the recipe (see list_preprocessed_datasets).
     """
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         p = await model_service.get_preprocessed_dataset(db, preprocessed_dataset_id)
 
     return {
@@ -325,10 +325,10 @@ async def get_training_status(training_run_id: int) -> dict:
     Args:
         training_run_id: ID of the training run.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         return await model_service.get_training_progress(db, training_run_id)
 
 
@@ -341,10 +341,10 @@ async def stop_training_run(training_run_id: int) -> dict:
     Args:
         training_run_id: ID of the training run to stop.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         run = await model_service.stop_training_run(db, training_run_id)
     return {"run_id": run.id, "status": run.status, "stop_requested": run.stop_requested}
 
@@ -358,10 +358,10 @@ async def deploy_model(model_id: int, training_run_id: int) -> dict:
         model_id:        Model to deploy.
         training_run_id: Completed training run whose artifact to use.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         m = await model_service.deploy_model(db, model_id, training_run_id)
     return {"id": m.id, "name": m.name, "status": m.status, "artifact_path": m.artifact_path}
 
@@ -377,11 +377,11 @@ async def predict(model_id: int, features: list[list[float]], feature_names: lis
         feature_names:  Names matching the column order.
     """
     import asyncio
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
     from model.inference import predict as run_predict
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         model_rec = await model_service.get_model(db, model_id)
         training_runs, _ = await model_service.list_training_runs(db, model_id, limit=100)
         deployed_run = next((r for r in training_runs if r.artifact_path == model_rec.artifact_path), None)
@@ -415,12 +415,12 @@ async def start_hyperparameter_search(
                             concurrency across the resulting Colab runs depends on how many
                             `colab` queue workers are running -- see docs/colab-workflow.md.
     """
-    from database import async_session_factory
+    from database import db_session
     from model.service import model_service
     from model.models import HyperparamSearchCreate
     from celery_app import enqueue
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         body = HyperparamSearchCreate(
             model_id=model_id, dataset_id=dataset_id, search_grid=search_grid,
             execution_target=execution_target,

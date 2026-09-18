@@ -13,10 +13,10 @@ async def list_datasets() -> list[dict]:
     List all datasets with their symbol, timeframe, row count, and status.
     Datasets are the OHLC data artifacts used for backtesting and model training.
     """
-    from database import async_session_factory
+    from database import db_session
     from data.models import Dataset
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         rows = (
             await db.execute(sa.select(Dataset).order_by(Dataset.created_at.desc()))
         ).scalars().all()
@@ -48,10 +48,10 @@ async def get_dataset_characteristics(dataset_id: int) -> dict:
     Args:
         dataset_id: ID of the dataset.
     """
-    from database import async_session_factory
+    from database import db_session
     from data.models import Dataset, DataCharacteristics
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         ds = (
             await db.execute(sa.select(Dataset).where(Dataset.id == dataset_id))
         ).scalar_one_or_none()
@@ -95,10 +95,10 @@ async def list_datasources() -> list[dict]:
     List all configured datasources (OHLC download, DDM simulation, web report).
     Shows which collection jobs are associated with each source.
     """
-    from database import async_session_factory
+    from database import db_session
     from data.models import Datasource, CollectionJob
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         sources = (
             await db.execute(sa.select(Datasource).order_by(Datasource.created_at.desc()))
         ).scalars().all()
@@ -146,12 +146,12 @@ async def get_dataset_preview(dataset_id: int, rows: int = 5) -> dict:
 
     import pandas as pd
 
-    from database import async_session_factory
+    from database import db_session
     from data.models import Dataset
 
     rows = min(rows, 20)
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         ds = (
             await db.execute(sa.select(Dataset).where(Dataset.id == dataset_id))
         ).scalar_one_or_none()
@@ -194,10 +194,10 @@ async def get_dataset_download(dataset_id: int) -> dict:
     Args:
         dataset_id: ID of the dataset.
     """
-    from database import async_session_factory
+    from database import db_session
     from data.service import data_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         info = await data_service.get_dataset_download_info(db, dataset_id)
 
     info["download_url"] = f"/api/v1/datasets/{dataset_id}/artifact"
@@ -237,11 +237,11 @@ async def create_datasource(name: str, type: str, config: dict) -> dict:
         type:   Type: "ohlc_download", "web_report", "manual_upload", "economic_calendar".
         config: Type-specific configuration (symbol, timeframe, provider, etc.).
     """
-    from database import async_session_factory
+    from database import db_session
     from data.service import data_service
     from data.models import DatasourceCreate
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         body = DatasourceCreate(name=name, type=type, config=config)
         ds = await data_service.create_datasource(db, body)
         return {"id": ds.id, "name": ds.name, "type": ds.type}
@@ -258,10 +258,10 @@ async def collect_data(datasource_id: int, from_ts: str | None = None, to_ts: st
         from_ts:       ISO datetime for start of collection window (optional).
         to_ts:         ISO datetime for end of collection window (optional).
     """
-    from database import async_session_factory
+    from database import db_session
     from data.service import data_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         job = await data_service.trigger_datasource_collection(db, datasource_id)
         return {"job_id": job.id, "status": job.status}
 
@@ -276,10 +276,10 @@ async def analyze_dataset(dataset_id: int, analyses: list[str] | None = None) ->
         dataset_id: ID of the dataset to analyze.
         analyses:   Optional list of specific analysis names. None = run all.
     """
-    from database import async_session_factory
+    from database import db_session
     from data.service import data_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         dataset = await data_service.trigger_analysis(db, dataset_id)
         return {"dataset_id": dataset.id, "status": dataset.status}
 
@@ -292,10 +292,10 @@ async def get_dataset_info(dataset_id: int) -> dict:
     Args:
         dataset_id: ID of the dataset.
     """
-    from database import async_session_factory
+    from database import db_session
     from data.service import data_service
 
-    async with async_session_factory() as db:
+    async with db_session() as db:
         ds = await data_service.get_dataset(db, dataset_id)
         chars = await data_service.get_characteristics(db, dataset_id)
     result = {
