@@ -38,6 +38,9 @@ matplotlib
 yfinance
 pandas_datareader
 
+# Jev replication (docs/jev-replication.md) -- BERT + typed heads (model_core/architectures/jev_bert.py)
+transformers
+
 # finance_client transitive deps (installed --no-deps so we list them explicitly)
 websocket-client
 PyYAML

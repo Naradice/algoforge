@@ -47,7 +47,10 @@ useful documentation under the “docs” directory to help us build a web app t
 | [mcp-guide.md](mcp-guide.md) | Using the platform as an AI agent via MCP |
 | [colab-workflow.md](colab-workflow.md) | Training a tiny model on Google Colab's CPU instead of this machine — export a data snapshot, generate a notebook, run/watch it, register the result |
 | [research-agent-service.md](research-agent-service.md) | Design for a separate autonomous research-agent service consuming AlgoForge's MCP server |
+| [research-seed-five-axes-of-scaling.md](research-seed-five-axes-of-scaling.md) | Real seed data for the Research Agent Service — a completed investigation + 7 follow-up research questions, extracted from an existing report |
+| [research-review-five-axes-of-scaling.md](research-review-five-axes-of-scaling.md) | Worked example of the AI-review feature (§7.1) — 6 rated findings against the same report, 2 promoted to new research questions |
 | [requirements.md](requirements.md) | Backlog of concrete gaps found in AlgoForge while designing external autonomous MCP consumers |
+| [jev-replication.md](jev-replication.md) | Can TypeSafe's "Jev" typed-decision model be functionally reproduced with known architectures? Phase 0's fixed public spec + Phase 1 (BERT + typed heads) primitives built, not yet run as a study_manager investigation |
 
 ## Quick Start
 

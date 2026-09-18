@@ -18,6 +18,12 @@ Supported architectures:
     "rl_agent"             → raises ValueError (handled by ml_worker, Python 3.8)
     "ar" / "ma" / "arma"   → raises ValueError — not torch.nn.Module; fit via statsmodels in
                              celery_worker.py's _run_arima_training, see model/trainers/arima_trainer.py
+    "jev_bert_v1"          → raises ValueError — a text/typed-decision model (docs/jev-replication.md
+                             Phase 1), built via model_core.architectures.jev_bert.JevBertModel
+                             directly from celery_worker.py's _run_typed_decision_training instead
+                             of through this factory; see model_core/trainers/typed_decision.py's
+                             module docstring for why (nothing here — obs_len/pred_len/feature_cols,
+                             a single continuous-input tensor, one criterion — applies to it)
 """
 
 from __future__ import annotations
@@ -173,6 +179,13 @@ TRAINING_DEFAULTS: dict[str, dict] = {
     "ar":   {"pred_len": 10, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "ma":   {"pred_len": 10, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
     "arma": {"pred_len": 10, "val_split": 0.2, "feature_cols": ["close"], "normalize": "returns"},
+    # No obs_len/pred_len/feature_cols/normalize -- see model_core/trainers/typed_decision.py.
+    # max_length is the tokenized-sequence cap (state gets truncated to fit; see
+    # TypedDecisionDataset._encode), not a financial window length.
+    "jev_bert_v1": {
+        "pretrained_name": "bert-base-uncased", "max_length": 512,
+        "epochs": 10, "batch_size": 16, "lr": 2e-5, "val_split": 0.2, "split_seed": 42,
+    },
 }
 
 
@@ -201,6 +214,12 @@ def build_model(architecture: str, config: dict, device: str = _DEVICE) -> torch
         return PairLagModel(**merged, device=device)
     elif arch == "rl_agent":
         raise ValueError("rl_agent training must be submitted to ml_worker (Python 3.8 container)")
+    elif arch == "jev_bert_v1":
+        raise ValueError(
+            f"{arch!r} is built directly by celery_worker.py's _run_typed_decision_training via "
+            "model_core.architectures.jev_bert.JevBertModel, not build_model() — see that "
+            "module's docstring"
+        )
     elif arch in ("ar", "ma", "arma"):
         raise ValueError(
             f"{arch!r} is fit via statsmodels, not build_model() — see "

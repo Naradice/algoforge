@@ -418,6 +418,9 @@ def _run_collector(datasource_type: str, datasource_id: int, config: dict, incre
     elif datasource_type == "synthetic_function":
         from data.collectors.synthetic_function import collect
         return collect(datasource_id, config)
+    elif datasource_type == "llm_typed_decisions":
+        from data.collectors.llm_typed_decisions import collect
+        return collect(datasource_id, config)
     else:
         raise ValueError(f"Unknown datasource type: {datasource_type!r}")
 
@@ -713,6 +716,149 @@ async def _run_arima_training(factory, training_run_id: int, model_id: int, arch
     return {"best_epoch": 1, "val_loss": metrics["mse"], "artifact_path": str(artifact_path.relative_to(store))}
 
 
+async def _run_typed_decision_training(factory, training_run_id: int, model_id: int, architecture: str,
+                                        model_config: dict, hp: dict, dataset_artifact: str, store: Path) -> dict:
+    """Model A (docs/jev-replication.md Phase 1): BERT + typed heads over a fixed question set.
+    Called inline from _train_model's try/finally, same as _run_arima_training, so the outer
+    engine.dispose()/_release_lock still covers this path. Deliberately a separate, much simpler
+    loop than _train_model's own (no scheduler/warmup/early-stop/optimizer-choice machinery) --
+    matching _run_arima_training's precedent of not reusing that complexity for a fundamentally
+    different training shape, rather than threading OHLC-specific options through code that
+    doesn't use them.
+
+    Unlike every other architecture, writes a ModelValidation row itself at the end (normally a
+    separate human/MCP-triggered step via model/router.py's create_validation_job +
+    celery_worker.validate_model) -- calibration (ECE/Brier per question) is this investigation's
+    core question (docs/jev-replication.md), not an optional afterthought, so it's computed
+    unconditionally as part of what "training completed" means here.
+    """
+    import random
+
+    import torch
+    from sqlalchemy import update
+    from transformers import AutoTokenizer
+
+    from model.models import MLModel, ModelValidation, TrainingRun, TrainingRunMetric
+    from model_core.architectures.jev_bert import JevBertModel
+    from model_core.trainers.typed_decision import (
+        collate_typed_decisions, compute_calibration_metrics, compute_losses, TypedDecisionDataset,
+    )
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    try:
+        seed = hp.get("seed")
+        if seed is not None:
+            torch.manual_seed(int(seed))
+            random.seed(int(seed))
+
+        pretrained_name = hp.get("pretrained_name", "bert-base-uncased")
+        tokenizer = AutoTokenizer.from_pretrained(pretrained_name)
+        dataset = TypedDecisionDataset(
+            store / dataset_artifact, tokenizer,
+            max_length=hp.get("max_length", 512),
+            val_split=hp.get("val_split", 0.2),
+            split_seed=hp.get("split_seed", 42),
+        )
+        model = JevBertModel(
+            question_specs=dataset.model_question_specs, pretrained_name=pretrained_name,
+            vocab_size=dataset.vocab_size, device=device,
+        )
+    except Exception as e:
+        async with factory() as db:
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                status="error", ended_at=datetime.now(timezone.utc)
+            ))
+            await dispatch(db, "training.error", {
+                "training_run_id": training_run_id, "model_id": model_id, "error": str(e),
+            })
+            await db.commit()
+        return {"error": str(e)}
+
+    async with factory() as db:
+        await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+            num_params=model.num_params
+        ))
+        await db.commit()
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=hp.get("lr", 2e-5))
+    batch_size = int(hp.get("batch_size", 16))
+    epochs = int(hp.get("epochs", 10))
+    pad_id = tokenizer.pad_token_id
+
+    def _run_epoch(indices: list[int], train: bool) -> float:
+        model.train(train)
+        total_loss = 0.0
+        n_batches = 0
+        order = indices[:]
+        if train:
+            random.shuffle(order)
+        for start in range(0, len(order), batch_size):
+            batch_indices = order[start : start + batch_size]
+            batch = [dataset[i] for i in batch_indices]
+            input_ids, attention_mask, q_positions, targets = collate_typed_decisions(batch, pad_id, device)
+            with torch.set_grad_enabled(train):
+                outputs = model(input_ids, attention_mask, q_positions)
+                loss, _per_question = compute_losses(outputs, targets, dataset.question_specs, device)
+            if train:
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            total_loss += loss.item()
+            n_batches += 1
+        return total_loss / max(n_batches, 1)
+
+    best_val_loss = float("inf")
+    best_epoch = 0
+    checkpoint_dir = store / "models" / str(model_id) / f"training_{training_run_id}"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    best_path = checkpoint_dir / "best.pt"
+
+    for epoch in range(1, epochs + 1):
+        train_loss = _run_epoch(dataset.train_indices, train=True)
+        val_loss = _run_epoch(dataset.val_indices, train=False) if dataset.val_indices else train_loss
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch
+            torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, best_path)
+
+        async with factory() as db:
+            db.add(TrainingRunMetric(training_run_id=training_run_id, epoch=epoch, train_loss=train_loss, val_loss=val_loss))
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                current_epoch=epoch, val_loss=val_loss, best_epoch=best_epoch,
+            ))
+            await db.commit()
+        logger.info(f"Training run {training_run_id} epoch {epoch}/{epochs}: train_loss={train_loss:.4f} val_loss={val_loss:.4f}")
+
+    # Calibration metrics (ECE/Brier per question) from the BEST checkpoint, not the last epoch's
+    # weights -- matching what artifact_path/best.pt below actually registers as this run's result.
+    best_state = torch.load(best_path, map_location=device)
+    model.load_state_dict(best_state["model_state"])
+    calibration_metrics = compute_calibration_metrics(model, dataset, dataset.val_indices, batch_size, device)
+
+    artifact_rel = str(best_path.relative_to(store))
+    async with factory() as db:
+        await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+            status="completed", ended_at=datetime.now(timezone.utc),
+            artifact_path=artifact_rel,
+        ))
+        await db.execute(update(MLModel).where(MLModel.id == model_id).values(status="trained"))
+        result = await db.execute(TrainingRun.__table__.select().where(TrainingRun.id == training_run_id))
+        run_row = result.fetchone()
+        db.add(ModelValidation(
+            model_id=model_id, training_run_id=training_run_id, dataset_id=run_row.dataset_id,
+            metrics={"calibration": calibration_metrics},
+        ))
+        await dispatch(db, "training.completed", {
+            "training_run_id": training_run_id, "model_id": model_id, "val_loss": best_val_loss, "best_epoch": best_epoch,
+        })
+        await db.commit()
+
+    logger.info(f"Training run {training_run_id} ({architecture}) completed. best_epoch={best_epoch} val_loss={best_val_loss:.6f} calibration={calibration_metrics}")
+    return {"best_epoch": best_epoch, "val_loss": best_val_loss, "artifact_path": artifact_rel, "calibration": calibration_metrics}
+
+
 async def _train_model(training_run_id: int) -> dict:
     import torch
     import numpy as np
@@ -748,6 +894,10 @@ async def _train_model(training_run_id: int) -> dict:
 
         if architecture in ARIMA_ARCHITECTURES:
             return await _run_arima_training(factory, training_run_id, model_id, architecture, model_config, hp, dataset_artifact, pd_rec, store)
+
+        from model_core.trainers.typed_decision import TYPED_DECISION_ARCHITECTURES
+        if architecture in TYPED_DECISION_ARCHITECTURES:
+            return await _run_typed_decision_training(factory, training_run_id, model_id, architecture, model_config, hp, dataset_artifact, store)
 
         try:
             # Opt-in only. Without it, weight init (and shuffle= ordering) comes from whatever

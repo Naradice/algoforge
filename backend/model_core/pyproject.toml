@@ -18,6 +18,12 @@ dependencies = [
 # imported, so not a dependency of the default (Colab-supported today) path.
 cluster = ["scikit-learn"]
 
+# Only needed for architectures/jev_bert.py + trainers/typed_decision.py (docs/jev-replication.md)
+# -- lazily imported there too. Not part of the Colab-supported path (that investigation runs on
+# algoforge's own GPU, not Colab CPU -- see docs/jev-replication.md), so kept optional rather than
+# adding transformers' weight to every Colab notebook's pip install regardless of architecture.
+jev = ["transformers"]
+
 # Installed as a standalone package (not import-path relative to backend/) via e.g.:
 #   pip install "git+https://github.com/Naradice/algoforge.git@<commit>#subdirectory=backend/model_core"
 # package-dir maps the "model_core" import name onto this directory itself, since this
