@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import random
+import time
 from pathlib import Path
 
 import torch
@@ -295,6 +296,54 @@ def compute_calibration_metrics(model, dataset: TypedDecisionDataset, indices: l
             entry["correlation"] = _correlation(confs, correct)
         result[qid] = entry
     return result
+
+
+@torch.no_grad()
+def measure_inference_latency(model, dataset: TypedDecisionDataset, indices: list[int],
+                               device: str, n_calls: int = 20, n_warmup: int = 3) -> dict:
+    """Phase 2 (docs/jev-replication.md): tests Jev's own "Speculative Fan-Out" claim --
+    "adding more questions to a call typically doesn't add any latency" -- against this
+    architecture, where the number of questions determines the input sequence length (one marker
+    token + instruction tokens per question) that self-attention runs over. Measures single-call
+    (batch_size=1) wall-clock latency, matching how Jev's own API is described (one state, N
+    questions, one call) -- a batched-throughput number would answer a different question. CUDA
+    calls are async, so `torch.cuda.synchronize()` brackets each timed call when applicable, not
+    just at the end. Returns per-call latency stats plus the actual sequence length used (which
+    grows with question count and is the mechanistic reason this can't stay flat for a
+    self-attention encoder), so cross-N comparisons can distinguish "latency grew" from "latency
+    grew because sequence length grew," which is the same fact but worth reporting explicitly.
+    """
+    model.eval()
+    sample_indices = (indices * ((n_calls + n_warmup) // max(len(indices), 1) + 1))[: n_calls + n_warmup]
+    durations_ms: list[float] = []
+    seq_lens: list[int] = []
+
+    for i, idx in enumerate(sample_indices):
+        batch = [dataset[idx]]
+        input_ids, attention_mask, q_positions, _ = collate_typed_decisions(
+            batch, dataset.tokenizer.pad_token_id, device
+        )
+        if device.startswith("cuda"):
+            torch.cuda.synchronize()
+        start = time.perf_counter()
+        model(input_ids, attention_mask, q_positions)
+        if device.startswith("cuda"):
+            torch.cuda.synchronize()
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        if i >= n_warmup:  # discard warmup calls (first-call overhead, cudnn autotune, etc.)
+            durations_ms.append(elapsed_ms)
+            seq_lens.append(input_ids.shape[1])
+
+    durations_ms.sort()
+    n = len(durations_ms)
+    return {
+        "n_calls": n,
+        "n_questions": len(dataset.question_ids),
+        "mean_seq_len": sum(seq_lens) / n if n else float("nan"),
+        "latency_ms_mean": sum(durations_ms) / n if n else float("nan"),
+        "latency_ms_median": durations_ms[n // 2] if n else float("nan"),
+        "latency_ms_p90": durations_ms[int(n * 0.9)] if n else float("nan"),
+    }
 
 
 def flatten_calibration_metrics(per_question: dict) -> dict:

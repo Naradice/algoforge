@@ -742,7 +742,7 @@ async def _run_typed_decision_training(factory, training_run_id: int, model_id: 
     from model_core.architectures.jev_bert import JevBertModel
     from model_core.trainers.typed_decision import (
         collate_typed_decisions, compute_calibration_metrics, compute_losses, flatten_calibration_metrics,
-        TypedDecisionDataset,
+        measure_inference_latency, TypedDecisionDataset,
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -843,6 +843,19 @@ async def _run_typed_decision_training(factory, training_run_id: int, model_id: 
     # could never match ModelValidation.metrics without this.
     flat_metrics = flatten_calibration_metrics(calibration_metrics)
 
+    # Phase 2 (docs/jev-replication.md): single-call inference latency, to test Jev's own
+    # "Speculative Fan-Out" claim (adding questions shouldn't add latency) against this
+    # architecture, where question count drives sequence length. Cheap (20 forward passes) and
+    # unconditional, like calibration above -- not gated behind a Phase flag, since it costs
+    # nothing to record even for Phase 1-shaped (N=3) datasets and gives a baseline to compare
+    # larger-N runs against later.
+    latency_metrics = measure_inference_latency(model, dataset, dataset.val_indices, device)
+    flat_metrics["latency_ms_mean"] = latency_metrics["latency_ms_mean"]
+    flat_metrics["latency_ms_median"] = latency_metrics["latency_ms_median"]
+    flat_metrics["latency_ms_p90"] = latency_metrics["latency_ms_p90"]
+    flat_metrics["n_questions"] = latency_metrics["n_questions"]
+    flat_metrics["mean_seq_len"] = latency_metrics["mean_seq_len"]
+
     artifact_rel = str(best_path.relative_to(store))
     async with factory() as db:
         await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
@@ -861,8 +874,11 @@ async def _run_typed_decision_training(factory, training_run_id: int, model_id: 
         })
         await db.commit()
 
-    logger.info(f"Training run {training_run_id} ({architecture}) completed. best_epoch={best_epoch} val_loss={best_val_loss:.6f} calibration={calibration_metrics}")
-    return {"best_epoch": best_epoch, "val_loss": best_val_loss, "artifact_path": artifact_rel, "calibration": calibration_metrics}
+    logger.info(f"Training run {training_run_id} ({architecture}) completed. best_epoch={best_epoch} val_loss={best_val_loss:.6f} calibration={calibration_metrics} latency={latency_metrics}")
+    return {
+        "best_epoch": best_epoch, "val_loss": best_val_loss, "artifact_path": artifact_rel,
+        "calibration": calibration_metrics, "latency": latency_metrics,
+    }
 
 
 async def _train_model(training_run_id: int) -> dict:

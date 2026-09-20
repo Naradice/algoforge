@@ -167,6 +167,56 @@ ever be evaluated against how well it reproduces the *labeling LLM's* typed deci
 real ceiling on this investigation's external validity, not a bug in the collector (see that
 module's own docstring).
 
+## Phase 2 — scaling question count N: accuracy/calibration vs. the Speculative Fan-Out latency claim
+
+Phase 0 flagged two concrete, falsifiable things this phase tests, both bounded by properties
+Jev's own docs state rather than anything about this stand-in architecture: the shared ~32K-token
+state+questions budget, and the "Speculative Fan-Out" claim that "adding more questions to a call
+typically doesn't add any latency to the response."
+
+**What's built (still Phase 1's fixed-question-set contract -- not Phase 3/4's dynamic
+per-example questions):**
+- `data/collectors/llm_typed_decisions.py`: `QUESTION_POOL` grew from 3 to 9 fixed question
+  definitions (added `sentiment` [choice], `contains_pii` [noul], `requires_escalation` [noul],
+  `satisfaction_risk` [score], `clarity` [score], `response_channel` [choice] -- all still judging
+  the same `ticket_message` state field, still one gold label per question from the same labeling
+  LLM call). A datasource's `config.question_ids` selects any subset/order from the pool; omitting
+  it keeps the original Phase 1 three (`_DEFAULT_QUESTION_IDS`) for exact backward compatibility
+  with existing datasets/briefs. `_build_system_prompt`/`_to_record` generalized from
+  hardcoded-3-question logic to iterate whatever question set was configured.
+- `model_core/trainers/typed_decision.py`: `measure_inference_latency` -- single-call
+  (batch_size=1, matching how Jev's own API is described: one state, N questions, one call)
+  wall-clock latency over the val split, mean/median/p90 plus the actual tokenized sequence length
+  used (grows with N -- the mechanistic reason a self-attention encoder's cost can't stay flat in
+  N the way Jev's docs claim for whatever Jev's own architecture is). `celery_worker.py`'s
+  `_run_typed_decision_training` now runs this unconditionally after training (cheap: 20 forward
+  passes) and folds `latency_ms_mean/median/p90`, `n_questions`, `mean_seq_len` into the same
+  flattened `ModelValidation.metrics` dict calibration already writes -- no new MCP tool or
+  ModelValidation shape needed, `get_model_validations`/`compare_model_runs` already surface it.
+- Two new datasources created directly (same as Phase 1's own dataset, which also predates any
+  Agent Loop `collect` call -- `collect` can only run collection *for an existing datasource*, not
+  create one; see `docs/requirements.md` R-11, still open) for a 3-point N sweep against the
+  original Phase 1 dataset (id 39, N=3): id 40 (N=6) and id 41 (N=9, the full current pool) --
+  `n_examples=200`/`seed=42` held identical to id 39 otherwise, so N is the only thing varying
+  between the three datasets.
+
+**Why N=3/6/9 and not sweeping to the 32K-token shared budget:** plain `bert-base-uncased`'s own
+512-token limit is reached almost two orders of magnitude before Jev's declared budget -- with 9
+short fixed questions (marker token + a one-sentence instruction each), the questions alone
+already use a meaningful fraction of that 512, and going further would start truncating the STATE
+(this dataset's actual ticket text), confounding "more questions" with "less state visible per
+question," a different experiment. **This is itself a Phase 0-relevant finding, not just a
+practical constraint**: it means Phase 2's sweep is bounded by *this stand-in architecture's own*
+context limit, well inside Jev's claimed envelope -- reaching Jev's actual declared budget with a
+comparable question density is Phase 4's job (long-context encoder swap-in), not something Phase 2
+can respect with plain BERT no matter how the sweep is designed.
+
+**Study_manager's role:** as with Phase 1, `collect`'s inability to create a new datasource (R-11)
+means the two new datasets above were created directly rather than via an Agent Loop `collect`
+decision -- what study_manager's Agent Loop actually drives autonomously here is the same
+`train` → Wait → Evaluate cycle as Phase 1, once per dataset/N, reading calibration AND the new
+latency metrics back via `get_model_validations` exactly like it already reads calibration.
+
 ## Status
 
 - Phase 0: done (spec above).

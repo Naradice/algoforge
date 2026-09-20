@@ -17,6 +17,11 @@ Datasource config shape (stored in datasources.config):
         "llm_model": "gpt-4o-mini",
         "seed": 42,               # only affects which scenario prompts are sampled, not the LLM's
                                    # own sampling (temperature is fixed below, not exposed here)
+        "question_ids": [...],    # optional -- subset/order of QUESTION_POOL keys to use as this
+                                   # dataset's fixed question set (Phase 2 -- see
+                                   # docs/jev-replication.md). Defaults to the original Phase 1
+                                   # three (refund_requested/urgency/category) for backward
+                                   # compatibility with existing datasets/briefs.
     }
 
 Fixed question set (Phase 1 -- see docs/jev-replication.md; "dynamic questions" is Phase 3/4, not
@@ -25,6 +30,14 @@ ticket triage) as closely as possible, one question per primitive type:
     - refund_requested (noul):  does the ticket ask for a refund?
     - urgency (score):          low < medium < high < critical
     - category (choice):        billing | shipping | technical | other
+
+Phase 2 (docs/jev-replication.md) scales the QUESTION COUNT (not per-example dynamic content --
+that's still Phase 3/4) to test whether accuracy/calibration holds and whether inference latency
+stays flat as N grows, per Jev's own "Speculative Fan-Out" claim. QUESTION_POOL below adds five
+more fixed questions (still all about the same `ticket_message` state field, still one gold label
+each from the same labeling LLM call) so a datasource's `question_ids` config can select any
+subset -- e.g. the original 3, or all 8 -- while still satisfying TypedDecisionDataset's
+fixed-question-set-per-dataset invariant.
 
 Output: one JSON object per line (JSONL), each shaped exactly like a TypeSafe request+response
 pair -- "questions" keyed by id with type/instructions/criteria, "answers" keyed by the same ids
@@ -50,10 +63,12 @@ logger = logging.getLogger("llm_typed_decisions_collector")
 
 ARTIFACT_STORE = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
 
-# Fixed for Phase 1 -- see module docstring. "criteria" here is exactly what a real TypeSafe
-# question's "criteria" field would hold (an ordered list for Score, a description map for
-# Choice), so QUESTIONS below can be embedded verbatim into every generated example.
-QUESTIONS: dict[str, dict] = {
+# The full Phase 2 pool. "criteria" here is exactly what a real TypeSafe question's "criteria"
+# field would hold (an ordered list for Score, a description map for Choice), so any subset of
+# this pool can be embedded verbatim into every generated example. _DEFAULT_QUESTION_IDS (the
+# original Phase 1 three) preserves exact behavior/schema for existing datasets that don't pass
+# "question_ids" in their config.
+QUESTION_POOL: dict[str, dict] = {
     "refund_requested": {
         "type": "noul",
         "instructions": "Does `ticket_message` request a refund?",
@@ -73,7 +88,51 @@ QUESTIONS: dict[str, dict] = {
             "other": "Anything not covered by the above",
         },
     },
+    "sentiment": {
+        "type": "choice",
+        "instructions": "What is the customer's tone in `ticket_message`?",
+        "criteria": {
+            "positive": "Complimentary, grateful, or upbeat",
+            "neutral": "Matter-of-fact, no strong emotion",
+            "negative": "Frustrated, angry, or upset",
+        },
+    },
+    "contains_pii": {
+        "type": "noul",
+        "instructions": "Does `ticket_message` include personal information (e.g. full name, "
+        "address, account/card number, phone number)?",
+    },
+    "requires_escalation": {
+        "type": "noul",
+        "instructions": "Does `ticket_message` describe something that needs a human manager, "
+        "not just a front-line support agent (e.g. threat to cancel, legal/safety concern, "
+        "repeated unresolved issue)?",
+    },
+    "satisfaction_risk": {
+        "type": "score",
+        "instructions": "How likely is this customer to leave a negative review or churn, based "
+        "on `ticket_message`?",
+        "criteria": ["low", "medium", "high", "severe"],
+    },
+    "clarity": {
+        "type": "score",
+        "instructions": "How clearly does `ticket_message` explain the actual problem?",
+        "criteria": ["very unclear", "somewhat unclear", "mostly clear", "very clear"],
+    },
+    "response_channel": {
+        "type": "choice",
+        "instructions": "What is the best channel to respond to `ticket_message` on?",
+        "criteria": {
+            "email": "A detailed written response is appropriate",
+            "phone": "This needs a real-time conversation",
+            "in_app": "A quick in-app notification or reply is enough",
+        },
+    },
 }
+_DEFAULT_QUESTION_IDS = ["refund_requested", "urgency", "category"]
+
+# Backward-compat alias -- existing call sites/imports (e.g. tests) referencing the Phase 1 name.
+QUESTIONS = {qid: QUESTION_POOL[qid] for qid in _DEFAULT_QUESTION_IDS}
 
 # Sampled (not exhaustive) per generation batch purely to nudge the labeling LLM toward a mix of
 # scenarios instead of drifting into one repeated pattern across a large n_examples -- the LLM
@@ -96,23 +155,36 @@ _SCENARIO_HINTS = [
     "a report of unauthorized account access",
 ]
 
-_SYSTEM_PROMPT = """You generate synthetic customer-support tickets and their gold-standard \
-triage labels, for training a small model to reproduce typed-decision judgments. For each \
-scenario hint given, invent a short, realistic customer support message (2-5 sentences, \
-first-person from the customer) and label it accurately and consistently according to these \
-three questions:
+def _build_system_prompt(questions: dict[str, dict]) -> str:
+    """Builds the labeling-LLM system prompt for whatever subset of QUESTION_POOL a datasource's
+    config selects (Phase 2 -- see module docstring). Phase 1's fixed 3-question prompt is just
+    this function's output for _DEFAULT_QUESTION_IDS; kept generic rather than special-cased so
+    the same code path handles N=3 and N=8 (or any other subset)."""
+    lines = []
+    for qid, q in questions.items():
+        if q["type"] == "noul":
+            lines.append(f"- {qid}: true/false -- {q['instructions']}")
+        elif q["type"] == "choice":
+            options = ", ".join(f'"{k}" ({v})' for k, v in q["criteria"].items())
+            lines.append(f"- {qid}: exactly one of {options} -- {q['instructions']}")
+        elif q["type"] == "score":
+            levels = ", ".join(f'"{lvl}"' for lvl in q["criteria"])
+            lines.append(f"- {qid}: exactly one of {levels} (ordered low to high) -- {q['instructions']}")
+        else:
+            raise ValueError(f"unknown question type {q['type']!r} for question {qid!r}")
+    question_block = "\n".join(lines)
+    example_fields = ", ".join(f'"{qid}": ...' for qid in questions)
+    return f"""You generate synthetic customer-support tickets and their gold-standard triage \
+labels, for training a small model to reproduce typed-decision judgments. For each scenario hint \
+given, invent a short, realistic customer support message (2-5 sentences, first-person from the \
+customer) and label it accurately and consistently according to these questions:
 
-- refund_requested: true if the message is asking for a refund (explicitly or clearly implied), \
-false otherwise.
-- urgency: exactly one of "low", "medium", "high", "critical" -- how urgently this ticket needs a \
-human response.
-- category: exactly one of "billing", "shipping", "technical", "other".
+{question_block}
 
 Vary tone, length, and phrasing across examples. Some tickets should be ambiguous or borderline \
-(e.g. urgency between two levels, or a category that could plausibly be two things) -- do not \
-make every example a clear-cut case, real support tickets aren't. Respond with a JSON object: \
-{"examples": [{"ticket_message": str, "refund_requested": bool, "urgency": str, "category": str}, ...]} \
-with exactly as many entries as scenario hints given, in the same order."""
+-- do not make every example a clear-cut case, real support tickets aren't. Respond with a JSON \
+object: {{"examples": [{{"ticket_message": str, {example_fields}}}, ...]}} with exactly as many \
+entries as scenario hints given, in the same order."""
 
 
 @dataclass
@@ -123,12 +195,12 @@ class CollectResult:
     to_ts: datetime
 
 
-def _generate_batch(client, model: str, hints: list[str]) -> list[dict]:
+def _generate_batch(client, model: str, hints: list[str], system_prompt: str) -> list[dict]:
     from google.genai import types
 
     user_prompt = "Scenario hints:\n" + "\n".join(f"{i+1}. {h}" for i, h in enumerate(hints))
     config = types.GenerateContentConfig(
-        system_instruction=_SYSTEM_PROMPT,
+        system_instruction=system_prompt,
         response_mime_type="application/json",
         temperature=1.0,
     )
@@ -144,27 +216,28 @@ def _generate_batch(client, model: str, hints: list[str]) -> list[dict]:
     return examples
 
 
-def _to_record(raw: dict) -> dict:
-    """Converts one LLM-generated {ticket_message, refund_requested, urgency, category} object
-    into the TypeSafe-shaped training record (state + questions + answers) described in this
-    module's docstring. Raises KeyError/ValueError on a malformed LLM output rather than silently
-    substituting a default -- a bad label should fail loudly during collection, not get baked
-    into the dataset as if it were valid."""
+def _to_record(raw: dict, questions: dict[str, dict]) -> dict:
+    """Converts one LLM-generated {ticket_message, <qid>: ..., ...} object into the TypeSafe-shaped
+    training record (state + questions + answers) described in this module's docstring, for
+    whatever *questions* subset the datasource was configured with (Phase 2). Raises
+    KeyError/ValueError on a malformed LLM output rather than silently substituting a default -- a
+    bad label should fail loudly during collection, not get baked into the dataset as if it were
+    valid."""
     ticket_message = raw["ticket_message"]
-    urgency = raw["urgency"]
-    category = raw["category"]
-    if urgency not in QUESTIONS["urgency"]["criteria"]:
-        raise ValueError(f"LLM produced unknown urgency level {urgency!r}")
-    if category not in QUESTIONS["category"]["criteria"]:
-        raise ValueError(f"LLM produced unknown category {category!r}")
+    answers = {}
+    for qid, q in questions.items():
+        value = raw[qid]
+        if q["type"] == "noul":
+            answers[qid] = {"noul": bool(value)}
+        else:
+            valid = q["criteria"].keys() if q["type"] == "choice" else q["criteria"]
+            if value not in valid:
+                raise ValueError(f"LLM produced unknown {qid} value {value!r}")
+            answers[qid] = {"choice": value}
     return {
         "state": {"ticket_message": ticket_message},
-        "questions": QUESTIONS,
-        "answers": {
-            "refund_requested": {"noul": bool(raw["refund_requested"])},
-            "urgency": {"choice": urgency},
-            "category": {"choice": category},
-        },
+        "questions": questions,
+        "answers": answers,
     }
 
 
@@ -180,11 +253,19 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     # default to the retired name and will fail the same way until updated separately.
     llm_model = config.get("llm_model", os.getenv("LLM_MODEL", "gemini-3.6-flash"))
     seed = int(config.get("seed", 42))
+    question_ids = config.get("question_ids", _DEFAULT_QUESTION_IDS)
 
     if n_examples < 1:
         raise ValueError("n_examples must be at least 1")
     if batch_size < 1:
         raise ValueError("batch_size must be at least 1")
+    if not question_ids:
+        raise ValueError("question_ids must not be empty")
+    unknown = [qid for qid in question_ids if qid not in QUESTION_POOL]
+    if unknown:
+        raise ValueError(f"unknown question_ids {unknown} -- must be a subset of {list(QUESTION_POOL)}")
+    questions = {qid: QUESTION_POOL[qid] for qid in question_ids}
+    system_prompt = _build_system_prompt(questions)
 
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -203,10 +284,10 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
         while remaining > 0:
             this_batch = min(batch_size, remaining)
             hints = [rng.choice(_SCENARIO_HINTS) for _ in range(this_batch)]
-            raw_examples = _generate_batch(client, llm_model, hints)
+            raw_examples = _generate_batch(client, llm_model, hints, system_prompt)
             for raw in raw_examples:
                 try:
-                    record = _to_record(raw)
+                    record = _to_record(raw, questions)
                 except (KeyError, ValueError) as exc:
                     logger.warning(f"skipping malformed generated example: {exc}")
                     continue
