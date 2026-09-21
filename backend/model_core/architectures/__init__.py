@@ -24,6 +24,13 @@ Supported architectures:
                              of through this factory; see model_core/trainers/typed_decision.py's
                              module docstring for why (nothing here — obs_len/pred_len/feature_cols,
                              a single continuous-input tensor, one criterion — applies to it)
+    "jev_cross_attn_v1"    → raises ValueError — Model B (docs/jev-replication.md Phase 2 follow-up):
+                             state-encoder + per-question cross-attention, an alternative to
+                             jev_bert_v1 testing whether decoupling state encoding from question
+                             evaluation gets closer to Jev's flat-latency-in-N claim; built via
+                             model_core.architectures.jev_cross_attn.JevCrossAttnModel directly
+                             from celery_worker.py's _run_cross_attn_training, same reasoning as
+                             jev_bert_v1 above
 """
 
 from __future__ import annotations
@@ -186,6 +193,13 @@ TRAINING_DEFAULTS: dict[str, dict] = {
         "pretrained_name": "bert-base-uncased", "max_length": 512,
         "epochs": 10, "batch_size": 16, "lr": 2e-5, "val_split": 0.2, "split_seed": 42,
     },
+    # max_state_length (not max_length) -- only the state gets tokenized/truncated here; each
+    # question is its own short, separate sequence (see cross_attn_typed_decision.py). num_heads
+    # is the shared cross-attention layer's head count, not present on jev_bert_v1 at all.
+    "jev_cross_attn_v1": {
+        "pretrained_name": "bert-base-uncased", "max_state_length": 512, "num_heads": 8,
+        "epochs": 10, "batch_size": 16, "lr": 2e-5, "val_split": 0.2, "split_seed": 42,
+    },
 }
 
 
@@ -219,6 +233,12 @@ def build_model(architecture: str, config: dict, device: str = _DEVICE) -> torch
             f"{arch!r} is built directly by celery_worker.py's _run_typed_decision_training via "
             "model_core.architectures.jev_bert.JevBertModel, not build_model() — see that "
             "module's docstring"
+        )
+    elif arch == "jev_cross_attn_v1":
+        raise ValueError(
+            f"{arch!r} is built directly by celery_worker.py's _run_cross_attn_training via "
+            "model_core.architectures.jev_cross_attn.JevCrossAttnModel, not build_model() — see "
+            "that module's docstring"
         )
     elif arch in ("ar", "ma", "arma"):
         raise ValueError(

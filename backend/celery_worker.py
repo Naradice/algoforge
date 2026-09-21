@@ -881,6 +881,153 @@ async def _run_typed_decision_training(factory, training_run_id: int, model_id: 
     }
 
 
+async def _run_cross_attn_training(factory, training_run_id: int, model_id: int, architecture: str,
+                                    model_config: dict, hp: dict, dataset_artifact: str, store: Path) -> dict:
+    """Model B (docs/jev-replication.md Phase 2 follow-up): state-encoder + per-question
+    cross-attention, instead of Model A's (_run_typed_decision_training) single concatenated
+    sequence -- see model_core/architectures/jev_cross_attn.py's module docstring for the design
+    and why it exists. Structurally mirrors _run_typed_decision_training (plain AdamW loop, no
+    scheduler; writes a ModelValidation row itself at the end since calibration+latency ARE this
+    investigation's question, not an optional afterthought) -- kept as its own function rather
+    than parameterizing _run_typed_decision_training, since the two architectures' dataset/
+    collate/forward shapes are genuinely different (see cross_attn_typed_decision.py's module
+    docstring on what's reused vs. reimplemented).
+    """
+    import random
+
+    import torch
+    from sqlalchemy import update
+    from transformers import AutoTokenizer
+
+    from model.models import MLModel, ModelValidation, TrainingRun, TrainingRunMetric
+    from model_core.architectures.jev_cross_attn import JevCrossAttnModel
+    from model_core.trainers.cross_attn_typed_decision import (
+        collate_cross_attn, compute_calibration_metrics, compute_losses, compute_question_embeddings,
+        CrossAttnTypedDecisionDataset, flatten_cross_attn_metrics, measure_cross_attn_latency,
+    )
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    try:
+        seed = hp.get("seed")
+        if seed is not None:
+            torch.manual_seed(int(seed))
+            random.seed(int(seed))
+
+        pretrained_name = hp.get("pretrained_name", "bert-base-uncased")
+        tokenizer = AutoTokenizer.from_pretrained(pretrained_name)
+        dataset = CrossAttnTypedDecisionDataset(
+            store / dataset_artifact, tokenizer,
+            max_state_length=hp.get("max_state_length", 512),
+            val_split=hp.get("val_split", 0.2),
+            split_seed=hp.get("split_seed", 42),
+        )
+        model = JevCrossAttnModel(
+            question_specs=dataset.model_question_specs, pretrained_name=pretrained_name,
+            num_heads=hp.get("num_heads", 8), device=device,
+        )
+        # Computed once, outside the epoch loop -- reused by every epoch/batch (see
+        # compute_question_embeddings' own docstring for why this is the point, not an
+        # optimization incidental to it).
+        question_embeds = compute_question_embeddings(model, tokenizer, dataset.question_instructions, device)
+    except Exception as e:
+        async with factory() as db:
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                status="error", ended_at=datetime.now(timezone.utc)
+            ))
+            await dispatch(db, "training.error", {
+                "training_run_id": training_run_id, "model_id": model_id, "error": str(e),
+            })
+            await db.commit()
+        return {"error": str(e)}
+
+    async with factory() as db:
+        await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+            num_params=model.num_params
+        ))
+        await db.commit()
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=hp.get("lr", 2e-5))
+    batch_size = int(hp.get("batch_size", 16))
+    epochs = int(hp.get("epochs", 10))
+    pad_id = tokenizer.pad_token_id
+
+    def _run_epoch(indices: list[int], train: bool) -> float:
+        model.train(train)
+        total_loss = 0.0
+        n_batches = 0
+        order = indices[:]
+        if train:
+            random.shuffle(order)
+        for start in range(0, len(order), batch_size):
+            batch_indices = order[start: start + batch_size]
+            batch = [dataset[i] for i in batch_indices]
+            state_input_ids, state_attention_mask, targets = collate_cross_attn(batch, pad_id, device)
+            with torch.set_grad_enabled(train):
+                outputs = model(state_input_ids, state_attention_mask, question_embeds)
+                loss, _per_question = compute_losses(outputs, targets, dataset.question_specs, device)
+            if train:
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            total_loss += loss.item()
+            n_batches += 1
+        return total_loss / max(n_batches, 1)
+
+    best_val_loss = float("inf")
+    best_epoch = 0
+    checkpoint_dir = store / "models" / str(model_id) / f"training_{training_run_id}"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    best_path = checkpoint_dir / "best.pt"
+
+    for epoch in range(1, epochs + 1):
+        train_loss = _run_epoch(dataset.train_indices, train=True)
+        val_loss = _run_epoch(dataset.val_indices, train=False) if dataset.val_indices else train_loss
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch
+            torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_loss": val_loss}, best_path)
+
+        async with factory() as db:
+            db.add(TrainingRunMetric(training_run_id=training_run_id, epoch=epoch, train_loss=train_loss, val_loss=val_loss))
+            await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+                current_epoch=epoch, val_loss=val_loss, best_epoch=best_epoch,
+            ))
+            await db.commit()
+        logger.info(f"Training run {training_run_id} epoch {epoch}/{epochs}: train_loss={train_loss:.4f} val_loss={val_loss:.4f}")
+
+    best_state = torch.load(best_path, map_location=device)
+    model.load_state_dict(best_state["model_state"])
+    calibration_metrics = compute_calibration_metrics(model, dataset, question_embeds, dataset.val_indices, batch_size, device)
+    latency_metrics = measure_cross_attn_latency(model, dataset, question_embeds, dataset.val_indices, device)
+    flat_metrics = flatten_cross_attn_metrics(calibration_metrics, latency_metrics)
+
+    artifact_rel = str(best_path.relative_to(store))
+    async with factory() as db:
+        await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+            status="completed", ended_at=datetime.now(timezone.utc),
+            artifact_path=artifact_rel,
+        ))
+        await db.execute(update(MLModel).where(MLModel.id == model_id).values(status="trained"))
+        result = await db.execute(TrainingRun.__table__.select().where(TrainingRun.id == training_run_id))
+        run_row = result.fetchone()
+        db.add(ModelValidation(
+            model_id=model_id, training_run_id=training_run_id, dataset_id=run_row.dataset_id,
+            metrics=flat_metrics,
+        ))
+        await dispatch(db, "training.completed", {
+            "training_run_id": training_run_id, "model_id": model_id, "val_loss": best_val_loss, "best_epoch": best_epoch,
+        })
+        await db.commit()
+
+    logger.info(f"Training run {training_run_id} ({architecture}) completed. best_epoch={best_epoch} val_loss={best_val_loss:.6f} calibration={calibration_metrics} latency={latency_metrics}")
+    return {
+        "best_epoch": best_epoch, "val_loss": best_val_loss, "artifact_path": artifact_rel,
+        "calibration": calibration_metrics, "latency": latency_metrics,
+    }
+
+
 async def _train_model(training_run_id: int) -> dict:
     import torch
     import numpy as np
@@ -920,6 +1067,10 @@ async def _train_model(training_run_id: int) -> dict:
         from model_core.trainers.typed_decision import TYPED_DECISION_ARCHITECTURES
         if architecture in TYPED_DECISION_ARCHITECTURES:
             return await _run_typed_decision_training(factory, training_run_id, model_id, architecture, model_config, hp, dataset_artifact, store)
+
+        from model_core.trainers.cross_attn_typed_decision import CROSS_ATTN_ARCHITECTURES
+        if architecture in CROSS_ATTN_ARCHITECTURES:
+            return await _run_cross_attn_training(factory, training_run_id, model_id, architecture, model_config, hp, dataset_artifact, store)
 
         try:
             # Opt-in only. Without it, weight init (and shuffle= ordering) comes from whatever

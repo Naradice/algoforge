@@ -13,6 +13,10 @@ from .typed_decision import (
     TYPED_DECISION_ARCHITECTURES, TypedDecisionDataset, collate_typed_decisions,
     compute_losses, score_from_logits, compute_calibration_metrics, flatten_calibration_metrics,
 )
+from .cross_attn_typed_decision import (
+    CROSS_ATTN_ARCHITECTURES, CrossAttnTypedDecisionDataset, collate_cross_attn,
+    compute_question_embeddings, flatten_cross_attn_metrics, measure_cross_attn_latency,
+)
 
 # Architectures whose train_epoch/eval_epoch compute their own internal loss (GAN's adversarial
 # loss inside gan_trainer, VAE's reconstruction+KL ELBO inside vae_trainer) and ignore/default
