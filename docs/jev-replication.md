@@ -262,4 +262,85 @@ latency metrics back via `get_model_validations` exactly like it already reads c
   a soft suggestion. Also fixed: the LLM invented a nonexistent `pretrained_name`
   ("JEV-BERT-base") for one attempt — the prompt now states this must be a real HuggingFace Hub
   id, defaulting to `bert-base-uncased`.
-- Phase 2 onward: not started.
+- **Phase 2: run via study_manager for N=3 and N=6; N=9 blocked by a real infrastructure limit,
+  not attempted further — see below.** Three datasets were prepared for a question-count sweep
+  (N=3: dataset 71/datasource 39 -- the original Phase 1 set; N=6: dataset 72/datasource 40; N=9:
+  dataset 73/datasource 41, the full `QUESTION_POOL`), each `n_examples=200`/`seed=42`, generated
+  the same day so LLM-labeling-model drift isn't a confound. Two independent study_manager
+  research questions (Agent Loop `train` decisions, hyperparameters chosen autonomously by
+  Decide, **not held constant across the two runs** -- a real limitation on the accuracy
+  comparison below, noted explicitly rather than glossed over) produced:
+
+  | N | model/run | hyperparams | mean_seq_len | latency_ms_mean | latency_ms_median | accuracy_category | accuracy_urgency | correlation_refund_requested | ece | brier_score |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | 3 | 157/1533 | lr=5e-5, epochs=3, batch=16 | 95.8 | **59.0** | 56.2 | 0.45 | 0.35 | 0.84 | 0.156 | 0.158 |
+  | 6 | 156/1527 | lr=1e-4, epochs=3, batch=32 | 181.6 | **137.5** | 136.6 | 0.225 | 0.4 | 0.254 | 0.089 | 0.189 |
+
+  **Latency result (Phase 0's "Speculative Fan-Out" test): latency roughly DOUBLED (59.0ms →
+  137.5ms, a 2.33x increase) when the question count doubled (3 → 6) and mean sequence length
+  roughly doubled (95.8 → 181.6 tokens).** This tracks sequence length, not question count
+  directly -- exactly what self-attention's cost profile predicts, and exactly the opposite of
+  Jev's own claim that "adding more questions to a call typically doesn't add any latency to the
+  response." **Two points is a thin basis for a scaling-law claim, but the direction is
+  unambiguous and mechanistically expected (not a fluke needing a third point to interpret) — a
+  plain BERT encoder cannot replicate this specific Jev property, regardless of what N=9 would
+  have shown.** This is a real, load-bearing finding for the overall investigation (Phase 0's own
+  framing: does *any* stand-in architecture deliver Jev's claimed flat latency, or does that
+  specifically require a non-self-attention design) — not a caveat to workaround.
+
+  **Accuracy/calibration**: no clean trend is claimable since lr/batch_size differed between the
+  two runs (N=6's run happened to use a less-tuned learning rate than Phase 1's own search found
+  best) -- both under- and over-shoot various thresholds in ways attributable to hyperparameters,
+  not question count. A controlled comparison (identical hyperparameters across N) is future work
+  if this question matters later; it wasn't this phase's primary target (the latency claim was).
+
+  **N=9: real crash root-caused, not a code bug in the end, but a system resource limit --
+  documented rather than papered over:**
+  1. First, a genuine bug WAS found and fixed: `JevBertModel`'s `resize_token_embeddings` call
+     (`model_core/architectures/jev_bert.py`) used this transformers version's default
+     `mean_resizing=True` (a covariance-based init for new embedding rows), which crashed this
+     environment outright (`Segmentation fault`, no Python exception) specifically when resizing
+     for 9 new marker tokens (3 and 6 both resized fine) -- fixed by passing
+     `mean_resizing=False`, confirmed via a minimal isolated repro before touching the real
+     training path. This is a real, permanent fix, live in the codebase regardless of the rest of
+     this story.
+  2. That fix alone did NOT resolve the actual production crash. Extensive isolation (a
+     `faulthandler`-instrumented repro, tried across: plain sync script, `asyncio.run()`,
+     `ThreadPoolExecutor`, `ProcessPoolExecutor`, a fully separate `subprocess.run()` child, both
+     Windows event loop policies) showed the segfault's crash *location* was different almost
+     every time (SDPA attention, eager attention, the GELU activation forward) -- the signature of
+     genuine memory corruption, not a specific buggy code path. Re-running the exact script that
+     had succeeded earlier in this same investigation later failed on its very first batch,
+     which ruled out a deterministic code bug entirely.
+  3. Actual root cause: `Get-CimInstance Win32_OperatingSystem` showed this machine's total
+     virtual memory commit (16GB RAM + 48GB pagefile = ~64GB) had only ~5GB of headroom left,
+     after ~24+ continuous hours of this investigation's own workers plus the unrelated concurrent
+     "Five Axes of Scaling" research's long-lived `--pool=solo` training workers (which never
+     restart between tasks, chaining one multi-hour run into the next via warm-start checkpoints,
+     accumulating memory over the whole session) sharing this one 16GB machine. N=3/N=6 succeeded
+     earlier in the session when more headroom existed; by the time N=9 (needing modestly more
+     memory for its longer sequences) was attempted, the system was too close to its commit limit
+     for a large new allocation to reliably succeed -- manifesting as an unpredictable access
+     violation wherever the next big allocation happened to land, not a fixed line of code.
+  4. Adding a second/third dedicated celery worker (done twice while chasing this) does not help
+     a system-wide memory shortage and was a wrong turn in hindsight -- correctly called out live
+     by the user ("専用ワーカーにしても、メモリがないのであればダメそうですね"). Killing the
+     worker actually holding the memory was ruled out because it was mid-task on the *other*
+     experiment's training run at the time -- doing so would have destroyed their in-progress
+     work, which this investigation's standing constraint (never disturb concurrent unrelated
+     research) rules out unilaterally.
+  5. **Decision (with the user, 2026-09-21): stop at N=3/N=6 rather than wait indefinitely for
+     memory to free up** -- the other experiment's queue was observed chaining tasks back-to-back
+     with no idle gap, so "wait for a natural opening" (the working strategy for the earlier
+     *queue*-contention issue in Phase 1) does not apply the same way to a *memory*-contention
+     issue. N=9 is not abandoned, just deferred to whenever this machine has real headroom again
+     (the other research concluding entirely, or running on different hardware) -- the two
+     datasets/database rows (72, 73) and the fixed `mean_resizing` code already exist, so re-running
+     N=9 later is a single study_manager research question away, not new engineering.
+
+  **Phase 2 conclusion**: the Speculative Fan-Out claim -- Jev's one concrete, falsifiable
+  performance property from Phase 0 -- does not hold for a plain BERT self-attention encoder.
+  Latency scales with sequence length as expected for that architecture family, not flat as
+  claimed for whatever Jev's own (undisclosed) architecture is. This is evidence *for* Phase 0's
+  original premise that Jev is not simply "BERT with more training," at least on this one
+  specific, testable property.

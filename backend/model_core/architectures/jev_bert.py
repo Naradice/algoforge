@@ -58,7 +58,15 @@ class JevBertModel(nn.Module):
         self.question_ids = list(question_specs.keys())
         self.encoder = AutoModel.from_pretrained(pretrained_name)
         if vocab_size is not None and vocab_size != self.encoder.config.vocab_size:
-            self.encoder.resize_token_embeddings(vocab_size)
+            # mean_resizing=False: the default (True) computes a covariance-based multivariate
+            # normal init over the *existing* embedding matrix for the new rows -- confirmed live
+            # (2026-09-21) to segfault this environment's transformers/torch build specifically at
+            # 9 new tokens (3 and 6 both resize fine), a hard native crash with no Python
+            # exception, killing the whole worker process mid-training with no error ever
+            # recorded. Not worth chasing further: the mean-covariance init is a minor quality
+            # nicety for the handful of new marker-token embeddings, not something this
+            # investigation depends on -- plain default (normal) init is a safe, boring fallback.
+            self.encoder.resize_token_embeddings(vocab_size, mean_resizing=False)
         hidden = self.encoder.config.hidden_size
         self.dropout = nn.Dropout(dropout)
         self.heads = nn.ModuleDict()
