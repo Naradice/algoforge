@@ -344,3 +344,67 @@ latency metrics back via `get_model_validations` exactly like it already reads c
   claimed for whatever Jev's own (undisclosed) architecture is. This is evidence *for* Phase 0's
   original premise that Jev is not simply "BERT with more training," at least on this one
   specific, testable property.
+
+## Phase 2 follow-up — Model B (state-encoder + per-question cross-attention)
+
+Prompted by the natural next question after Phase 2's finding: is the Speculative Fan-Out result
+specific to Model A's design (state + all N questions concatenated into one self-attention
+sequence, which structurally couples every question's cost to every other question's), or does
+*any* BERT-family stand-in fail this property? `model_core/architectures/jev_cross_attn.py`
+("Model B", `jev_cross_attn_v1`) tests the alternative directly: encode the state once, then
+evaluate each question as an independent cross-attention query against the cached state hidden
+states, batched across questions in one call (`forward_batched`) rather than looped. See that
+module's own docstring for the full design and why total compute still grows with N regardless
+(there's no free lunch) -- what changes is whether the *added* cost per extra question is a small
+independent cross-attention pass or a bigger share of a self-attention matrix every existing
+question was already paying into.
+
+Same controlled-comparison setup as Model A's N=3/N=6 sweep (datasets 71/72, same-day generation,
+though hyperparameters again weren't held identical between the two Model B runs either --
+noted for the same reason as Model A's comparison above):
+
+| N | model/run | hyperparams | state-only latency (mean/median) | full batched latency (mean/median) | accuracy_category | accuracy_urgency | correlation_refund_requested | ece | brier_score |
+|---|---|---|---|---|---|---|---|---|---|
+| 3 | 165/1556 | lr=1e-4, epochs=3, batch=32 | 74.5 / 72.1 ms | **81.2 / 81.4 ms** | 0.90 | 0.60 | 0.96 | 0.113 | 0.095 |
+| 6 | 169/1563 | lr=1e-4, epochs=3, batch=16 | 63.5 / 53.4 ms | **107.8 / 75.5 ms** | 1.00 | 0.65 | 0.97 | 0.094 | 0.082 |
+
+**Latency result: Model B's added cost per extra 3 questions is markedly smaller than Model A's.**
+Model A went 59.0ms → 137.5ms (+78.5ms, 2.33x) for N=3→6. Model B's *batched* latency went
+81.2ms → 107.8ms by mean (+26.6ms, 1.33x) -- roughly a third of Model A's added cost per question
+-- and by **median, 81.4ms → 75.5ms: flat to slightly down**, i.e. within this environment's own
+measurement noise (this machine was also running the unrelated concurrent "Five Axes of Scaling"
+experiment's own CPU-bound training throughout -- see this doc's earlier Status entries on shared-
+machine resource contention; the mean/median gap at N=6 specifically -- 107.8 vs 75.5 -- points to
+a handful of noisy outlier calls, not a real property of the architecture). State-only encoding
+cost (63.5-74.5ms, both N) is consistent with the design's core claim: it does not grow with N,
+only the (much cheaper) per-question cross-attention step does.
+
+**Accuracy/calibration**: also improved over Model A at both N (e.g. `accuracy_category` 0.9-1.0
+vs Model A's 0.225-0.45; `correlation_refund_requested` 0.96-0.97 vs 0.25-0.84) and did not
+degrade going N=3→6, unlike Model A's messier picture. Read with the same hyperparameter caveat as
+Model A's comparison (lr/epochs/batch_size weren't identical across the two runs) -- and
+additionally, Model B has no `[Q_<id>]` marker-token/shared-sequence mechanism to learn from, so
+its head only ever sees a state-conditioned pooled cross-attention vector, a materially different
+inductive bias from Model A's shared-self-attention design, not just a latency optimization of the
+same model. Whether Model B's stronger accuracy here reflects that different inductive bias
+suiting this task well, less noise from a smaller effective sequence per forward pass, or is
+itself a small-dataset artifact (same 200-example/single-labeling-LLM ceiling noted since Phase 1)
+is not disentangled by this comparison and shouldn't be over-read from two points per model.
+
+**Engineering note**: `forward_batched`'s initial implementation had a real (if small) bug, caught
+before it reached training -- mean-pooling averaged over the padded query positions used to batch
+different-length questions together, diluting shorter questions' pooled vector with padding-
+position attention output. Fixed with an explicit query-length mask (`q_len_mask` in
+`jev_cross_attn.py`) before shipping; confirmed via a direct forward()-vs-forward_batched()
+numerical equivalence check (differences dropped from ~0.003 to ~2e-8, i.e. floating-point noise)
+before running any real training.
+
+**Conclusion**: decoupling state encoding from question evaluation measurably narrows the gap
+toward Jev's flat-latency-in-N claim (median latency was effectively flat N=3→6 here, vs. Model
+A's clear 2.33x growth), without sacrificing -- in this comparison, improving -- accuracy and
+calibration. Two points per model is not enough to claim a scaling law for either architecture;
+the N=9 data point (both models) would meaningfully strengthen this, and remains blocked by the
+same shared-machine memory constraint as before (see this doc's earlier Status entry) -- Model B
+is architecturally likely to need somewhat *less* memory than Model A at the same N (state length
+doesn't grow with N here, unlike Model A's concatenated sequence), so it may be the better
+candidate to retry first once headroom exists.
