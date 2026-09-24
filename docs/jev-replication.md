@@ -367,6 +367,9 @@ noted for the same reason as Model A's comparison above):
 |---|---|---|---|---|---|---|---|---|---|
 | 3 | 165/1556 | lr=1e-4, epochs=3, batch=32 | 74.5 / 72.1 ms | **81.2 / 81.4 ms** | 0.90 | 0.60 | 0.96 | 0.113 | 0.095 |
 | 6 | 169/1563 | lr=1e-4, epochs=3, batch=16 | 63.5 / 53.4 ms | **107.8 / 75.5 ms** | 1.00 | 0.65 | 0.97 | 0.094 | 0.082 |
+| 9 | 173/1577 | lr=1e-4, epochs=5, batch=16 | 45.8 / 46.1 ms | **56.6 / 53.3 ms** | 0.95 | 0.80 | 0.94 | 0.129 | 0.102 |
+
+(N=9 row added 2026-09-25 -- see "N=9 result" below before comparing it with the N=3/N=6 rows.)
 
 **Latency result: Model B's added cost per extra 3 questions is markedly smaller than Model A's.**
 Model A went 59.0ms → 137.5ms (+78.5ms, 2.33x) for N=3→6. Model B's *batched* latency went
@@ -408,3 +411,37 @@ same shared-machine memory constraint as before (see this doc's earlier Status e
 is architecturally likely to need somewhat *less* memory than Model A at the same N (state length
 doesn't grow with N here, unlike Model A's concatenated sequence), so it may be the better
 candidate to retry first once headroom exists.
+
+### N=9 result (Model B, 2026-09-25)
+
+After a machine restart freed virtual memory (~5GB → ~25-30GB free), N=9 for Model B was run via
+study_manager (question 24 → brief 22 → session 22; Agent Loop `create_model`/`start_training_run`
+over MCP → model 173 / run 1577, dataset 73). The run finished in about 4 minutes and met all
+success criteria. All 9 questions were learned (per-question accuracy 0.65-0.95, correlation
+0.65-0.98). The weakest were `response_channel` (acc 0.65) and `contains_pii` (corr 0.65).
+
+**The absolute latencies can't be compared across the rows.** N=9 was the only run on a quiet machine:
+the concurrent "Five Axes of Scaling" workers weren't running, which they were during
+N=3/N=6. State-only encoding, which does not depend on N, dropped from 63.5-74.5ms to 45.8ms.
+That is a machine-load effect, not an architectural one. The comparison that holds up across
+runs is the within-run ratio of full batched latency to state-only latency (by median, which
+is less affected by outliers):
+
+| N | batched / state-only (median) | batched / state-only (mean) |
+|---|---|---|
+| 3 | 1.13 | 1.09 |
+| 6 | 1.41 | 1.70 |
+| 9 | 1.16 | 1.23 |
+
+The per-question overhead on top of state encoding stays small and doesn't grow steadily from
+N=3 to N=9. That fits the Speculative Fan-Out claim for this architecture, unlike Model A's
+2.33x at N=3→6. The N=6 point is the noisiest one (mean/median gap already noted above).
+
+**Hyperparameter caveat, and a pipeline finding:** the research question explicitly asked for
+`lr=1e-4, batch_size=32, epochs=3`, but the Agent Loop's Decide step chose `epochs=5,
+batch_size=16`. N=6 had already drifted the same way, to batch=16. Hyperparameters named in the
+question are not enforced anywhere in study_manager's pipeline. For this project's actual goal
+(AI-driven research via MCP) that is a real reproducibility gap, separate from the Jev result
+itself; see study_manager's README.
+
+Model A at N=9 is still not attempted.
