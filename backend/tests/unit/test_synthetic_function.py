@@ -125,6 +125,122 @@ class TestLfsr:
         assert np.array_equal(_lfsr(200, 8, seed=5), _lfsr(200, 8, seed=5))
 
 
+class TestAr1:
+    def test_same_seed_is_reproducible(self):
+        from data.collectors.synthetic_function import _ar1
+
+        assert np.array_equal(_ar1(200, phi=0.98, sigma=1.0, seed=5), _ar1(200, phi=0.98, sigma=1.0, seed=5))
+
+    def test_different_seeds_differ(self):
+        from data.collectors.synthetic_function import _ar1
+
+        assert not np.array_equal(_ar1(200, phi=0.98, sigma=1.0, seed=5), _ar1(200, phi=0.98, sigma=1.0, seed=6))
+
+    def test_higher_phi_is_smoother(self):
+        # Higher persistence (phi closer to 1) should give a smoother (less step-to-step
+        # variable) trajectory than a near-white-noise phi, for the same innovation variance.
+        from data.collectors.synthetic_function import _ar1
+
+        smooth = _ar1(2000, phi=0.98, sigma=1.0, seed=1)
+        rough = _ar1(2000, phi=0.1, sigma=1.0, seed=1)
+        assert np.diff(smooth).std() < np.diff(rough).std()
+
+    def test_generate_series_dispatches_to_ar1(self):
+        s1 = _generate_series("ar1", length=300, period=50, amplitude=1.0, freq_ratio=1, ar_phi=0.98, ar_sigma=1.0, seed=5)
+        from data.collectors.synthetic_function import _ar1
+        s2 = _ar1(300, phi=0.98, sigma=1.0, seed=5)
+        assert np.array_equal(s1, s2)
+
+
+class TestLorenz:
+    def test_deterministic_no_randomness(self):
+        from data.collectors.synthetic_function import _lorenz
+
+        s1 = _lorenz(length=500)
+        s2 = _lorenz(length=500)
+        assert np.array_equal(s1, s2)  # fixed initial condition, no RNG -- exact equality
+
+    def test_stays_bounded_and_chaotic(self):
+        from data.collectors.synthetic_function import _lorenz
+
+        s = _lorenz(length=3000)
+        assert np.all(np.isfinite(s))
+        # Lorenz's x-coordinate oscillates roughly in [-20, 20] on the classic attractor
+        assert s.std() > 1.0
+        assert np.abs(s).max() < 100
+
+    def test_generate_series_dispatches_to_lorenz(self):
+        s1 = _generate_series("lorenz", length=300, period=50, amplitude=1.0, freq_ratio=1)
+        from data.collectors.synthetic_function import _lorenz
+        s2 = _lorenz(300)
+        assert np.array_equal(s1, s2)
+
+
+class TestAr1Forced:
+    def test_deterministic_no_randomness(self):
+        from data.collectors.synthetic_function import _ar1_forced
+
+        s1 = _ar1_forced(length=500, phi=0.98, amplitude=1.0)
+        s2 = _ar1_forced(length=500, phi=0.98, amplitude=1.0)
+        assert np.array_equal(s1, s2)
+
+    def test_never_exactly_repeats_within_practical_length(self):
+        # Incommensurate periods -> no short exact repetition, unlike a single sine
+        from data.collectors.synthetic_function import _ar1_forced
+
+        s = _ar1_forced(length=2000, phi=0.98, amplitude=1.0)
+        for period in (47, 71, 97, 127, 157):
+            assert not np.allclose(s[:200], s[period:200 + period], atol=1e-6)
+
+    def test_stays_bounded_and_non_constant(self):
+        from data.collectors.synthetic_function import _ar1_forced
+
+        s = _ar1_forced(length=2000, phi=0.98, amplitude=1.0)
+        assert np.all(np.isfinite(s))
+        assert s.std() > 0.01
+
+    def test_generate_series_dispatches_to_ar1_forced(self):
+        s1 = _generate_series("ar1_forced", length=300, period=50, amplitude=1.0, freq_ratio=1, ar_phi=0.98)
+        from data.collectors.synthetic_function import _ar1_forced
+        s2 = _ar1_forced(300, phi=0.98, amplitude=1.0)
+        assert np.array_equal(s1, s2)
+
+    def test_custom_periods_override_default(self):
+        # Phase 5c-timescale (user-requested): a single-period override gives a clean,
+        # directly-controlled characteristic timescale instead of the default 5-period mixture.
+        from data.collectors.synthetic_function import _ar1_forced
+
+        default = _ar1_forced(length=500, phi=0.98, amplitude=1.0)
+        single = _ar1_forced(length=500, phi=0.98, amplitude=1.0, periods=(140.0,))
+        assert not np.allclose(default, single)
+        assert np.all(np.isfinite(single))
+        assert single.std() > 0.01
+
+    def test_custom_periods_deterministic_and_reproducible(self):
+        from data.collectors.synthetic_function import _ar1_forced
+
+        s1 = _ar1_forced(length=500, phi=0.98, amplitude=1.0, periods=(70.0,))
+        s2 = _ar1_forced(length=500, phi=0.98, amplitude=1.0, periods=(70.0,))
+        assert np.array_equal(s1, s2)
+
+    def test_different_single_periods_give_different_series(self):
+        from data.collectors.synthetic_function import _ar1_forced
+
+        s70 = _ar1_forced(length=500, phi=0.98, amplitude=1.0, periods=(70.0,))
+        s280 = _ar1_forced(length=500, phi=0.98, amplitude=1.0, periods=(280.0,))
+        assert not np.allclose(s70, s280)
+
+    def test_generate_series_passes_through_forced_periods(self):
+        from data.collectors.synthetic_function import _ar1_forced
+
+        s1 = _generate_series(
+            "ar1_forced", length=300, period=50, amplitude=1.0, freq_ratio=1, ar_phi=0.98,
+            forced_periods=(140.0,),
+        )
+        s2 = _ar1_forced(300, phi=0.98, amplitude=1.0, periods=(140.0,))
+        assert np.array_equal(s1, s2)
+
+
 class TestCollect:
     def test_writes_parquet_with_expected_shape(self, artifact_store):
         result = collect(1, {"function": "sine", "period": "50", "length": "500", "timeframe": "M5"})
@@ -192,3 +308,49 @@ class TestCollect:
     def test_collect_lfsr_rejects_unsupported_bit_width(self, artifact_store):
         with pytest.raises(ValueError, match="Unsupported lfsr_bits"):
             collect(1, {"function": "lfsr", "lfsr_bits": "6", "length": "100"})
+
+    def test_collect_ar1(self, artifact_store):
+        result = collect(1, {"function": "ar1", "ar_phi": "0.98", "ar_sigma": "1.0", "seed": "3", "length": "500"})
+        df = pd.read_parquet(artifact_store / result.artifact_path)
+        assert len(df) == 500
+        assert df["close"].std() > 0.01
+
+    def test_collect_ar1_reproducible_with_same_seed(self, artifact_store):
+        cfg = {"function": "ar1", "ar_phi": "0.98", "ar_sigma": "1.0", "seed": "7", "length": "300"}
+        r1 = collect(1, cfg)
+        df1 = pd.read_parquet(artifact_store / r1.artifact_path)
+        r2 = collect(2, cfg)
+        df2 = pd.read_parquet(artifact_store / r2.artifact_path)
+        assert np.allclose(df1["close"].values, df2["close"].values)
+
+    def test_collect_lorenz(self, artifact_store):
+        result = collect(1, {"function": "lorenz", "length": "500"})
+        df = pd.read_parquet(artifact_store / result.artifact_path)
+        assert len(df) == 500
+        assert df["close"].std() > 1.0
+
+    def test_collect_ar1_forced(self, artifact_store):
+        result = collect(1, {"function": "ar1_forced", "ar_phi": "0.98", "amplitude": "1.0", "length": "500"})
+        df = pd.read_parquet(artifact_store / result.artifact_path)
+        assert len(df) == 500
+        assert df["close"].std() > 0.01
+
+    def test_collect_ar1_forced_deterministic_regardless_of_seed(self, artifact_store):
+        r1 = collect(1, {"function": "ar1_forced", "ar_phi": "0.98", "amplitude": "1.0", "seed": "1", "length": "300"})
+        df1 = pd.read_parquet(artifact_store / r1.artifact_path)
+        r2 = collect(2, {"function": "ar1_forced", "ar_phi": "0.98", "amplitude": "1.0", "seed": "99", "length": "300"})
+        df2 = pd.read_parquet(artifact_store / r2.artifact_path)
+        assert np.allclose(df1["close"].values, df2["close"].values)
+
+    def test_collect_ar1_forced_custom_periods(self, artifact_store):
+        result = collect(1, {
+            "function": "ar1_forced", "ar_phi": "0.98", "amplitude": "1.0", "length": "500",
+            "forced_periods": [140.0],
+        })
+        df = pd.read_parquet(artifact_store / result.artifact_path)
+        assert len(df) == 500
+        assert df["close"].std() > 0.01
+
+        default = collect(2, {"function": "ar1_forced", "ar_phi": "0.98", "amplitude": "1.0", "length": "500"})
+        df_default = pd.read_parquet(artifact_store / default.artifact_path)
+        assert not np.allclose(df["close"].values, df_default["close"].values)

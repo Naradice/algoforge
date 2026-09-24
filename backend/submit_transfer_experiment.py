@@ -75,6 +75,69 @@ E1_DATASET_ID: int | None = 58  # DDM 180K + Sine 120K
 E2_DATASET_ID: int | None = 59  # DDM 120K + Sine 180K
 E3_DATASET_ID: int | None = 60  # DDM 60K + Sine 240K
 E4_DATASET_ID: int | None = 61  # Sine 300K (pure)
+# Phase 4b: does the DDM x Sine interaction found in D1/E1-E4 generalize to Delay (D2's other
+# "dramatic effect" component from the D1-D4 screening), or is it Sine-specific? Mirrors E4's
+# structure exactly: F1 is the pure-Delay endpoint (0 DDM) -- D2 (DDM 240K + Delay 60K, already
+# run) and B (DDM 300K, no Delay/Sine) are reused as the other two corners of the same 2x2 the
+# Sine investigation used (DDM alone / component alone / DDM+component together).
+F1_DATASET_ID: int | None = 62  # Delay 300K (pure)
+# Phase 5b (user-requested): "what is Sine actually doing" -- representation analysis (Phase 5)
+# found DDM+Sine/DDM+Delay build a genuinely new, deep (layer 2-3) volatility-specific
+# representation neither DDM alone nor the component alone has. Now test whether this needs
+# smoothness per se, or specifically a deterministic/reproducible generator (both sine and delay
+# are deterministic; xor/lfsr, which show no effect, are not smooth). G1 substitutes an AR(1)
+# process (smooth, autocorrelated, but stochastic and non-periodic) for Sine, same
+# DDM_240K+component_60K design as D1-D4.
+G1_DATASET_ID: int | None = 63  # DDM 240K + AR(1) 60K
+# Phase 5c (user-requested): G1 showed AR(1) -- smooth+autocorrelated but STOCHASTIC -- does NOT
+# reproduce Sine/Delay's transfer effect. The candidates that separate Sine/Delay (deterministic)
+# from AR1 (stochastic) overlap heavily (determinism, noise-free, closed-form recurrence, exact
+# reproducibility) -- user's priority order to disentangle them:
+#   H1: a SECOND deterministic+continuous+chaotic generator (Lorenz system), independent of
+#       Mackey-Glass's specific delay-differential-equation structure -- if it ALSO shows the
+#       dramatic effect, "deterministic continuous dynamics" (not periodicity, not Delay's
+#       specific recurrence) is the common factor.
+#   H2: an AR(1)-shaped recurrence with the SAME smoothing structure (same ar_phi) but
+#       DETERMINISTIC (quasi-periodic multi-sine) forcing instead of iid noise -- isolates
+#       whether it's specifically the injected per-step randomness that blocks plain ar1's effect.
+H1_DATASET_ID: int | None = 64  # DDM 240K + Lorenz 60K
+H2_DATASET_ID: int | None = 65  # DDM 240K + AR(1)-forced 60K
+# Phase 5c-timescale (user-requested): H2's result was NOT a clean positive or negative -- across
+# 3 (then 5, after extending) fine-tune seeds on the SAME DDM240K+ar1_forced60K checkpoint, some
+# seeds converged to baseline (~0.83) and others broke through to a dramatically-improved,
+# genuinely-converged plateau (~0.61) -- a seed-dependent bimodal/basin-selection pattern never
+# seen in D1/D2 (always dramatic) or G1/H1 (always baseline). Rather than read further into that
+# one ambiguous data point, isolate the characteristic-recurrence-TIMESCALE axis directly: swap
+# ar1_forced's 5-superposed-period forcing (whose measured recurrence_lag=140 emerged indirectly)
+# for a SINGLE forcing period, so the resulting series' recurrence timescale is controlled and
+# measured directly -- then vary it (70 / 140 / 280 bars) to see whether transfer strength (and
+# now also transfer PROBABILITY across seeds, given H2's instability finding) depends on the
+# timescale's specific value once "a detectable recurrence exists at all" is held fixed.
+I1_DATASET_ID: int | None = 68  # DDM 240K + AR(1)-forced(period=70) 60K
+I2_DATASET_ID: int | None = 69  # DDM 240K + AR(1)-forced(period=140) 60K
+I3_DATASET_ID: int | None = 70  # DDM 240K + AR(1)-forced(period=280) 60K
+# Phase 5c-richness (user-requested): I1/I2 (1 period, 0/5 each) ruled out "140 is a special
+# timescale" as H2's (5-period mixture, 2/3 unstable transfer) explanation. J1/J2 vary the period
+# COUNT directly (1=I1/I2 -> 2 -> 3 -> 5=H2) over the SAME 47-157 span H2 used, to see whether
+# transfer probability rises with the number of superposed periods, and where (if anywhere) it
+# starts. K1 holds count fixed at 5 (like H2) but swaps in 5 DIFFERENT periods from a similar
+# range -- separates "having 5 periods" from "H2's specific period values" per the user's request.
+J1_DATASET_ID: int | None = 74  # DDM 240K + AR(1)-forced(2 periods: 47,157) 60K
+J2_DATASET_ID: int | None = 75  # DDM 240K + AR(1)-forced(3 periods: 47,97,157) 60K
+K1_DATASET_ID: int | None = 76  # DDM 240K + AR(1)-forced(5 DIFFERENT periods: 53,79,103,131,149) 60K
+# Phase 5c-period-structure (user-requested): K1 (same count/range/all-prime as H2, but clean
+# negative) narrowed the difference down to H2's exact gap sequence 24,26,30,30 (a repeated
+# 30-gap / 3-term AP among 97,127,157) -- see analyze_period_structure.py. L1 reproduces that
+# EXACT gap sequence shifted +10 to different absolute values (57,81,107,137,167), isolating
+# "having the repeated-gap structure" from "H2's specific absolute period values".
+L1_DATASET_ID: int | None = 77  # DDM 240K + AR(1)-forced(5 periods, H2's gap pattern +10: 57,81,107,137,167) 60K
+# Phase 5d-dominant-scale (user-requested): the only axis that cleanly separated {sine,delay}
+# (transfer) from every negative control (ar1/lorenz/ar1_forced/xor/lfsr) in the full 7-generator
+# re-check was the GENERATED SERIES' OWN dominant spectral period landing near 50 bars (sine=50.0,
+# delay=51.3; every negative off by 3x-50x). M1/M2 move Sine's period away from 50 in both
+# directions (shorter, longer) to test whether transfer specifically requires matching this scale.
+M1_DATASET_ID: int | None = 78  # DDM 240K + Sine(period=15) 60K
+M2_DATASET_ID: int | None = 79  # DDM 240K + Sine(period=200) 60K
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
@@ -136,6 +199,17 @@ FINETUNE_EARLY_STOP_PATIENCE_CHECKS = 5
 # Pretrain-side budget -- independent of the fine-tune budget above (see DDM_PRETRAIN_ROWS note).
 PRETRAIN_MAX_STEPS = 40_000
 PRETRAIN_VAL_EVERY_STEPS = 2_000
+
+# Extended fine-tune budget for the low-DDM-volume end of the Sine dose-response sweep (E3, E4):
+# E3's original 20000-step fine-tune runs showed 2 of 3 seeds still actively improving (not
+# early-stopped, not plateaued) when the budget ran out, while D1/E1/E2 all converged cleanly
+# well within 20000 steps -- so the 20000-step number likely understated E3's true transfer
+# performance rather than reflecting a real effect gap. Matches the pretrain budget so the
+# early-stop patience (still FINETUNE_EARLY_STOP_PATIENCE_CHECKS=5 checks) has enough room to
+# actually trigger. Applied to E3 (rerun) and E4 (planned from the start) only -- D1/E1/E2 keep
+# their original 20000-step results since those already converged.
+EXTENDED_FINETUNE_MAX_STEPS = 40_000
+EXTENDED_FINETUNE_VAL_EVERY_STEPS = 2_000
 
 MODEL_CONFIG = {
     # Pre-LN + small LayerScale: the fix (see uncommitted backend/model_core/architectures/
@@ -286,10 +360,14 @@ def _generate_synthetic_segment(function: str, length: int, seed: int, cursor_ts
     freq_ratio = float(extra_config.get("freq_ratio", 5))
     tau = float(extra_config.get("tau", 17))
     lfsr_bits = int(extra_config.get("lfsr_bits", 8))
+    ar_phi = float(extra_config.get("ar_phi", 0.98))
+    ar_sigma = float(extra_config.get("ar_sigma", 1.0))
     base_price = float(extra_config.get("base_price", 100.0))
+    forced_periods = extra_config.get("forced_periods")
 
     values = base_price + _generate_series(
-        function, length, period, amplitude, freq_ratio, tau=tau, lfsr_bits=lfsr_bits, seed=seed
+        function, length, period, amplitude, freq_ratio, tau=tau, lfsr_bits=lfsr_bits,
+        ar_phi=ar_phi, ar_sigma=ar_sigma, seed=seed, forced_periods=forced_periods,
     )
     idx = cursor_ts + pd.to_timedelta(np.arange(length) * 60, unit="s")
     df = pd.DataFrame({
@@ -314,14 +392,86 @@ _SYNTHETIC_COMPONENT_CONFIG = {
     "delay": {"seed": 2002, "tau": 17},
     "xor": {"seed": 2003, "amplitude": 1.0},
     "lfsr": {"seed": 2004, "lfsr_bits": 8, "amplitude": 1.0},
+    # ar1: Phase 5b (user-requested) "what is Sine actually doing" follow-up -- a smooth,
+    # strongly-autocorrelated (ar_phi=0.98) but STOCHASTIC, non-periodic process, to test whether
+    # the DDM+X transfer interaction needs smoothness per se or specifically a deterministic/
+    # reproducible generator like sine/delay.
+    "ar1": {"seed": 2005, "ar_phi": 0.98, "ar_sigma": 1.0},
+    # lorenz/ar1_forced: Phase 5c determinism-isolation controls (see H1_DATASET_ID/H2_DATASET_ID
+    # above) -- both fully deterministic, "seed" kept only for dict-shape consistency (unused).
+    "lorenz": {"seed": 2006},
+    "ar1_forced": {"seed": 2007, "ar_phi": 0.98, "amplitude": 1.0},
+    # ar1_forced_p70/p140/p280: Phase 5c-timescale (user-requested) -- H2 (ar1_forced, 5-period
+    # mixture, measured recurrence_lag=140) gave an unstable/seed-dependent result rather than a
+    # clean positive or negative, so instead of reading more into that one data point, vary the
+    # characteristic recurrence timescale DIRECTLY and cleanly: a single forcing period instead
+    # of 5 superposed ones, so the resulting series' ACF recurrence lag equals `forced_periods[0]`
+    # by construction rather than emerging indirectly. "function" overrides the dict key so all
+    # three reuse the same underlying "ar1_forced" generator (see _build_mixture_data's loop).
+    "ar1_forced_p70": {
+        "seed": 2008, "ar_phi": 0.98, "amplitude": 1.0, "forced_periods": (70.0,), "function": "ar1_forced",
+    },
+    "ar1_forced_p140": {
+        "seed": 2009, "ar_phi": 0.98, "amplitude": 1.0, "forced_periods": (140.0,), "function": "ar1_forced",
+    },
+    "ar1_forced_p280": {
+        "seed": 2010, "ar_phi": 0.98, "amplitude": 1.0, "forced_periods": (280.0,), "function": "ar1_forced",
+    },
+    # ar1_forced_p2/p3/rand5: Phase 5c-richness (user-requested) -- I1/I2 (single clean period)
+    # both gave clean 0/5 negatives at the SAME nominal timescales H2 (5-period mixture, 2/3
+    # unstable transfer) used, ruling out "140 is a special timescale" as H2's explanation. This
+    # richness sweep varies period COUNT directly (1=I1/I2, 2, 3, 5=H2) to test whether transfer
+    # probability rises with the number of superposed periods. p2/p3 span the SAME 47-157 range
+    # as H2's 5-period set (endpoints/midpoint included) so bandwidth stays comparable across the
+    # sweep -- only the count of distinct timescales varies. rand5 holds count FIXED at 5 (same as
+    # H2) but swaps in 5 different periods from a similar range/spread -- same amplitude weighting
+    # (amplitude/n) and same spectral bandwidth as H2's set, isolating "having 5 periods" from
+    # "H2's SPECIFIC period values" per the user's explicit request. NOTE: the existing
+    # amplitude/n weighting (unchanged, kept consistent with H2/I1/I2's own formula) means total
+    # forcing variance is NOT held exactly constant across the richness sweep (p2/p3/p5) -- it
+    # decreases roughly as 1/n -- flagged to the user rather than silently changed.
+    "ar1_forced_p2": {
+        "seed": 2011, "ar_phi": 0.98, "amplitude": 1.0, "forced_periods": (47.0, 157.0), "function": "ar1_forced",
+    },
+    "ar1_forced_p3": {
+        "seed": 2012, "ar_phi": 0.98, "amplitude": 1.0, "forced_periods": (47.0, 97.0, 157.0), "function": "ar1_forced",
+    },
+    "ar1_forced_rand5": {
+        "seed": 2013, "ar_phi": 0.98, "amplitude": 1.0,
+        "forced_periods": (53.0, 79.0, 103.0, 131.0, 149.0), "function": "ar1_forced",
+    },
+    # ar1_forced_l1: Phase 5c-period-structure (user-requested) -- analyze_period_structure.py
+    # found the ONE clean mechanical difference between H2 (transfers, 2/3) and K1 (clean
+    # negative, 0/5, same count/range/all-prime as H2): H2's adjacent-period gaps are
+    # 24,26,30,30 -- the last three periods (97,127,157) form an exact 3-term arithmetic
+    # progression (common difference 30), the only repeated value among all 10 pairwise
+    # differences. K1 has no such repeat (10/10 distinct gaps). l1 reproduces H2's EXACT gap
+    # sequence (24,26,30,30) shifted by +10 to different absolute period values (57,81,107,
+    # 137,167) -- isolates "having this repeated-gap/AP structure" from "H2's specific absolute
+    # period values".
+    "ar1_forced_l1": {
+        "seed": 2014, "ar_phi": 0.98, "amplitude": 1.0,
+        "forced_periods": (57.0, 81.0, 107.0, 137.0, 167.0), "function": "ar1_forced",
+    },
+    # sine_p15/sine_p200: Phase 5d-dominant-scale (user-requested) -- characterize_synthetic_
+    # generators.py's full 7-generator re-check found that NONE of periodicity/recurrence/
+    # entropy/chaos/boundedness cleanly separates {sine, delay} (transfer) from every negative
+    # control (ar1, lorenz, ar1_forced, xor, lfsr) -- except one: sine and delay's own dominant
+    # spectral period lands almost exactly at 50 bars (sine=50.0, delay=51.3), while every
+    # negative's dominant period is off by 3x-50x. M1/M2 move Sine's period AWAY from 50 in both
+    # directions (shorter and longer) while keeping it a perfectly clean, deterministic,
+    # single-tone periodic signal -- isolates "matches DDM's own ~50-bar characteristic
+    # timescale" from "is periodic at all".
+    "sine_p15": {"seed": 2001, "period": 15, "amplitude": 1.0, "function": "sine"},
+    "sine_p200": {"seed": 2001, "period": 200, "amplitude": 1.0, "function": "sine"},
 }
 
 
 def _build_mixture_data(component_rows: dict):
     """General mixture builder: component_rows maps a component name ("ddm", "sine", "delay",
-    "xor", or "lfsr") to how many candles of it to include, e.g. {"ddm": 240_000, "sine": 60_000}
+    "xor", "lfsr", or "ar1") to how many candles of it to include, e.g. {"ddm": 240_000, "sine": 60_000}
     for condition D1 (Phase 4's component-ablation design -- see conversation). Components are
-    concatenated in a fixed order (ddm, sine, delay, xor, lfsr -- whichever are present) with a
+    concatenated in a fixed order (ddm, sine, delay, xor, lfsr, ar1 -- whichever are present) with a
     timestamp gap between every segment, same as _build_synthetic_mixture_data (condition C's
     all-five-equal special case, now just one call to this with all five keys at
     MIXTURE_ROWS_PER_SOURCE each). Returns (combined_df, from_ts, to_ts)."""
@@ -336,12 +486,18 @@ def _build_mixture_data(component_rows: dict):
         )
         blocks.append(ddm_df)
 
-    for name in ("sine", "delay", "xor", "lfsr"):
+    for name in (
+        "sine", "delay", "xor", "lfsr", "ar1", "lorenz", "ar1_forced",
+        "ar1_forced_p70", "ar1_forced_p140", "ar1_forced_p280",
+        "ar1_forced_p2", "ar1_forced_p3", "ar1_forced_rand5", "ar1_forced_l1",
+        "sine_p15", "sine_p200",
+    ):
         rows = component_rows.get(name)
         if not rows:
             continue
-        cfg = _SYNTHETIC_COMPONENT_CONFIG[name]
-        df, cursor_ts = _generate_synthetic_segment(name, rows, cursor_ts=cursor_ts, **cfg)
+        cfg = dict(_SYNTHETIC_COMPONENT_CONFIG[name])
+        function = cfg.pop("function", name)
+        df, cursor_ts = _generate_synthetic_segment(function, rows, cursor_ts=cursor_ts, **cfg)
         blocks.append(df)
 
     if not blocks:
@@ -579,6 +735,137 @@ async def prepare_dose_response_data() -> None:
           f"E3_DATASET_ID={e3} / E4_DATASET_ID={e4} at the top of this file.")
 
 
+async def prepare_interaction_data() -> None:
+    """Phase 4b (user-requested): does the DDM x Sine interaction found via D1/E1-E4 (DDM alone
+    -> baseline, Sine alone -> baseline, DDM+Sine together -> dramatic effect) generalize to
+    Delay, the other component D1-D4's screening found a "dramatic effect" for? Only the missing
+    corner needs building -- DDM alone is condition B (DDM_DATASET_ID, already run) and DDM+Delay
+    is D2 (D2_DATASET_ID, already run); this adds F1 = pure Delay (0 DDM), D2's mixture composition
+    with the DDM component simply omitted so it's directly comparable to D2 the same way E4 was to
+    D1. No Celery worker needed."""
+    f1 = await _register_mixture_dataset(
+        "F1: Delay 300K pure (interaction check)", "interaction_f1_delay300",
+        {"delay": DDM_PRETRAIN_ROWS},
+    )
+    print(f"\nPaste this into F1_DATASET_ID={f1} at the top of this file.")
+
+
+async def prepare_mechanism_data() -> None:
+    """Phase 5b (user-requested): G1 = DDM 240K + AR(1) 60K, testing whether the DDM+X transfer
+    interaction (Phase 5's representation analysis) needs smoothness per se or specifically a
+    deterministic/reproducible generator like sine/delay. Same ABLATION_DDM_ROWS/
+    ABLATION_COMPONENT_ROWS split as D1-D4. No Celery worker needed."""
+    g1 = await _register_mixture_dataset(
+        "G1: DDM 240K + AR(1) 60K (mechanism check)", "mechanism_g1_ddm_ar1",
+        {"ddm": ABLATION_DDM_ROWS, "ar1": ABLATION_COMPONENT_ROWS},
+    )
+    print(f"\nPaste this into G1_DATASET_ID={g1} at the top of this file.")
+
+
+async def prepare_determinism_data() -> None:
+    """Phase 5c (user-requested): G1 (AR(1)) showed no effect, isolating that Sine/Delay's shared
+    "smoothness" isn't the operative property. H1/H2 split the overlapping determinism-adjacent
+    candidates (deterministic / noise-free / closed-form recurrence / exact reproducibility) --
+    see H1_DATASET_ID/H2_DATASET_ID's comments for what each isolates. Same ABLATION_DDM_ROWS/
+    ABLATION_COMPONENT_ROWS split as D1-D4/G1. No Celery worker needed."""
+    h1 = await _register_mixture_dataset(
+        "H1: DDM 240K + Lorenz 60K (determinism control)", "determinism_h1_ddm_lorenz",
+        {"ddm": ABLATION_DDM_ROWS, "lorenz": ABLATION_COMPONENT_ROWS},
+    )
+    h2 = await _register_mixture_dataset(
+        "H2: DDM 240K + AR(1)-forced 60K (determinism control)", "determinism_h2_ddm_ar1forced",
+        {"ddm": ABLATION_DDM_ROWS, "ar1_forced": ABLATION_COMPONENT_ROWS},
+    )
+    print(f"\nPaste these into H1_DATASET_ID={h1} / H2_DATASET_ID={h2} at the top of this file.")
+
+
+async def prepare_timescale_data() -> None:
+    """Phase 5c-timescale (user-requested): H2 (ar1_forced, 5-superposed-period forcing) gave a
+    seed-dependent, unstable result instead of a clean positive/negative -- see I1/I2/I3's
+    comments at the top of this file. I1/I2/I3 swap ar1_forced's 5-period mixture for a SINGLE
+    forcing period (70 / 140 / 280 bars respectively), giving each a directly-controlled
+    characteristic recurrence timescale instead of one that emerges indirectly. Same
+    ABLATION_DDM_ROWS/ABLATION_COMPONENT_ROWS split as D1-D4/G1/H1/H2. No Celery worker needed."""
+    i1 = await _register_mixture_dataset(
+        "I1: DDM 240K + AR(1)-forced(period=70) 60K (timescale control)", "timescale_i1_ddm_ar1forced_p70",
+        {"ddm": ABLATION_DDM_ROWS, "ar1_forced_p70": ABLATION_COMPONENT_ROWS},
+    )
+    i2 = await _register_mixture_dataset(
+        "I2: DDM 240K + AR(1)-forced(period=140) 60K (timescale control)", "timescale_i2_ddm_ar1forced_p140",
+        {"ddm": ABLATION_DDM_ROWS, "ar1_forced_p140": ABLATION_COMPONENT_ROWS},
+    )
+    i3 = await _register_mixture_dataset(
+        "I3: DDM 240K + AR(1)-forced(period=280) 60K (timescale control)", "timescale_i3_ddm_ar1forced_p280",
+        {"ddm": ABLATION_DDM_ROWS, "ar1_forced_p280": ABLATION_COMPONENT_ROWS},
+    )
+    print(f"\nPaste these into I1_DATASET_ID={i1} / I2_DATASET_ID={i2} / I3_DATASET_ID={i3} "
+          f"at the top of this file.")
+
+
+async def prepare_richness_data() -> None:
+    """Phase 5c-richness (user-requested): I1/I2 (single clean period, 0/5 each) ruled out "140
+    is a special timescale" as H2's (5-superposed-period mixture, 2/3 unstable transfer)
+    explanation. J1/J2/K1 test what IS different about H2's forcing:
+      J1/J2: vary period COUNT directly (1=I1/I2 -> 2 -> 3 -> 5=H2), same 47-157 span H2 used, to
+             see whether transfer probability rises with the number of superposed periods.
+      K1:    holds count fixed at 5 (like H2) but swaps in 5 DIFFERENT periods from a similar
+             range/spread -- separates "having 5 periods" from "H2's specific period values".
+    Same ABLATION_DDM_ROWS/ABLATION_COMPONENT_ROWS split as D1-D4/G1/H1/H2/I1-I3. No Celery
+    worker needed."""
+    j1 = await _register_mixture_dataset(
+        "J1: DDM 240K + AR(1)-forced(2 periods: 47,157) 60K (richness control)",
+        "richness_j1_ddm_ar1forced_p2",
+        {"ddm": ABLATION_DDM_ROWS, "ar1_forced_p2": ABLATION_COMPONENT_ROWS},
+    )
+    j2 = await _register_mixture_dataset(
+        "J2: DDM 240K + AR(1)-forced(3 periods: 47,97,157) 60K (richness control)",
+        "richness_j2_ddm_ar1forced_p3",
+        {"ddm": ABLATION_DDM_ROWS, "ar1_forced_p3": ABLATION_COMPONENT_ROWS},
+    )
+    k1 = await _register_mixture_dataset(
+        "K1: DDM 240K + AR(1)-forced(5 different periods: 53,79,103,131,149) 60K (richness control)",
+        "richness_k1_ddm_ar1forced_rand5",
+        {"ddm": ABLATION_DDM_ROWS, "ar1_forced_rand5": ABLATION_COMPONENT_ROWS},
+    )
+    print(f"\nPaste these into J1_DATASET_ID={j1} / J2_DATASET_ID={j2} / K1_DATASET_ID={k1} "
+          f"at the top of this file.")
+
+
+async def prepare_period_structure_data() -> None:
+    """Phase 5c-period-structure (user-requested): L1 reproduces H2's exact adjacent-gap sequence
+    (24,26,30,30 -- a repeated 30-gap / 3-term AP among its last three periods) shifted +10 to
+    different absolute period values (57,81,107,137,167), isolating "having the repeated-gap/AP
+    structure" from "H2's specific absolute period values" -- see analyze_period_structure.py for
+    the full feature comparison that motivated this. Same ABLATION_DDM_ROWS/
+    ABLATION_COMPONENT_ROWS split as D1-D4/G1/H1/H2/I1-I3/J1-J2/K1. No Celery worker needed."""
+    l1 = await _register_mixture_dataset(
+        "L1: DDM 240K + AR(1)-forced(H2 gap pattern +10: 57,81,107,137,167) 60K (period-structure control)",
+        "period_structure_l1_ddm_ar1forced",
+        {"ddm": ABLATION_DDM_ROWS, "ar1_forced_l1": ABLATION_COMPONENT_ROWS},
+    )
+    print(f"\nPaste this into L1_DATASET_ID={l1} at the top of this file.")
+
+
+async def prepare_dominant_scale_data() -> None:
+    """Phase 5d-dominant-scale (user-requested): M1/M2 move Sine's period away from 50 (the
+    dominant spectral period shared by sine/delay, the only axis found to discriminate them from
+    every negative control -- see characterize_synthetic_generators.py) in both directions --
+    M1 shorter (period=15), M2 longer (period=200) -- while keeping the signal a perfectly clean,
+    deterministic, single-tone periodic sine. Same ABLATION_DDM_ROWS/ABLATION_COMPONENT_ROWS
+    split as D1-D4/G1/H1/H2/I1-I3/J1-J2/K1/L1. No Celery worker needed."""
+    m1 = await _register_mixture_dataset(
+        "M1: DDM 240K + Sine(period=15) 60K (dominant-scale control)",
+        "dominant_scale_m1_ddm_sine_p15",
+        {"ddm": ABLATION_DDM_ROWS, "sine_p15": ABLATION_COMPONENT_ROWS},
+    )
+    m2 = await _register_mixture_dataset(
+        "M2: DDM 240K + Sine(period=200) 60K (dominant-scale control)",
+        "dominant_scale_m2_ddm_sine_p200",
+        {"ddm": ABLATION_DDM_ROWS, "sine_p200": ABLATION_COMPONENT_ROWS},
+    )
+    print(f"\nPaste these into M1_DATASET_ID={m1} / M2_DATASET_ID={m2} at the top of this file.")
+
+
 # ---------------------------------------------------------------------------
 # Phase 2: submit TrainingRuns
 # ---------------------------------------------------------------------------
@@ -680,6 +967,24 @@ async def run_pretrain_then_finetune(
     return pretrain_run_id, finetune_run_ids
 
 
+async def run_finetune_only(
+    checkpoint_path: str, seeds: list[int],
+    finetune_max_steps: int, finetune_val_every_steps: int,
+    execution_target: str = "local",
+) -> list[int]:
+    """Fine-tune-only re-run against an EXISTING, already-completed pretrain checkpoint --
+    used to extend a condition's fine-tune step budget without re-running the (deterministic,
+    unaffected-by-finetune-budget) pretrain phase. checkpoint_path is artifact-store-relative,
+    e.g. "models/135/training_1478/best.pt" (same format run_pretrain_then_finetune builds)."""
+    model_id = await _ensure_model()
+    finetune_run_ids = []
+    for seed in seeds:
+        hp = _finetune_hp(seed, warm_start_checkpoint=checkpoint_path)
+        hp["max_steps"], hp["val_every_steps"] = finetune_max_steps, finetune_val_every_steps
+        finetune_run_ids.append(await _submit(model_id, USDJPY_DATASET_ID, hp, execution_target))
+    return finetune_run_ids
+
+
 async def _run_smoke() -> None:
     seeds = [42]
     print("=== condition A (smoke) ===")
@@ -735,18 +1040,46 @@ _D_DATASET_IDS = {
     # _run_condition_d/_run_replicate_pretrain don't care which phase a dataset belongs to.
     "e1": lambda: E1_DATASET_ID, "e2": lambda: E2_DATASET_ID,
     "e3": lambda: E3_DATASET_ID, "e4": lambda: E4_DATASET_ID,
+    "f1": lambda: F1_DATASET_ID,
+    "g1": lambda: G1_DATASET_ID,
+    "h1": lambda: H1_DATASET_ID,
+    "h2": lambda: H2_DATASET_ID,
+    "i1": lambda: I1_DATASET_ID, "i2": lambda: I2_DATASET_ID, "i3": lambda: I3_DATASET_ID,
+    "j1": lambda: J1_DATASET_ID, "j2": lambda: J2_DATASET_ID, "k1": lambda: K1_DATASET_ID,
+    "l1": lambda: L1_DATASET_ID,
+    "m1": lambda: M1_DATASET_ID, "m2": lambda: M2_DATASET_ID,
 }
 _D_LABELS = {
     "d1": "D1 (DDM 240K + Sine 60K)", "d2": "D2 (DDM 240K + Delay 60K)",
     "d3": "D3 (DDM 240K + XOR 60K)", "d4": "D4 (DDM 240K + LFSR 60K)",
     "e1": "E1 (DDM 180K + Sine 120K)", "e2": "E2 (DDM 120K + Sine 180K)",
     "e3": "E3 (DDM 60K + Sine 240K)", "e4": "E4 (Sine 300K pure)",
+    "f1": "F1 (Delay 300K pure)",
+    "g1": "G1 (DDM 240K + AR(1) 60K)",
+    "h1": "H1 (DDM 240K + Lorenz 60K)",
+    "h2": "H2 (DDM 240K + AR(1)-forced 60K)",
+    "i1": "I1 (DDM 240K + AR(1)-forced period=70 60K)",
+    "i2": "I2 (DDM 240K + AR(1)-forced period=140 60K)",
+    "i3": "I3 (DDM 240K + AR(1)-forced period=280 60K)",
+    "j1": "J1 (DDM 240K + AR(1)-forced 2 periods 60K)",
+    "j2": "J2 (DDM 240K + AR(1)-forced 3 periods 60K)",
+    "k1": "K1 (DDM 240K + AR(1)-forced 5 different periods 60K)",
+    "l1": "L1 (DDM 240K + AR(1)-forced H2 gap pattern +10 60K)",
+    "m1": "M1 (DDM 240K + Sine period=15 60K)",
+    "m2": "M2 (DDM 240K + Sine period=200 60K)",
 }
 _PREPARE_HINT = {
     "d1": "prepare-ablation-data", "d2": "prepare-ablation-data",
     "d3": "prepare-ablation-data", "d4": "prepare-ablation-data",
     "e1": "prepare-dose-response-data", "e2": "prepare-dose-response-data",
     "e3": "prepare-dose-response-data", "e4": "prepare-dose-response-data",
+    "f1": "prepare-interaction-data",
+    "g1": "prepare-mechanism-data",
+    "h1": "prepare-determinism-data", "h2": "prepare-determinism-data",
+    "i1": "prepare-timescale-data", "i2": "prepare-timescale-data", "i3": "prepare-timescale-data",
+    "j1": "prepare-richness-data", "j2": "prepare-richness-data", "k1": "prepare-richness-data",
+    "l1": "prepare-period-structure-data",
+    "m1": "prepare-dominant-scale-data", "m2": "prepare-dominant-scale-data",
 }
 
 
@@ -763,11 +1096,18 @@ async def _run_condition_d(which: str, seeds: list[int]) -> None:
             f"{which.upper()}_DATASET_ID is not set -- run `{_PREPARE_HINT[which]}` first, "
             "then paste the printed dataset ids into this file."
         )
-    print(f"=== condition {_D_LABELS[which]} pretrain -> USDJPY fine-tune ===")
+    # 0-DDM conditions (E4: pure Sine, F1: pure Delay) get the extended fine-tune budget from the
+    # start: E3 (DDM 60K, the next point up in DDM volume) needed it -- 2 of 3 fine-tune seeds
+    # hadn't converged at FINETUNE_MAX_STEPS -- and zero-DDM conditions are at least as likely to.
+    zero_ddm = which in ("e4", "f1")
+    finetune_max_steps = EXTENDED_FINETUNE_MAX_STEPS if zero_ddm else FINETUNE_MAX_STEPS
+    finetune_val_every_steps = EXTENDED_FINETUNE_VAL_EVERY_STEPS if zero_ddm else FINETUNE_VAL_EVERY_STEPS
+    print(f"=== condition {_D_LABELS[which]} pretrain -> USDJPY fine-tune "
+          f"(finetune_max_steps={finetune_max_steps}) ===")
     await run_pretrain_then_finetune(
         dataset_id, seeds, pretrain_seed=42,
         pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
-        finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
+        finetune_max_steps=finetune_max_steps, finetune_val_every_steps=finetune_val_every_steps,
     )
 
 
@@ -821,6 +1161,27 @@ def main():
     if mode == "prepare-dose-response-data":
         asyncio.run(prepare_dose_response_data())
         return
+    if mode == "prepare-interaction-data":
+        asyncio.run(prepare_interaction_data())
+        return
+    if mode == "prepare-mechanism-data":
+        asyncio.run(prepare_mechanism_data())
+        return
+    if mode == "prepare-determinism-data":
+        asyncio.run(prepare_determinism_data())
+        return
+    if mode == "prepare-timescale-data":
+        asyncio.run(prepare_timescale_data())
+        return
+    if mode == "prepare-richness-data":
+        asyncio.run(prepare_richness_data())
+        return
+    if mode == "prepare-period-structure-data":
+        asyncio.run(prepare_period_structure_data())
+        return
+    if mode == "prepare-dominant-scale-data":
+        asyncio.run(prepare_dominant_scale_data())
+        return
 
     _require_dataset_ids()
 
@@ -841,23 +1202,45 @@ def main():
         asyncio.run(_run_condition_c(seeds))
     elif mode == "condition-d":
         if len(sys.argv) < 3 or sys.argv[2] not in _D_DATASET_IDS:
-            raise SystemExit("usage: condition-d <d1|d2|d3|d4|e1|e2|e3|e4> [seed ...]")
+            raise SystemExit("usage: condition-d <d1|d2|d3|d4|e1|e2|e3|e4|f1|g1|h1|h2|i1|i2|i3|j1|j2|k1|l1|m1|m2> [seed ...]")
         which = sys.argv[2]
         seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
         asyncio.run(_run_condition_d(which, seeds))
     elif mode == "replicate-pretrain":
         if len(sys.argv) < 4 or sys.argv[2] not in _D_DATASET_IDS:
-            raise SystemExit("usage: replicate-pretrain <d1|d2|d3|d4|e1|e2|e3|e4> <pretrain_seed> [finetune_seed ...]")
+            raise SystemExit(
+                "usage: replicate-pretrain <d1|d2|d3|d4|e1|e2|e3|e4|f1|g1|h1|h2|i1|i2|i3|j1|j2|k1|l1|m1|m2> "
+                "<pretrain_seed> [finetune_seed ...]"
+            )
         which = sys.argv[2]
         pretrain_seed = int(sys.argv[3])
         finetune_seeds = [int(s) for s in sys.argv[4:]] if len(sys.argv) > 4 else [42]
         asyncio.run(_run_replicate_pretrain(which, pretrain_seed, finetune_seeds))
+    elif mode == "extend-finetune":
+        # Re-run fine-tune ONLY (reusing an existing pretrain checkpoint) at
+        # EXTENDED_FINETUNE_MAX_STEPS instead of FINETUNE_MAX_STEPS -- see the constant's
+        # docstring: used for E3 (and E4) after E3's original 20000-step fine-tune runs showed
+        # 2 of 3 seeds still improving, not converged, when the budget ran out.
+        if len(sys.argv) < 3:
+            raise SystemExit("usage: extend-finetune <checkpoint_path> [seed ...]")
+        checkpoint_path = sys.argv[2]
+        seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
+        run_ids = asyncio.run(run_finetune_only(
+            checkpoint_path, seeds,
+            finetune_max_steps=EXTENDED_FINETUNE_MAX_STEPS,
+            finetune_val_every_steps=EXTENDED_FINETUNE_VAL_EVERY_STEPS,
+        ))
+        print(f"Submitted extended-finetune runs: {run_ids}")
     else:
         raise SystemExit(
             f"unknown mode {mode!r}, expected 'prepare-data', 'prepare-mixture-data', "
-            f"'prepare-ablation-data', 'prepare-dose-response-data', 'smoke', 'colab-smoke', "
-            f"'full', 'condition-c', 'condition-d <d1|d2|d3|d4|e1|e2|e3|e4>', or "
-            f"'replicate-pretrain <d1|d2|d3|d4> <pretrain_seed> [finetune_seed ...]'"
+            f"'prepare-ablation-data', 'prepare-dose-response-data', 'prepare-interaction-data', "
+            f"'prepare-mechanism-data', 'prepare-determinism-data', 'prepare-timescale-data', "
+            f"'prepare-richness-data', 'prepare-period-structure-data', 'prepare-dominant-scale-data', "
+            f"'smoke', 'colab-smoke', "
+            f"'full', 'condition-c', 'condition-d <d1|d2|d3|d4|e1|e2|e3|e4|f1|g1|h1|h2|i1|i2|i3|j1|j2|k1|l1|m1|m2>', "
+            f"'replicate-pretrain <d1|d2|d3|d4> <pretrain_seed> [finetune_seed ...]', or "
+            f"'extend-finetune <checkpoint_path> [seed ...]'"
         )
 
 

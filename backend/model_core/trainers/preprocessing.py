@@ -114,6 +114,28 @@ def _add_volatility(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     return df
 
 
+def _add_kurtosis(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    p = int(cfg.get("period", 20))
+    col = cfg.get("column", "close")
+    df[f"kurtosis_{p}"] = df[col].pct_change().rolling(p).kurt()
+    return df
+
+
+def _add_autocorr(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    p = int(cfg.get("period", 20))
+    lag = int(cfg.get("lag", 1))
+    col = cfg.get("column", "close")
+    returns = df[col].pct_change()
+    # rolling().cov() against a lag-shifted copy, not a Python-level .apply(autocorr) -- vectorized,
+    # matters at the ~1M-row scale this pipeline runs at (a per-window Python callback would be
+    # orders of magnitude slower for no accuracy benefit).
+    shifted = returns.shift(lag)
+    cov = returns.rolling(p).cov(shifted)
+    var = returns.rolling(p).var()
+    df[f"autocorr_{p}_lag{lag}"] = cov / var
+    return df
+
+
 _INDICATOR_MAP = {
     "sma":        _add_sma,
     "ema":        _add_ema,
@@ -123,6 +145,8 @@ _INDICATOR_MAP = {
     "atr":        _add_atr,
     "returns":    _add_returns,
     "volatility": _add_volatility,
+    "kurtosis":   _add_kurtosis,
+    "autocorr":   _add_autocorr,
 }
 
 

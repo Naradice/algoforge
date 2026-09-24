@@ -58,9 +58,10 @@ AIエージェントに公開している。現状これは「人間がClaude Co
 ```
  [DRAFT]
     │  ユーザーが自由記述で研究課題を投稿
+    │  （§3.1: 過去の研究を種として持つ場合は seed_brief_json を伴って始まる）
     ▼
  [BRIEFING]                       ← AIがAlgoForgeの現況を読み取り(read-only)、
-    │                                Research Brief（構造化案）を生成
+    │                                Prior-Art Search(§5.3A)含め Research Brief（構造化案）を生成
     ▼
  [PENDING_APPROVAL]               ← 人間がBriefを確認・編集
     │  承認
@@ -70,12 +71,56 @@ AIエージェントに公開している。現状これは「人間がClaude Co
     ├─ 成功基準を満たした/収束した ─▶ [REPORTING] ─▶ [COMPLETED]
     ├─ 予算を使い切った           ─▶ [REPORTING] ─▶ [BUDGET_EXCEEDED]（レポートは出す）
     └─ 回復不能なエラー           ─▶ [FAILED]
+
+ [IMPORTED]  ← §3.2: このライフサイクルを一度も通らずに履歴として直接登録される、
+                独立した第三の経路（DRAFTからは分岐しない — 最初からIMPORTED）
 ```
 
 - **PENDING_APPROVALは必ず経由する**（今回の要件: 自由記述→AI構造化案→人間確認）。
 - 承認後の`RUNNING`中は、予算内であれば`start_training_run`のようなコストの発生する
   ツール呼び出しの**都度承認は挟まない**（今回の要件: 予算内は完全自律）。
 - `PAUSED`はユーザーがいつでも人間側から止められる状態（自律の暴走に対するキルスイッチ）。
+
+### 3.1 DRAFTへの「種」の持ち込み（seed_brief_json）
+
+[research-seed-five-axes-of-scaling.md](research-seed-five-axes-of-scaling.md)のq1〜q5のように、
+既存の研究から導かれた課題を投入する場合、人間（またはこのサービス外のAI）があらかじめ
+Brief案の下書きを用意していることがある。これは`research_briefs.brief_json`そのものでは
+**ない** — `research_questions.seed_brief_json`という別フィールドに「BRIEFINGへの強いヒント」
+として保持し、BRIEFINGフェーズはこれを鵜呑みにせず必ず自分で以下をやり直す:
+
+- Prior-Art Search（§5.3A）を実DB・実LLM判定で再実行する（種に埋め込まれた`related_questions`は
+  あくまで参考情報 — 陳腐化している可能性がある）
+- `budget`の妥当性を再検討する（種の予算値は多くの場合プレースホルダ）
+- `success_criteria`が本当に機械的に判定可能かを再検証する（§11の`q4`のように、種の時点では
+  曖昧なまま残っている場合がある）
+
+つまり`seed_brief_json`があっても**BRIEFING〜PENDING_APPROVALは省略されない**。「下書き済みの
+DRAFT」であって「承認待ちのBrief」ではない。
+
+### 3.2 IMPORTED — ライフサイクルを通らない履歴登録
+
+`research-seed-five-axes-of-scaling.md`の`seed-q0`（Five Axes of Scaling investigation本体）は、
+このサービスのAgent Loopが一度も実行していない — AlgoForge導入前/このサービス構築前に
+人間とAIが手動で行った投資調査を、後から履歴として取り込んだものである。
+
+これを`research_questions.status = "completed"`として登録するのは**モデル上誤り**だった
+（§6参照）— `completed`は本来`research_sessions`（Agent Loopが実際に走った記録）の終端状態で
+あり、Agent Loopを一度も回していない研究に付けるべきステータスではない。正しくは
+`status = "imported"`という、他の5状態（draft/briefing/pending_approval/approved、そして
+研究sessionsの running/paused/completed/failed/budget_exceeded）と並ぶ**第三の独立した経路**
+として扱う:
+
+- `IMPORTED`な`research_questions`は`DRAFT`からもBRIEFINGからも遷移してこない。登録された
+  瞬間から`IMPORTED`。
+- 対応する`research_sessions`行も作るが、`status="imported"`という専用値を持ち、
+  `budget_used_json`は空（Agent Loopが実際に消費した予算という概念自体が無い）、
+  `agent_steps`は0件（ターン単位のツール呼び出し履歴が存在しない）。
+- `reports`は持ってよい（このケースのように、既存レポートをそのまま`content_path`として
+  参照できる）。
+- 唯一の存在意義は**§5.3(A) Prior-Art Searchの検索対象になること**。将来のBRIEFINGが
+  `list related research`する際、`IMPORTED`な行も`approved`/`completed`な行と同列に
+  検索対象へ含める。
 
 ---
 
@@ -249,7 +294,10 @@ BRIEFINGフェーズで、Brief案を人間に見せる**前**に実行する。
    「これらは今回の質問とどう関係するか」をLLMに判定させる。
    → related_questions: [{ question_id, relation_type, similarity_note }]
       relation_type ∈ likely_duplicate | follow_up_candidate |
-                       shares_resources | related_but_distinct
+                       shares_resources | related_but_distinct | raised_by_review
+      -- raised_by_reviewは§7.1のレビュー機能がfindingをDRAFT研究課題に昇格させたときのみ付く。
+      -- BRIEFINGが自分でPrior-Art Searchした結果ではなく人間の昇格操作に由来するので、
+      -- BRIEFING側の再検証（§3.1）はこの関係についても他の候補と同じ扱いで行う
 ```
 
 - 候補数が増えて1プロンプトに収まらなくなったら埋め込みベクトル検索（pgvector等）に
@@ -288,17 +336,30 @@ resource_claims(session_id, resource_type[model|dataset|strategy],
   versionカラム＋楽観ロック）が入れば根本対策になるので、`requirements.md`のR-6は
   この設計の直接の依存として優先度を上げてよい。
 
+> **実データでの検証例:** [research-seed-five-axes-of-scaling.md](research-seed-five-axes-of-scaling.md)に、
+> 既存レポート「Five Axes of Scaling」から抽出した実例を置いている（IMPORTED 1件・
+> seed_brief_json付きDRAFT 5件 — 詳細は§3.1/3.2）。
+
 ---
 
 ## 6. データモデル（Research Agent Service側・独自DB）
 
 ```
-research_questions(id, raw_text, status, created_at)
+research_questions(id, raw_text, seed_brief_json,
+                    status[draft|briefing|pending_approval|approved|imported],
+                    created_at)
+        -- seed_brief_json: §3.1。BRIEFINGへのヒントであり、research_briefs.brief_jsonの代わりにはならない
+        -- status="imported"は他の4値と並ぶ独立経路（§3.2）。draftからimportedへは遷移しない
 
 research_briefs(id, question_id, brief_json, approved_at, approved_by, version)
+        -- imported由来のquestionに付くbriefはapproved_at/approved_byがnull
+        -- （人間の承認イベントが実際には発生していないことを表す）
 
-research_sessions(id, brief_id, status[running|paused|completed|failed|budget_exceeded],
+research_sessions(id, brief_id,
+                   status[running|paused|completed|failed|budget_exceeded|imported],
                    started_at, ended_at, budget_used_json)
+        -- status="imported": Agent Loopを実行していない履歴の器（§3.2）。
+        --   budget_used_jsonは常にnull、agent_stepsは常に0件
 
 agent_steps(id, session_id, seq, phase[survey|reason|decide|act|evaluate],
             reasoning_text, mcp_calls_json, mcp_results_json,
@@ -349,6 +410,81 @@ resource_claims(id, session_id, resource_type[model|dataset|strategy], resource_
   使った予算の内訳 → 再現用リンク（AlgoForge run ID一覧）。
 - 「結論に至らず予算切れ」の場合も必ずレポートを出す（何を試して何が分からなかったかを残す）。
 
+### 7.1 既存研究へのAIレビュー（問題点・疑問点の指摘 + 重要度付け）
+
+Agent Loop（§5、能動的に新しい訓練を実行して仮説を検証する）とは別に、**既存のreport
+（`IMPORTED`か`COMPLETED`かを問わない）を読んで批評する、読み取り専用の軽量な操作**を
+独立した機能として持つ。Agent Loopのようなbudget/Scheduler/write系MCP呼び出しを一切
+必要としないため、実装コストが低く、フルのAgent Loopより先に単体で価値を出せる
+（§10でPhase 0扱いにした理由）。
+
+#### 目的関数を分ける — 「レビュー」は「研究」と別モード
+
+`AgentRunner`（§5.1）は同じインターフェースを再利用するが、システムプロンプト（役割）が
+根本的に違う: 研究モードは「仮説を検証するために次に何をすべきか」を考えるが、レビューモードは
+**「この結論をどこまで信じてよいか、何が確認されていないか」だけを考える**。書き込み系
+MCPツールは一切与えない（read-only: `list_*` / `get_*` / `compare_*` のみ）。
+
+**もっとも重要な設計上の制約:** レビューは、対象reportが**自己申告していない**問題を
+見つけたときに初めて価値を持つ。この「Five Axes of Scaling」のように、レポート自身が
+Confirmed/Falsified/Partial/Exploratoryのbadgeで自己評価し、Evidence Ledger（§5）まで
+用意している場合、それを機械的になぞって"再発見"しても付加価値はゼロ。プロンプトには
+必ず「対象reportが既に開示・自己評価済みの限界は再指摘するな。開示されていない問題、
+または開示の粒度が甘い問題だけを報告せよ」という指示を含める。
+
+#### findingsのスキーマと重要度
+
+```
+reviews(id, target_type[report], target_id, reviewer_provider, reviewer_model,
+        status[pending|completed|failed], created_at, completed_at)
+
+review_findings(id, review_id, type[issue|question], importance[critical|high|medium|low],
+                 target_ref, summary, detail, verified_via_mcp, verification_note,
+                 suggested_action, promoted_question_id)
+        -- target_ref: 対象reportの中の場所（例 "§12", "evidence_ledger:late-regime-instability"）
+        -- type=issue: 結論の信頼性に影響する欠陥。type=question: 欠陥とは言えないが未確認・未解決の点
+        -- verified_via_mcp: 主張をAlgoForgeの実データ(get_model_validations等)と突き合わせて
+        --   確認を試みたか。試みて確認できなかった場合はimportanceを上げる材料になる
+        -- promoted_question_id: 人間がこのfindingを新規research_questions(DRAFT)に昇格させた場合のFK
+```
+
+`importance`は4段階（`critical|high|medium|low`）。目安:
+- **critical** — この欠陥が正しければ、報告書の中心的な結論（capstone等）が崩れる
+- **high** — 特定の主要claimの信頼性を大きく損なう。再検証なしに次の意思決定の土台にすべきでない
+- **medium** — 信頼性に一定の影響はあるが、claim全体を無効化するほどではない
+- **low** — 些末、または研究そのものより運用上の注記（再現性メタデータの欠落など）
+
+重要度をLLMの主観だけに任せると評価がブレる。既にこのワークスペースに実在する
+**同一の物差し**を評価ルーブリックとして毎回システムプロンプトに含める:
+[CLAUDE.mdの「Comparing training runs」規約](../CLAUDE.md#comparing-model-training-runs)
+（seed discipline、matched optimizer steps等）と、対象report自身の「Shared methodology」
+節（あれば）。この2つに対する逸脱を機械的にチェックする部分と、それ以外の自由な批評を
+分けて評価する。
+
+#### 「疑問点」から新しい研究課題への昇格
+
+`type=question`のfindingは、そのまま[§3.1](#31-draftへの種の持ち込みseed_brief_json)の
+`seed_brief_json`付き`DRAFT`研究課題の下書きになりうる。ただし**自動昇格はしない** — 
+findingはあくまで一覧として人間に提示し、「これをresearch_questionsに昇格する」ボタンを
+押した時だけ`promoted_question_id`が埋まり新しい`DRAFT`行が作られる（PENDING_APPROVAL
+必須の原則、§3と同じく人間の意思決定を挟む）。`related_questions`には元のreportへの
+参照を`relation_type: "raised_by_review"`として自動で入れる（§4のenum一覧に追加）。
+
+#### 起動方法
+
+- オンデマンド: 人間が特定のreportを指定して「レビューして」と依頼する（今回の主要ユースケース）。
+- 任意で自動化: `system_settings.auto_review_on_import`をtrueにすると、IMPORTEDなreportが
+  登録された瞬間に自動でレビューが1回走る。
+- 将来的な拡張: REPORTING（§5の`conclude`後）で、Agent Loop自身が出したreportを公開前に
+  セルフレビューする、という使い方も同じ仕組みで可能（Phase 3以降、§10）。ただしこの場合
+  「自己申告していない問題を見つける」という前提が崩れやすい（同じLLM文脈の続きだと自分の
+  結論を無批判に追認しがち）ので、レビュー呼び出しは会話履歴を共有しない独立したcontextで
+  行う必要がある。
+
+> **実例:** [research-review-five-axes-of-scaling.md](research-review-five-axes-of-scaling.md)に、
+> 「Five Axes of Scaling」を対象にした実際のレビュー例（findings 6件、importance付き、
+> うち2件をseed-q6/q7として新規DRAFT研究課題に昇格）を置いている。
+
 ---
 
 ## 8. 既存ロードマップ項目との関係
@@ -385,7 +521,7 @@ resource_claims(id, session_id, resource_type[model|dataset|strategy], resource_
 
 | フェーズ | 内容 |
 |---|---|
-| Phase 0 | Research Brief生成（LLM 1発呼び出し + read-only MCP調査 + §5.3(A)のSQLフィルタ版prior-art search）、承認UIのみ。学習等の実行は手動トリガーのモック |
+| Phase 0 | **既存reportへのAIレビュー（§7.1、オンデマンドのみ）** — Agent Loop本体より先に単体で出荷できる最小機能。Research Brief生成（LLM 1発呼び出し + read-only MCP調査 + §5.3(A)のSQLフィルタ版prior-art search）、承認UIのみ。学習等の実行は手動トリガーのモック |
 | Phase 1 | Agent Loopの最小実装（train/conclude の2択のみ）、Webhook受信、予算ガード、Scheduler（§5.2同時実行数 + §5.3(B)リソースclaim）、レポート生成（Markdown） |
 | Phase 2 | backtest/collectを選択肢に追加、hparam search対応、セッション再開（プロセス再起動耐性） |
 | Phase 3 | UI強化（進捗のライブ表示、レポートのPDF出力、複数研究課題の並行管理）、prior-art searchを埋め込みベクトル検索に切り替え |

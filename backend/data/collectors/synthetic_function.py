@@ -8,19 +8,25 @@ signal's particular structure or was an artifact of it.
 
 Datasource config shape (stored in datasources.config):
     {
-        "function": "sine" | "sine_sum" | "delay" | "xor" | "lfsr",
+        "function": "sine" | "sine_sum" | "delay" | "xor" | "lfsr" | "ar1" | "lorenz" | "ar1_forced",
         "period": 50,        # T -- base period, in bars (sine / sine_sum only)
-        "amplitude": 1.0,    # A -- wave amplitude (sine/sine_sum/xor/lfsr; ignored by delay)
+        "amplitude": 1.0,    # A -- wave amplitude (sine/sine_sum/xor/lfsr; ignored by delay/ar1)
         "freq_ratio": 5,     # sine_sum only -- 2nd wave oscillates this many times faster than the base
         "tau": 17,           # delay only -- Mackey-Glass delay parameter (see below)
         "lfsr_bits": 8,      # lfsr only -- shift-register width; supported: 4, 5, 8, 16
+        "ar_phi": 0.98,      # ar1 / ar1_forced -- AR(1) persistence coefficient (see below)
+        "ar_sigma": 1.0,     # ar1 only -- AR(1) innovation std dev
+        "forced_periods": None,  # ar1_forced only -- list of forcing periods, overrides the
+                              # default 5-period mixture (e.g. [140.0] for a single clean
+                              # characteristic timescale)
         "base_price": 100.0, # vertical offset so the series looks like a price series
         "noise": 0.0,        # gaussian noise std dev added on top; 0 = pure deterministic
         "length": 2000,      # number of bars to generate
         "timeframe": "M5",   # bar spacing
         "seed": 42,          # RNG seed -- noise (all functions), bit generation (xor), initial
-                              # register state (lfsr). Unused (irrelevant) for sine/sine_sum/delay,
-                              # which are fully deterministic from their formula alone.
+                              # register state (lfsr), innovations (ar1). Unused (irrelevant) for
+                              # sine/sine_sum/delay, which are fully deterministic from their
+                              # formula alone.
         "start_ts": "2024-01-01",  # first bar timestamp
     }
 
@@ -47,6 +53,35 @@ Formulas (t = bar index, 0..length-1):
                 exactly at the period) looks close to random -- a direct test of whether a model
                 (or the token-characteristics framework: entropy, LZ compression) can tell "looks
                 complex" apart from "is complex to generate".
+    "ar1":      x_t = base_price + z_t, z_t = ar_phi * z_{t-1} + eps_t, eps_t ~ N(0, ar_sigma).
+                Textbook AR(1) process -- smooth and strongly autocorrelated (ar_phi close to 1
+                gives long persistence, a "smooth random walk"-like trajectory) but STOCHASTIC and
+                non-periodic, unlike sine (deterministic, periodic) or delay (deterministic,
+                chaotic). Added specifically to test whether transfer to DDM+X requires smoothness
+                per se, or specifically a deterministic/reproducible generator -- see the
+                DDM/USDJPY transfer investigation's Phase 5 representation-probing follow-up.
+    "lorenz":   x_t = base_price + (Lorenz system's x-coordinate, RK4-integrated, dt=0.02,
+                sigma=10, rho=28, beta=8/3 -- the canonical chaotic-attractor parameters).
+                Deterministic, continuous-valued, non-periodic, chaotic (sensitive dependence on
+                initial conditions) -- a SEPARATE deterministic-chaotic generator from delay's
+                Mackey-Glass delay-differential-equation form, added (Phase 5b) to test whether
+                "deterministic + continuous + chaotic dynamics" transfers as a general category,
+                or was specific to Mackey-Glass's particular recurrence structure. Fixed initial
+                condition [1,1,1] -- seed is unused/irrelevant, same convention as sine/delay.
+    "ar1_forced": Same linear recurrence as ar1 (z_t = ar_phi * z_{t-1} + f_t) but f_t is a
+                DETERMINISTIC sum of incommensurate-period sinusoids (default: 5 periods -- 47,
+                71, 97, 127, 157 bars -- pairwise-unrelated so the sum doesn't exactly repeat
+                within any practical dataset length) instead of iid Gaussian innovations.
+                Isolates whether it's specifically the injected per-step RANDOMNESS that blocks
+                ar1's transfer effect, holding the recurrence/smoothing structure (same ar_phi,
+                comparable forcing amplitude via `amplitude`) fixed -- a direct determinism-only
+                control against plain "ar1". Fully deterministic; seed unused.
+                `forced_periods` (list of floats, ar1_forced only) overrides the default 5-period
+                mixture -- pass a single-element list (e.g. [140.0]) for a clean, directly-
+                controlled characteristic recurrence timescale instead of one that emerges
+                indirectly from 5 superposed periods (Phase 5c-timescale, user-requested: does
+                the transfer effect's strength depend on the specific timescale value, at lag 70
+                vs 140 vs 280, once "a detectable recurrence exists at all" is held fixed).
 
 Both sine/sine_sum are a practical reading of "x_t periodic with period T" and "sin(t) + A*sin(T*t)",
 reparameterized around a bar-count period so the result is a usable series at any timeframe --
@@ -137,6 +172,69 @@ def _lfsr(length: int, bits: int, seed: int) -> np.ndarray:
     return out
 
 
+def _ar1(length: int, phi: float, sigma: float, seed: int) -> np.ndarray:
+    """AR(1): z_t = phi*z_{t-1} + eps_t, eps_t ~ N(0, sigma). phi close to 1 gives a smooth,
+    strongly-autocorrelated ("smooth random walk"-like) but stationary, purely stochastic
+    trajectory -- no periodicity, no deterministic recurrence."""
+    rng = np.random.default_rng(seed)
+    eps = rng.normal(0, sigma, length)
+    z = np.empty(length, dtype=np.float64)
+    z[0] = eps[0]
+    for t in range(1, length):
+        z[t] = phi * z[t - 1] + eps[t]
+    return z
+
+
+def _lorenz(length: int, dt: float = 0.02, sigma_param: float = 10.0, rho: float = 28.0,
+            beta: float = 8.0 / 3.0, burn_in: int = 1000) -> np.ndarray:
+    """Lorenz system (canonical chaotic attractor), RK4-integrated, x-coordinate returned --
+    deterministic, continuous-valued, non-periodic, chaotic, and a completely separate generator
+    from Mackey-Glass (a 3-variable coupled ODE flow, not a scalar delay-differential equation).
+    Fixed initial condition [1,1,1] (off the unstable origin) -- no RNG, no seed dependence,
+    same convention as sine/delay."""
+    def deriv(state: np.ndarray) -> np.ndarray:
+        x, y, z = state
+        return np.array([sigma_param * (y - x), x * (rho - z) - y, x * y - beta * z])
+
+    total = length + burn_in
+    state = np.array([1.0, 1.0, 1.0])
+    xs = np.empty(total, dtype=np.float64)
+    for i in range(total):
+        k1 = deriv(state)
+        k2 = deriv(state + 0.5 * dt * k1)
+        k3 = deriv(state + 0.5 * dt * k2)
+        k4 = deriv(state + dt * k3)
+        state = state + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+        xs[i] = state[0]
+    return xs[burn_in:]
+
+
+_AR1_FORCED_PERIODS = (47.0, 71.0, 97.0, 127.0, 157.0)
+
+
+def _ar1_forced(
+    length: int, phi: float, amplitude: float,
+    periods: tuple[float, ...] = _AR1_FORCED_PERIODS,
+) -> np.ndarray:
+    """Same linear recurrence as _ar1 (z_t = phi*z_{t-1} + f_t), but f_t is a DETERMINISTIC sum
+    of incommensurate-period sinusoids instead of iid random innovations -- isolates whether it's
+    specifically the injected per-step randomness (not the recurrence/smoothing structure) that
+    makes plain ar1 fail to transfer. No RNG, no seed dependence.
+
+    `periods` defaults to the 5-sinusoid mixture above, but callers pass a single-element tuple
+    (Phase 5c-timescale, user-requested) to get a clean, directly-controlled characteristic
+    recurrence timescale instead of one that emerges indirectly from 5 superposed periods --
+    isolates "does the transfer effect's strength depend on the recurrence timescale's specific
+    value" from "does a detectable recurrence exist at all"."""
+    t = np.arange(length, dtype=np.float64)
+    forcing = sum(np.sin(2 * np.pi * t / p) for p in periods) * (amplitude / len(periods))
+    z = np.empty(length, dtype=np.float64)
+    z[0] = forcing[0]
+    for i in range(1, length):
+        z[i] = phi * z[i - 1] + forcing[i]
+    return z
+
+
 def _generate_series(
     function: str,
     length: int,
@@ -145,7 +243,10 @@ def _generate_series(
     freq_ratio: float,
     tau: float = 17.0,
     lfsr_bits: int = 8,
+    ar_phi: float = 0.98,
+    ar_sigma: float = 1.0,
     seed: int = 42,
+    forced_periods: tuple[float, ...] | None = None,
 ) -> np.ndarray:
     t = np.arange(length, dtype=np.float64)
     if function == "sine":
@@ -158,8 +259,16 @@ def _generate_series(
         return amplitude * (2 * _temporal_xor(length, seed) - 1)
     if function == "lfsr":
         return amplitude * (2 * _lfsr(length, lfsr_bits, seed) - 1)
+    if function == "ar1":
+        return _ar1(length, ar_phi, ar_sigma, seed)
+    if function == "lorenz":
+        return _lorenz(length)
+    if function == "ar1_forced":
+        periods = tuple(forced_periods) if forced_periods else _AR1_FORCED_PERIODS
+        return _ar1_forced(length, ar_phi, amplitude, periods=periods)
     raise ValueError(
-        f"Unknown synthetic function: {function!r} (expected 'sine', 'sine_sum', 'delay', 'xor', or 'lfsr')"
+        f"Unknown synthetic function: {function!r} "
+        f"(expected 'sine', 'sine_sum', 'delay', 'xor', 'lfsr', 'ar1', 'lorenz', or 'ar1_forced')"
     )
 
 
@@ -171,11 +280,15 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     freq_ratio = float(config.get("freq_ratio", 5))
     tau = float(config.get("tau", 17))
     lfsr_bits = int(config.get("lfsr_bits", 8))
+    ar_phi = float(config.get("ar_phi", 0.98))
+    ar_sigma = float(config.get("ar_sigma", 1.0))
     base_price = float(config.get("base_price", 100.0))
     noise = float(config.get("noise", 0.0))
     seed = int(config.get("seed", 42))
     timeframe = config.get("timeframe", "M5")
     start_ts = config.get("start_ts") or "2024-01-01"
+    forced_periods_cfg = config.get("forced_periods")
+    forced_periods = tuple(float(p) for p in forced_periods_cfg) if forced_periods_cfg else None
 
     if length < 2:
         raise ValueError("length must be at least 2")
@@ -183,7 +296,8 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
         raise ValueError("period must be positive")
 
     values = base_price + _generate_series(
-        function, length, period, amplitude, freq_ratio, tau=tau, lfsr_bits=lfsr_bits, seed=seed
+        function, length, period, amplitude, freq_ratio, tau=tau, lfsr_bits=lfsr_bits,
+        ar_phi=ar_phi, ar_sigma=ar_sigma, seed=seed, forced_periods=forced_periods,
     )
     if noise > 0:
         rng = np.random.default_rng(seed)

@@ -61,10 +61,45 @@ async def _fetch_run_and_metrics(db, run_id: int):
     return run, metrics
 
 
+# Cap on rows loaded just to estimate target variance (not used for any actual training run) --
+# building the full window array at the runs' own max_rows (typically 1_000_000) needs a large
+# contiguous allocation ((rows, obs_len, n_features) float32) that can fail under real memory
+# pressure (observed: numpy ArrayMemoryError requesting ~229 MiB while the OS reports very little
+# free physical memory). vol_{PERIOD}'s variance is stable well below this sample size, so capping
+# it here trades a negligible amount of estimate precision for not needing gigabytes of headroom.
+_VARIANCE_MAX_ROWS = 200_000
+
+# Basin classification thresholds (user-requested, following H2's discovery that a single
+# checkpoint's fine-tune outcome can be seed-dependent/bimodal rather than a single point
+# estimate): every "dramatic transfer" seed observed so far (D1/D2, and H2's two broken-through
+# seeds) has landed at val_loss <= ~0.64; every "baseline/no effect" seed (G1/H1, and H2's
+# non-breaking seed) has landed at val_loss >= ~0.81 -- a wide, currently-unoccupied gap between
+# them, so these thresholds classify every seed seen so far unambiguously. A seed landing between
+# them would be flagged "ambiguous" rather than forced into either basin.
+TRANSFER_BASIN_THRESHOLD = 0.70   # val_loss below this -> "transfer" basin
+BASELINE_BASIN_THRESHOLD = 0.78   # val_loss above this -> "baseline" basin
+
+
+def _classify_basin(val_loss: float | None) -> str:
+    if val_loss is None:
+        return "?"
+    if val_loss < TRANSFER_BASIN_THRESHOLD:
+        return "transfer"
+    if val_loss > BASELINE_BASIN_THRESHOLD:
+        return "baseline"
+    return "ambiguous"
+
+
 async def _target_variance(dataset_id: int, hyperparams: dict) -> float:
     """Variance of the SAME (val-split, z-scored) target the runs were trained on -- lets
     best_val_loss (an MSE) convert to an R^2 comparable across conditions/datasets."""
     from model_core.trainers import OHLCWindowDataset
+
+    max_rows = hyperparams.get("max_rows")
+    if max_rows is not None:
+        max_rows = min(max_rows, _VARIANCE_MAX_ROWS)
+    else:
+        max_rows = _VARIANCE_MAX_ROWS
 
     ds = OHLCWindowDataset(
         artifact_path=(await _dataset_artifact_path(dataset_id)),
@@ -73,7 +108,7 @@ async def _target_variance(dataset_id: int, hyperparams: dict) -> float:
         normalize=hyperparams["normalize"], preprocessing=hyperparams.get("preprocessing"),
         val_split=hyperparams.get("val_split", 0.2), split_mode=hyperparams.get("split_mode", "chronological"),
         require_contiguous=hyperparams.get("require_contiguous", False),
-        max_rows=hyperparams.get("max_rows"),
+        max_rows=max_rows,
     )
     ds.eval()
     _, tgt = ds[0:len(ds)]
@@ -128,18 +163,24 @@ async def analyze(condition_groups: list[tuple[str, list[int]]]) -> None:
         print(f"\n=== Condition {label} ===")
         for s in summaries:
             r2 = (1 - s["best_val_loss"] / target_var) if (s["best_val_loss"] is not None and target_var) else None
+            basin = _classify_basin(s["best_val_loss"])
             print(
                 f"  run={s['run_id']} seed={s['seed']} status={s['status']} "
                 f"warm_started={s['warm_started']} "
                 f"val_loss@start={s['val_loss_at_start']:.6f} "
                 f"best_val_loss={s['best_val_loss']:.6f} (R2={r2:.4f}) @step={s['best_step']} "
-                f"final_val_loss={s['final_val_loss']:.6f}"
+                f"final_val_loss={s['final_val_loss']:.6f} basin={basin}"
                 if s["best_val_loss"] is not None and s["val_loss_at_start"] is not None and s["final_val_loss"] is not None
                 else f"  run={s['run_id']} seed={s['seed']} status={s['status']} -- incomplete, no metrics yet"
             )
         best_losses = [s["best_val_loss"] for s in summaries if s["best_val_loss"] is not None]
         if best_losses:
             print(f"  cross-seed best_val_loss: mean={np.mean(best_losses):.6f} std={np.std(best_losses):.6f}")
+            basins = [_classify_basin(v) for v in best_losses]
+            n = len(basins)
+            n_transfer, n_baseline, n_ambig = (basins.count(b) for b in ("transfer", "baseline", "ambiguous"))
+            print(f"  basin split: transfer={n_transfer}/{n} baseline={n_baseline}/{n} ambiguous={n_ambig}/{n} "
+                  f"(transfer_fraction={n_transfer / n:.2f})")
 
     for label, summaries in all_summaries:
         _report(label, summaries)
@@ -149,6 +190,15 @@ async def analyze(condition_groups: list[tuple[str, list[int]]]) -> None:
         best = [s["best_val_loss"] for s in summaries if s["best_val_loss"] is not None]
         if best:
             means[label] = float(np.mean(best))
+
+    print("\n--- transfer-basin fraction per condition (val_loss < "
+          f"{TRANSFER_BASIN_THRESHOLD}) ---")
+    for label, summaries in all_summaries:
+        best = [s["best_val_loss"] for s in summaries if s["best_val_loss"] is not None]
+        if not best:
+            continue
+        frac = sum(1 for v in best if v < TRANSFER_BASIN_THRESHOLD) / len(best)
+        print(f"  {label}: {frac:.2f} ({sum(1 for v in best if v < TRANSFER_BASIN_THRESHOLD)}/{len(best)})")
 
     if len(means) >= 2:
         print()
