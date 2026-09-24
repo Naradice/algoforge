@@ -138,6 +138,14 @@ L1_DATASET_ID: int | None = 77  # DDM 240K + AR(1)-forced(5 periods, H2's gap pa
 # directions (shorter, longer) to test whether transfer specifically requires matching this scale.
 M1_DATASET_ID: int | None = 78  # DDM 240K + Sine(period=15) 60K
 M2_DATASET_ID: int | None = 79  # DDM 240K + Sine(period=200) 60K
+# Phase 6 Lyapunov dial (handoff open thread): Delay (~0.009/bar, transfers) vs Lorenz
+# (~0.017/bar, doesn't) differ in far more than their Lyapunov exponent. Time-rescaling moves the
+# per-bar exponent with each attractor held fixed (characterize_lyapunov_dial.py measured it):
+#   N1: Lorenz at lorenz_dt=0.01 -> 0.0090/bar, matched to Delay's 0.0089
+#   N2: Delay at stride=2        -> 0.0209/bar, above Lorenz's 0.0169
+# Per-bar exponent decides -> N1 transfers, N2 doesn't. Generator identity decides -> reverse.
+N1_DATASET_ID: int | None = 80  # DDM 240K + Lorenz(dt=0.01) 60K
+N2_DATASET_ID: int | None = 81  # DDM 240K + Delay(stride=2) 60K
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
@@ -360,6 +368,8 @@ def _generate_synthetic_segment(function: str, length: int, seed: int, cursor_ts
     freq_ratio = float(extra_config.get("freq_ratio", 5))
     tau = float(extra_config.get("tau", 17))
     lfsr_bits = int(extra_config.get("lfsr_bits", 8))
+    stride = int(extra_config.get("stride", 1))
+    lorenz_dt = float(extra_config.get("lorenz_dt", 0.02))
     ar_phi = float(extra_config.get("ar_phi", 0.98))
     ar_sigma = float(extra_config.get("ar_sigma", 1.0))
     base_price = float(extra_config.get("base_price", 100.0))
@@ -368,6 +378,7 @@ def _generate_synthetic_segment(function: str, length: int, seed: int, cursor_ts
     values = base_price + _generate_series(
         function, length, period, amplitude, freq_ratio, tau=tau, lfsr_bits=lfsr_bits,
         ar_phi=ar_phi, ar_sigma=ar_sigma, seed=seed, forced_periods=forced_periods,
+        stride=stride, lorenz_dt=lorenz_dt,
     )
     idx = cursor_ts + pd.to_timedelta(np.arange(length) * 60, unit="s")
     df = pd.DataFrame({
@@ -464,6 +475,10 @@ _SYNTHETIC_COMPONENT_CONFIG = {
     # timescale" from "is periodic at all".
     "sine_p15": {"seed": 2001, "period": 15, "amplitude": 1.0, "function": "sine"},
     "sine_p200": {"seed": 2001, "period": 200, "amplitude": 1.0, "function": "sine"},
+    # Phase 6 Lyapunov dial -- see N1/N2_DATASET_ID. Same seeds as the base lorenz/delay entries
+    # (both are deterministic, so seed is irrelevant anyway).
+    "lorenz_dt0.01": {"seed": 2006, "lorenz_dt": 0.01, "function": "lorenz"},
+    "delay_s2": {"seed": 2002, "tau": 17, "stride": 2, "function": "delay"},
 }
 
 
@@ -490,7 +505,7 @@ def _build_mixture_data(component_rows: dict):
         "sine", "delay", "xor", "lfsr", "ar1", "lorenz", "ar1_forced",
         "ar1_forced_p70", "ar1_forced_p140", "ar1_forced_p280",
         "ar1_forced_p2", "ar1_forced_p3", "ar1_forced_rand5", "ar1_forced_l1",
-        "sine_p15", "sine_p200",
+        "sine_p15", "sine_p200", "lorenz_dt0.01", "delay_s2",
     ):
         rows = component_rows.get(name)
         if not rows:
@@ -866,6 +881,22 @@ async def prepare_dominant_scale_data() -> None:
     print(f"\nPaste these into M1_DATASET_ID={m1} / M2_DATASET_ID={m2} at the top of this file.")
 
 
+async def prepare_lyapunov_dial_data() -> None:
+    """Phase 6 Lyapunov dial: N1 (Lorenz, dt=0.01) and N2 (Delay, stride=2) -- see
+    N1/N2_DATASET_ID. Same ABLATION_DDM_ROWS/ABLATION_COMPONENT_ROWS split as D1-M2."""
+    n1 = await _register_mixture_dataset(
+        "N1: DDM 240K + Lorenz(dt=0.01) 60K (Lyapunov dial)",
+        "lyapunov_dial_n1_ddm_lorenz_dt001",
+        {"ddm": ABLATION_DDM_ROWS, "lorenz_dt0.01": ABLATION_COMPONENT_ROWS},
+    )
+    n2 = await _register_mixture_dataset(
+        "N2: DDM 240K + Delay(stride=2) 60K (Lyapunov dial)",
+        "lyapunov_dial_n2_ddm_delay_s2",
+        {"ddm": ABLATION_DDM_ROWS, "delay_s2": ABLATION_COMPONENT_ROWS},
+    )
+    print(f"\nPaste these into N1_DATASET_ID={n1} / N2_DATASET_ID={n2} at the top of this file.")
+
+
 # ---------------------------------------------------------------------------
 # Phase 2: submit TrainingRuns
 # ---------------------------------------------------------------------------
@@ -1048,6 +1079,7 @@ _D_DATASET_IDS = {
     "j1": lambda: J1_DATASET_ID, "j2": lambda: J2_DATASET_ID, "k1": lambda: K1_DATASET_ID,
     "l1": lambda: L1_DATASET_ID,
     "m1": lambda: M1_DATASET_ID, "m2": lambda: M2_DATASET_ID,
+    "n1": lambda: N1_DATASET_ID, "n2": lambda: N2_DATASET_ID,
 }
 _D_LABELS = {
     "d1": "D1 (DDM 240K + Sine 60K)", "d2": "D2 (DDM 240K + Delay 60K)",
@@ -1067,6 +1099,8 @@ _D_LABELS = {
     "l1": "L1 (DDM 240K + AR(1)-forced H2 gap pattern +10 60K)",
     "m1": "M1 (DDM 240K + Sine period=15 60K)",
     "m2": "M2 (DDM 240K + Sine period=200 60K)",
+    "n1": "N1 (DDM 240K + Lorenz dt=0.01 60K)",
+    "n2": "N2 (DDM 240K + Delay stride=2 60K)",
 }
 _PREPARE_HINT = {
     "d1": "prepare-ablation-data", "d2": "prepare-ablation-data",
@@ -1080,6 +1114,7 @@ _PREPARE_HINT = {
     "j1": "prepare-richness-data", "j2": "prepare-richness-data", "k1": "prepare-richness-data",
     "l1": "prepare-period-structure-data",
     "m1": "prepare-dominant-scale-data", "m2": "prepare-dominant-scale-data",
+    "n1": "prepare-lyapunov-dial-data", "n2": "prepare-lyapunov-dial-data",
 }
 
 
@@ -1181,6 +1216,9 @@ def main():
         return
     if mode == "prepare-dominant-scale-data":
         asyncio.run(prepare_dominant_scale_data())
+        return
+    if mode == "prepare-lyapunov-dial-data":
+        asyncio.run(prepare_lyapunov_dial_data())
         return
 
     _require_dataset_ids()
