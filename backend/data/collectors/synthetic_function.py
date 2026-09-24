@@ -13,6 +13,10 @@ Datasource config shape (stored in datasources.config):
         "amplitude": 1.0,    # A -- wave amplitude (sine/sine_sum/xor/lfsr; ignored by delay/ar1)
         "freq_ratio": 5,     # sine_sum only -- 2nd wave oscillates this many times faster than the base
         "tau": 17,           # delay only -- Mackey-Glass delay parameter (see below)
+        "stride": 1,         # delay only -- keep every stride-th recurrence step (time-rescaling:
+                              # multiplies the per-bar Lyapunov exponent by ~stride)
+        "lorenz_dt": 0.02,   # lorenz only -- RK4 step per bar (time-rescaling: per-bar Lyapunov
+                              # exponent ~= 0.905 * lorenz_dt, attractor geometry unchanged)
         "lfsr_bits": 8,      # lfsr only -- shift-register width; supported: 4, 5, 8, 16
         "ar_phi": 0.98,      # ar1 / ar1_forced -- AR(1) persistence coefficient (see below)
         "ar_sigma": 1.0,     # ar1 only -- AR(1) innovation std dev
@@ -128,14 +132,19 @@ _LFSR_TAPS: dict[int, list[int]] = {
 }
 
 
-def _mackey_glass(length: int, tau: float, burn_in: int = 1000) -> np.ndarray:
+def _mackey_glass(length: int, tau: float, burn_in: int = 1000, stride: int = 1) -> np.ndarray:
     """Discrete-time Mackey-Glass delay recurrence (beta=0.2, gamma=0.1, n=10 -- the standard
     parameters used throughout the reservoir-computing/chaotic-time-series literature). tau=17 is
     the canonical "mildly chaotic" setting; below ~tau=4.5 the system settles to a fixed point
     instead. burn_in discards the initial transient before the trajectory settles onto its
-    attractor, so the returned series doesn't depend on the arbitrary constant initial history."""
+    attractor, so the returned series doesn't depend on the arbitrary constant initial history.
+
+    stride > 1 keeps every stride-th recurrence step -- the same trajectory viewed at a coarser
+    time resolution, so the per-bar Lyapunov exponent scales by ~stride with the attractor
+    unchanged (the Lyapunov-dial experiment's time-rescaling control)."""
+    stride = max(1, int(stride))
     tau_steps = max(1, int(round(tau)))
-    total = length + burn_in + tau_steps + 1
+    total = length * stride + burn_in + tau_steps + 1
     x = np.empty(total, dtype=np.float64)
     x[: tau_steps + 1] = 1.2  # standard constant initial history
     beta, gamma, n = 0.2, 0.1, 10
@@ -143,7 +152,7 @@ def _mackey_glass(length: int, tau: float, burn_in: int = 1000) -> np.ndarray:
         lagged = x[t - tau_steps]
         x[t + 1] = x[t] + beta * lagged / (1 + lagged ** n) - gamma * x[t]
     start = burn_in + tau_steps
-    return x[start : start + length]
+    return x[start : start + length * stride : stride]
 
 
 def _temporal_xor(length: int, seed: int) -> np.ndarray:
@@ -191,7 +200,13 @@ def _lorenz(length: int, dt: float = 0.02, sigma_param: float = 10.0, rho: float
     deterministic, continuous-valued, non-periodic, chaotic, and a completely separate generator
     from Mackey-Glass (a 3-variable coupled ODE flow, not a scalar delay-differential equation).
     Fixed initial condition [1,1,1] (off the unstable origin) -- no RNG, no seed dependence,
-    same convention as sine/delay."""
+    same convention as sine/delay.
+
+    dt is the integration step per output bar: the per-bar largest Lyapunov exponent is
+    ~0.905 * dt (the canonical system's exponent is ~0.905 per unit time), so varying dt dials
+    per-bar chaos while leaving the attractor itself unchanged. burn_in is in time units of the
+    default dt=0.02 (20 time units) so a smaller dt still discards the same transient."""
+    burn_in = int(round(burn_in * 0.02 / dt))
     def deriv(state: np.ndarray) -> np.ndarray:
         x, y, z = state
         return np.array([sigma_param * (y - x), x * (rho - z) - y, x * y - beta * z])
@@ -247,6 +262,8 @@ def _generate_series(
     ar_sigma: float = 1.0,
     seed: int = 42,
     forced_periods: tuple[float, ...] | None = None,
+    stride: int = 1,
+    lorenz_dt: float = 0.02,
 ) -> np.ndarray:
     t = np.arange(length, dtype=np.float64)
     if function == "sine":
@@ -254,7 +271,7 @@ def _generate_series(
     if function == "sine_sum":
         return np.sin(2 * np.pi * t / period) + amplitude * np.sin(2 * np.pi * freq_ratio * t / period)
     if function == "delay":
-        return _mackey_glass(length, tau)
+        return _mackey_glass(length, tau, stride=stride)
     if function == "xor":
         return amplitude * (2 * _temporal_xor(length, seed) - 1)
     if function == "lfsr":
@@ -262,7 +279,7 @@ def _generate_series(
     if function == "ar1":
         return _ar1(length, ar_phi, ar_sigma, seed)
     if function == "lorenz":
-        return _lorenz(length)
+        return _lorenz(length, dt=lorenz_dt)
     if function == "ar1_forced":
         periods = tuple(forced_periods) if forced_periods else _AR1_FORCED_PERIODS
         return _ar1_forced(length, ar_phi, amplitude, periods=periods)
@@ -280,6 +297,8 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
     freq_ratio = float(config.get("freq_ratio", 5))
     tau = float(config.get("tau", 17))
     lfsr_bits = int(config.get("lfsr_bits", 8))
+    stride = int(config.get("stride", 1))
+    lorenz_dt = float(config.get("lorenz_dt", 0.02))
     ar_phi = float(config.get("ar_phi", 0.98))
     ar_sigma = float(config.get("ar_sigma", 1.0))
     base_price = float(config.get("base_price", 100.0))
@@ -294,10 +313,15 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
         raise ValueError("length must be at least 2")
     if period <= 0:
         raise ValueError("period must be positive")
+    if stride < 1:
+        raise ValueError("stride must be >= 1")
+    if lorenz_dt <= 0:
+        raise ValueError("lorenz_dt must be positive")
 
     values = base_price + _generate_series(
         function, length, period, amplitude, freq_ratio, tau=tau, lfsr_bits=lfsr_bits,
         ar_phi=ar_phi, ar_sigma=ar_sigma, seed=seed, forced_periods=forced_periods,
+        stride=stride, lorenz_dt=lorenz_dt,
     )
     if noise > 0:
         rng = np.random.default_rng(seed)

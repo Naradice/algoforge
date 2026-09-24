@@ -176,6 +176,55 @@ class TestLorenz:
         assert np.array_equal(s1, s2)
 
 
+class TestLyapunovDial:
+    """Time-rescaling knobs for the Lyapunov-dial experiment: same attractor, different per-bar
+    divergence rate."""
+
+    def test_lorenz_default_dt_unchanged(self):
+        from data.collectors.synthetic_function import _lorenz
+
+        assert np.array_equal(_lorenz(300), _lorenz(300, dt=0.02))
+
+    def test_lorenz_half_dt_same_attractor_half_step_size(self):
+        from data.collectors.synthetic_function import _lorenz
+
+        # Pointwise comparison is meaningless (chaos amplifies RK4 error over the burn-in), but
+        # the attractor's spread is dt-invariant while per-bar movement scales with dt.
+        coarse = _lorenz(20_000, dt=0.02)
+        fine = _lorenz(40_000, dt=0.01)
+        assert abs(fine.std() / coarse.std() - 1) < 0.15
+        step_ratio = np.abs(np.diff(fine)).mean() / np.abs(np.diff(coarse)).mean()
+        assert 0.4 < step_ratio < 0.6
+
+    def test_mackey_glass_stride_subsamples_same_trajectory(self):
+        from data.collectors.synthetic_function import _mackey_glass
+
+        base = _mackey_glass(600, tau=17)
+        strided = _mackey_glass(300, tau=17, stride=2)
+        assert np.array_equal(strided, base[::2])
+
+    def test_generate_series_passes_dial_params(self):
+        from data.collectors.synthetic_function import _lorenz, _mackey_glass
+
+        assert np.array_equal(
+            _generate_series("lorenz", 200, 50, 1.0, 1, lorenz_dt=0.01), _lorenz(200, dt=0.01))
+        assert np.array_equal(
+            _generate_series("delay", 200, 50, 1.0, 1, stride=3), _mackey_glass(200, 17, stride=3))
+
+    def test_collect_reads_dial_config(self, artifact_store):
+        from data.collectors.synthetic_function import _lorenz
+
+        r = collect(1, {"function": "lorenz", "length": "300", "lorenz_dt": "0.01"})
+        df = pd.read_parquet(artifact_store / r.artifact_path)
+        assert np.allclose(df["close"].values, 100.0 + _lorenz(300, dt=0.01))
+
+    def test_collect_rejects_bad_dial_values(self, artifact_store):
+        with pytest.raises(ValueError):
+            collect(1, {"function": "delay", "stride": "0"})
+        with pytest.raises(ValueError):
+            collect(1, {"function": "lorenz", "lorenz_dt": "0"})
+
+
 class TestAr1Forced:
     def test_deterministic_no_randomness(self):
         from data.collectors.synthetic_function import _ar1_forced
