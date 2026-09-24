@@ -275,6 +275,9 @@ latency metrics back via `get_model_validations` exactly like it already reads c
   |---|---|---|---|---|---|---|---|---|---|---|
   | 3 | 157/1533 | lr=5e-5, epochs=3, batch=16 | 95.8 | **59.0** | 56.2 | 0.45 | 0.35 | 0.84 | 0.156 | 0.158 |
   | 6 | 156/1527 | lr=1e-4, epochs=3, batch=32 | 181.6 | **137.5** | 136.6 | 0.225 | 0.4 | 0.254 | 0.089 | 0.189 |
+  | 9 | 174/1578 | lr=5e-5, epochs=3, batch=32 | 236.7 | **185.9** | 185.5 | 0.425 | 0.475 | 0.289 | 0.091 | 0.210 |
+
+  (N=9 row added 2026-09-25; see "Model A N=9 result" under the Phase 2 follow-up section.)
 
   **Latency result (Phase 0's "Speculative Fan-Out" test): latency roughly DOUBLED (59.0ms →
   137.5ms, a 2.33x increase) when the question count doubled (3 → 6) and mean sequence length
@@ -444,4 +447,29 @@ question are not enforced anywhere in study_manager's pipeline. For this project
 (AI-driven research via MCP) that is a real reproducibility gap, separate from the Jev result
 itself; see study_manager's README.
 
-Model A at N=9 is still not attempted.
+### Model A N=9 result (2026-09-25)
+
+Model A's N=9 run crashed repeatedly before (memory exhaustion). This time it completed:
+question 25 → session 23 → model 174 / run 1578, dataset 73, about 9 minutes, and free virtual
+memory never dropped below ~11GB. It was the first run with study_manager's new `brief.pinned`
+enforcement. The hyperparameters `lr=5e-5, batch_size=32, epochs=3` were fixed in the brief and
+reached `start_training_run` unchanged.
+
+- **Latency: 59.0 → 137.5 → 185.9ms (mean) for N=3/6/9**, tracking mean sequence length
+  (95.8 → 181.6 → 236.7 tokens). Latency keeps growing with N, confirming the Phase 2
+  conclusion for Model A. This is a lower bound on the growth: N=9 ran on an idle machine, while
+  N=3/N=6 ran under the concurrent experiment's CPU load. Unlike Model B, Model A has no
+  state-only measurement to normalize against. Under the same load, Model B's state-only encoding
+  took ~28% less time (63.5 → 45.8ms) on the idle machine.
+- **Accuracy/calibration: success criteria not met** (`accuracy_category` 0.425 < 0.5,
+  `correlation_refund_requested` 0.289 < 0.5). Calibration itself is fine (ECE 0.091). The
+  session ended as `budget_exceeded` because the brief allowed exactly one training run, so no
+  retry was attempted. This matches Model A's already-messy accuracy at N=6. Model B at N=9 on
+  the same dataset reached 0.95 / 0.94.
+
+**Three-point comparison (N=3/6/9):** Model A's latency grows with N at 1.0x / 2.33x / 3.15x of
+N=3, and this likely understates it (see above). Model B's per-question overhead over state
+encoding stays at 1.13x / 1.41x / 1.16x (median ratio). Only Model B's design (decoupled state
+encoding + batched cross-attention) behaves like Jev's Speculative Fan-Out claim. Caveats: one
+run per point, hyperparameters still not identical across the older N=3/N=6 runs, and uneven
+machine load across runs.
