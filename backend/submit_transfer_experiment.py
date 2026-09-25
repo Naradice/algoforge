@@ -146,6 +146,12 @@ M2_DATASET_ID: int | None = 79  # DDM 240K + Sine(period=200) 60K
 # Per-bar exponent decides -> N1 transfers, N2 doesn't. Generator identity decides -> reverse.
 N1_DATASET_ID: int | None = 80  # DDM 240K + Lorenz(dt=0.01) 60K
 N2_DATASET_ID: int | None = 81  # DDM 240K + Delay(stride=2) 60K
+# Phase 6c Lorenz dt sweep: N1 (dt=0.01) transfers 8/8, H1 (dt=0.02) 0/3 -- locate the flip on the
+# same attractor. characterize_window_structure.py found no single window-scale metric that
+# breaks between 0.01 and 0.02 (all move monotonically with dt).
+N3_DATASET_ID: int | None = 82  # DDM 240K + Lorenz(dt=0.0125) 60K
+N4_DATASET_ID: int | None = 83  # DDM 240K + Lorenz(dt=0.015) 60K
+N5_DATASET_ID: int | None = 84  # DDM 240K + Lorenz(dt=0.0175) 60K
 # Filled in by `prepare-data`/first submit -- the shared decoder_only MLModel both conditions'
 # runs are created under (same architecture config = same warm-started weight shapes).
 ML_MODEL_ID: int | None = None
@@ -479,6 +485,9 @@ _SYNTHETIC_COMPONENT_CONFIG = {
     # (both are deterministic, so seed is irrelevant anyway).
     "lorenz_dt0.01": {"seed": 2006, "lorenz_dt": 0.01, "function": "lorenz"},
     "delay_s2": {"seed": 2002, "tau": 17, "stride": 2, "function": "delay"},
+    "lorenz_dt0.0125": {"seed": 2006, "lorenz_dt": 0.0125, "function": "lorenz"},
+    "lorenz_dt0.015": {"seed": 2006, "lorenz_dt": 0.015, "function": "lorenz"},
+    "lorenz_dt0.0175": {"seed": 2006, "lorenz_dt": 0.0175, "function": "lorenz"},
 }
 
 
@@ -506,6 +515,7 @@ def _build_mixture_data(component_rows: dict):
         "ar1_forced_p70", "ar1_forced_p140", "ar1_forced_p280",
         "ar1_forced_p2", "ar1_forced_p3", "ar1_forced_rand5", "ar1_forced_l1",
         "sine_p15", "sine_p200", "lorenz_dt0.01", "delay_s2",
+        "lorenz_dt0.0125", "lorenz_dt0.015", "lorenz_dt0.0175",
     ):
         rows = component_rows.get(name)
         if not rows:
@@ -897,6 +907,19 @@ async def prepare_lyapunov_dial_data() -> None:
     print(f"\nPaste these into N1_DATASET_ID={n1} / N2_DATASET_ID={n2} at the top of this file.")
 
 
+async def prepare_lorenz_dt_sweep_data() -> None:
+    """Phase 6c: N3-N5, Lorenz at lorenz_dt 0.0125 / 0.015 / 0.0175 -- between N1 (0.01,
+    transfers) and H1 (0.02, doesn't). Same ABLATION_DDM_ROWS/ABLATION_COMPONENT_ROWS split."""
+    ids = []
+    for tag, dt in (("n3", "0.0125"), ("n4", "0.015"), ("n5", "0.0175")):
+        ids.append(await _register_mixture_dataset(
+            f"{tag.upper()}: DDM 240K + Lorenz(dt={dt}) 60K (Lorenz dt sweep)",
+            f"lorenz_dt_sweep_{tag}_ddm_lorenz_dt{dt.replace('.', '')}",
+            {"ddm": ABLATION_DDM_ROWS, f"lorenz_dt{dt}": ABLATION_COMPONENT_ROWS},
+        ))
+    print(f"Paste these into N3_DATASET_ID={ids[0]} / N4_DATASET_ID={ids[1]} / "
+          f"N5_DATASET_ID={ids[2]} at the top of this file.")
+
 # ---------------------------------------------------------------------------
 # Phase 2: submit TrainingRuns
 # ---------------------------------------------------------------------------
@@ -1080,6 +1103,7 @@ _D_DATASET_IDS = {
     "l1": lambda: L1_DATASET_ID,
     "m1": lambda: M1_DATASET_ID, "m2": lambda: M2_DATASET_ID,
     "n1": lambda: N1_DATASET_ID, "n2": lambda: N2_DATASET_ID,
+    "n3": lambda: N3_DATASET_ID, "n4": lambda: N4_DATASET_ID, "n5": lambda: N5_DATASET_ID,
 }
 _D_LABELS = {
     "d1": "D1 (DDM 240K + Sine 60K)", "d2": "D2 (DDM 240K + Delay 60K)",
@@ -1101,6 +1125,9 @@ _D_LABELS = {
     "m2": "M2 (DDM 240K + Sine period=200 60K)",
     "n1": "N1 (DDM 240K + Lorenz dt=0.01 60K)",
     "n2": "N2 (DDM 240K + Delay stride=2 60K)",
+    "n3": "N3 (DDM 240K + Lorenz dt=0.0125 60K)",
+    "n4": "N4 (DDM 240K + Lorenz dt=0.015 60K)",
+    "n5": "N5 (DDM 240K + Lorenz dt=0.0175 60K)",
 }
 _PREPARE_HINT = {
     "d1": "prepare-ablation-data", "d2": "prepare-ablation-data",
@@ -1115,6 +1142,8 @@ _PREPARE_HINT = {
     "l1": "prepare-period-structure-data",
     "m1": "prepare-dominant-scale-data", "m2": "prepare-dominant-scale-data",
     "n1": "prepare-lyapunov-dial-data", "n2": "prepare-lyapunov-dial-data",
+    "n3": "prepare-lorenz-dt-sweep-data", "n4": "prepare-lorenz-dt-sweep-data",
+    "n5": "prepare-lorenz-dt-sweep-data",
 }
 
 
@@ -1219,6 +1248,9 @@ def main():
         return
     if mode == "prepare-lyapunov-dial-data":
         asyncio.run(prepare_lyapunov_dial_data())
+        return
+    if mode == "prepare-lorenz-dt-sweep-data":
+        asyncio.run(prepare_lorenz_dt_sweep_data())
         return
 
     _require_dataset_ids()
