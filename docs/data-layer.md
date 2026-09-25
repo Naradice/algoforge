@@ -120,6 +120,14 @@ Formulas (`t` = bar index, `0..length-1`):
 | `delay` | Mackey-Glass DDE: `dx/dt = 0.2·x(t-τ)/(1+x(t-τ)¹⁰) − 0.1·x(t)`, discrete-time | The canonical chaotic-time-series benchmark. Deterministic given `tau` and a fixed initial history, but long-range unpredictable in practice. `tau=17` (default) is the standard mildly-chaotic setting; below ~4.5 the system settles to a fixed point instead. Ignores `amplitude`/`noise`'s usual role — the equation's own scale sets the range. |
 | `xor` | `base_price + amplitude * (2·(a[t-1] XOR a[t-2]) − 1)`, `a` iid Bernoulli(0.5) | "Temporal XOR" — the next value depends nonlinearly (non-additively) on two specific past bits. Not linearly separable from either bit alone; tests whether a model can learn nonlinear temporal combination rather than correlation/periodicity. |
 | `lfsr` | `base_price + amplitude * (2·bit_t − 1)`, `bit_t` from a Fibonacci linear feedback shift register | Deterministic and simple to *generate* (one XOR of a few register bits per step, exact period `2^lfsr_bits − 1`), but its statistical profile (near-uniform bit frequency, near-zero autocorrelation except exactly at the period) looks close to random. `lfsr_bits` (4/5/8/16 supported) sets the register width and therefore the period. |
+| `ar1` | `base_price + z_t`, `z_t = ar_phi·z_{t-1} + ε_t`, `ε_t ~ N(0, ar_sigma)` | Smooth and autocorrelated but stochastic and non-periodic. `seed` drives the innovations. |
+| `lorenz` | `base_price + x(t)`, x-coordinate of the Lorenz system (σ=10, ρ=28, β=8/3), RK4 with step `lorenz_dt` per bar | Deterministic, continuous, chaotic. `lorenz_dt` (default `0.02`) time-rescales the flow: the per-bar largest Lyapunov exponent is ≈ `0.905 · lorenz_dt` while the attractor is unchanged. |
+| `ar1_forced` | Same recurrence as `ar1` but `ε_t` replaced by `amplitude/len(P) · Σ_p sin(2π·t/p)` | Deterministic, no RNG. `forced_periods` (list) overrides the default periods `47, 71, 97, 127, 157`. |
+
+`delay` also takes `stride` (default `1`): keep every `stride`-th step of the Mackey-Glass
+recurrence — the same trajectory at a coarser time resolution, so the per-bar Lyapunov exponent
+scales by ≈ `stride`. Together with `lorenz_dt` this lets an experiment move the per-bar chaos rate
+without changing which attractor is sampled.
 
 `period` is in bars, not raw formula units — this reparameterizes the classic "x periodic with
 period T" / "sin(t) + A·sin(T·t)" definitions around a bar count so the result is a usable series
