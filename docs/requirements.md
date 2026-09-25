@@ -70,6 +70,24 @@ under-utilizes or over-saturates the real queues.
 **Proposed fix:** add `get_queue_status() -> {queue_name: {concurrency, active, reserved}}` backed by
 Celery's `inspect()` API.
 
+**Update 2026-09-25 (Jev replication, `docs/jev-replication.md`).** Running this investigation
+through study_manager showed two more consequences of this gap.
+
+- *Worker staleness.* A worker imports `celery_worker.py`/`model_core` at startup and never reloads
+  them. A run dispatched to a worker started before a code change fails instantly with unrelated-looking
+  errors, e.g. `Could not open Parquet input source`, and an external caller cannot tell a stale
+  worker from a real bug.
+- *Queue sharing.* The `training`/`collection` queues were shared with an unrelated concurrent
+  experiment ("Five Axes of Scaling"). The caller could see neither that the queue was busy with
+  someone else's tasks nor whether any worker was consuming it at all. On 2026-09-25 the queue had
+  zero workers after a machine restart, and a newly started run would simply have sat `pending`.
+
+Extend the proposed tool with each worker's hostname, queues, start time, and the code revision it
+loaded (e.g. `git rev-parse HEAD` read at worker startup):
+`get_queue_status() -> {queue_name: {concurrency, active, reserved, workers: [{hostname, started_at, code_revision}]}}`.
+A caller can then refuse to dispatch when no worker is present, or when every worker is older than
+the revision it expects.
+
 ---
 
 ### R-6. `deploy_model` has no concurrency guard — P1 (upgraded from P2)
@@ -158,6 +176,117 @@ decision (BRIEFING or Reason+Decide would need to supply `type`/`config`, which 
 enum already has to guard against), or (b) treat "propose a new datasource type/config for human
 setup" as a distinct output of BRIEFING itself, surfaced for approval alongside the brief rather
 than attempted autonomously mid-loop.
+
+---
+
+### R-13. A training run whose worker dies stays `running` forever — nothing can end it — P1
+
+**Evidence:**
+- `stop_training_run` (`mcp_server/tools/model.py:336` → `model/service.py:236`) only sets
+  `stop_requested=True`. The flag is read by the training loop itself, so a run whose worker process
+  has died never sees it. The run stays `pending`/`running` indefinitely.
+- No code path detects a dead run and moves it to a terminal state: no heartbeat, no reaper, no
+  timeout. `training.error` / `training.completed` are dispatched only from inside the executing
+  worker (`celery_worker.py:677,773,938,1159` / `710,872,1019`), so a dead worker sends no webhook either.
+- `train_model` holds `algoforge:executing:train_model:{id}` for 12h (`celery_worker.py:1048`,
+  `ex=43200`). That is correct for its purpose (blocking duplicate execution on redelivery), but it
+  also means a redelivered message for a dead run is skipped as `duplicate_execution` until the lock
+  expires.
+
+**Found in practice:** Model A N=9 was attempted repeatedly on 2026-09-21 (Jev replication
+Phase 2). Each time the worker died under system-wide virtual-memory exhaustion. Each run was left
+permanently `running`, and the study_manager session waiting on it hung until it was paused by
+hand (study_manager sessions 15-17, still `paused`). There was no MCP (or REST) way to mark the run failed.
+
+**Impact:** an autonomous caller cannot tell "still training" from "worker is gone". Its only
+option is to wait on `get_training_status` until its own wall-clock budget runs out, and the
+queue slot it accounted for is never freed. This is the most likely long-running failure mode on a
+shared machine: OOM kills, restarts, and a human stopping a worker all cause it.
+
+**Proposed fix:**
+1. Have the executing worker write a heartbeat, e.g. `TrainingRun.last_heartbeat_at` updated
+   each epoch/step, or a short-TTL Redis key refreshed by a background thread.
+2. Add a periodic reaper (the existing `tick_scheduler` beat task, `celery_worker.py:500`, is a natural home). It marks
+   `running` runs whose heartbeat is older than a threshold as `error`, with
+   `error="worker lost (no heartbeat since …)"`, dispatches `training.error`, and releases the exec lock.
+3. Surface `last_heartbeat_at` in `get_training_status`, so a caller can see staleness before the
+   reaper acts.
+4. Optionally, let `stop_training_run(force=True)` move a run with a stale heartbeat straight to
+   a terminal state.
+
+---
+
+### R-14. `start_hyperparameter_search` has no base hyperparameters — P2
+
+**Evidence:** `start_hyperparameter_search(model_id, dataset_id, search_grid, execution_target)`
+(`mcp_server/tools/model.py:400`) takes only the grid. `model_service.create_search_runs`
+(`model/service.py:269`) builds each run's `hyperparams` from nothing but that grid's combination
+(`dict(zip(keys, combo))`). `HyperparamSearchCreate` (`model/models.py:304`) has no field for
+values shared across combinations.
+
+**Impact:** a caller that wants to vary `lr` while holding `epochs=3, batch_size=32, seed=42` fixed
+has to pass the fixed values as single-value axes (`{"epochs": [3], ...}`). Anything it forgets
+silently falls back to the trainer's defaults, not to the values it holds for single runs. That
+makes a search and a single run with "the same" settings easy to diverge by accident.
+study_manager now works around this (its `brief.pinned` enforcement collapses pinned keys into
+single-value axes; see `study_manager/README.md`). Every other caller has to know to do the same.
+
+**Proposed fix:** add an optional `base_hyperparams: dict` to the tool and to
+`HyperparamSearchCreate`. Each run gets `{**base_hyperparams, **combo}`. Reject a key that appears
+both in `base_hyperparams` and in the grid with more than one value, to make intent explicit.
+
+---
+
+### R-15. Latency metrics carry no measurement context, so they aren't comparable across runs — P3
+
+**Evidence:** `measure_inference_latency` (`model_core/trainers/typed_decision.py:302`), and Model B's
+`measure_cross_attn_latency` (`cross_attn_typed_decision.py:180`), return only timing statistics, sequence length and
+question count. Nothing records the conditions of the measurement: host, thread count,
+concurrent tasks, or system load/free memory at measurement time. These metrics are written to
+`get_model_validations` as if they were a property of the model.
+
+**Found in practice:** in Jev replication, Model B's *state-only* encoding latency does not depend
+on N at all, yet it measured 74.5 / 63.5ms at N=3/N=6 (a busy shared machine) and 45.8ms at N=9
+(an idle one). A raw cross-run latency comparison would have reported a speed-up that was purely
+machine load. The investigation had to fall back to within-run ratios. Model A has no
+N-independent baseline to normalize against, so its N=3/6/9 growth could only be reported as a
+lower bound (`docs/jev-replication.md`, "Model A N=9 result").
+
+**Impact:** a research agent comparing latency across runs, which is exactly the Speculative
+Fan-Out question, has no way to detect or correct for contention. It will draw wrong
+conclusions without any warning.
+
+**Proposed fix:** record a `measurement_context` next to every latency metric: hostname,
+`torch.get_num_threads()`, 1-min load/CPU utilization and free physical memory sampled around the
+measurement, and the number of other active tasks on the same host (from R-5's data once it
+exists). Optionally include a fixed reference micro-benchmark timed alongside, so cross-run
+latencies can be normalized. `compare_model_runs` could then flag latency comparisons whose
+contexts differ materially.
+
+---
+
+### R-16. No resource admission check before starting a training run — P3
+
+**Evidence:** `start_training_run` / `start_hyperparameter_search` (`mcp_server/tools/model.py:203`,
+`:400`) validate the model, dataset and execution target, but nothing estimates or checks memory
+headroom. The run is enqueued and fails, or with R-13 hangs, only when the worker actually runs
+out of memory.
+
+**Found in practice:** the same Jev Phase 2 N=9 failures as R-13. Free virtual memory had dropped
+to ~5GB after ~24h of concurrent workers from two experiments on one 16GB machine. After a
+restart (~25-30GB free) the identical runs completed (Model B run 1577, Model A run 1578, both
+2026-09-25). Nothing on the AlgoForge side said "this run cannot fit right now". The cause was
+found by hand with `Get-CimInstance Win32_OperatingSystem`.
+
+**Impact:** lower than R-13 (once R-13 exists, the caller at least gets a clean failure). But an
+autonomous caller still spends budget and queue time on runs that were never going to fit, and
+has no signal to wait and retry instead.
+
+**Proposed fix:** a cheap preflight in the worker before loading data/model: compare free
+physical/virtual memory against a threshold (configurable, optionally per architecture). Below it,
+fail fast with a distinct, retryable error (`error_code="insufficient_resources"`) instead of
+starting. Exposing free memory in R-5's `get_queue_status` would let callers avoid dispatching in
+the first place.
 
 ---
 
