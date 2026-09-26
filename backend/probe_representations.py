@@ -70,6 +70,11 @@ CHECKPOINTS: dict[str, str | None] = {
                                                              # (0/3) -- the key negative control
     "ddm_sine_p15":  "models/170/training_1564/best.pt",   # M1 pretrain (Sine period=15, transfers 5/5)
     "ddm_sine_p200": "models/172/training_1571/best.pt",   # M2 pretrain (Sine period=200, transfers 5/5)
+    # Phase 6 Lorenz dt sweep: same attractor, transfer flips between dt=0.01 and 0.0125
+    "ddm_lorenz":        "models/142/training_1499/best.pt",  # H1 pretrain (dt=0.02, 0/3)
+    "ddm_lorenz_dt001":  "models/175/training_1579/best.pt",  # N1 pretrain (dt=0.01, 8/8)
+    "ddm_lorenz_dt0125": "models/179/training_1599/best.pt",  # N3 pretrain (dt=0.0125, 0/3)
+    "ddm_delay_s2":      "models/176/training_1580/best.pt",  # N2 pretrain (Delay stride=2, 8/8)
 }
 SCRATCH_INIT_SEED = 42
 
@@ -208,6 +213,9 @@ async def extract() -> None:
 
     for label, checkpoint_path in CHECKPOINTS.items():
         print(f"\n=== {label} ===")
+        if (OUTPUT_DIR / f"{label}.npz").exists() and "--force" not in sys.argv:
+            print("  already extracted, skipping (pass --force to redo)")
+            continue
         if label == "scratch":
             torch.manual_seed(SCRATCH_INIT_SEED)
         model = _build_model()

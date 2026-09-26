@@ -56,10 +56,54 @@ Prediction if the exponent is the dial: N1 transfers, N2 does not.
 - Synthetic/DDM median `vol_20` ratio: transferring 0.37–26×, non-transferring 7.9–130×. Scale
   overlaps between groups, so it is at most a partial confound.
 
+## Phase 6b/6c — window structure, Lorenz dt sweep, probes (2026-09-26)
+
+**Window structure (model-free, `backend/characterize_window_structure.py`).** Across Lorenz
+dt 0.005–0.02, return smoothness, turns per window, lobe crossings per window and `vol_20`
+scale/variability all move monotonically with dt — no single metric breaks between 0.01 and
+0.02. Separately: the single-period `ar1_forced` conditions I1/I2 are exactly pure sines
+(sine-fit R² = 1.000000) with amplitude 11 (period 70) and 20.5 (period 140). They fail 0/5,
+while amplitude-1 sines transfer at periods 15/50/200 — so the handoff's "5 phases can't be
+resolved from one window" explanation for the `ar1_forced` family is doubtful. Amplitude alone
+does not explain it either: I2 (amplitude 20, vol 14.7×) fails, N1 (amplitude ~20, vol 13.3×)
+transfers.
+
+**Lorenz dt sweep — transfer switches off between dt 0.01 and 0.0125.** Pretrain seed 42,
+fine-tune seeds 42–44. Best checkpoints at steps 5K–14K, so not budget-limited.
+
+| Condition | `lorenz_dt` | Fine-tune runs | Mean best val_loss | Transfer |
+|---|---|---|---|---|
+| N1 | 0.01 | 1581–1585, 1593–1595 | 0.615 / 0.577 | 8/8 |
+| N3 | 0.0125 | 1602–1604 | 0.825 | 0/3 |
+| N4 | 0.015 | 1605–1607 | 0.827 | 0/3 |
+| N5 | 0.0175 | 1608–1610 | 0.824 | 0/3 |
+| H1 | 0.02 | 1502–1504 | 0.826 | 0/3 |
+
+**Frozen probes (`backend/probe_representations.py`) predict transfer.** Layer-3 Ridge R² for
+USDJPY future `vol_20` on each pretrain checkpoint, before any fine-tuning:
+
+| Checkpoint | Layer-3 vol R² | Fine-tune |
+|---|---|---|
+| ddm_only / xor / lfsr | 0.11–0.13 | no transfer |
+| H1 Lorenz dt=0.02 | 0.130 | no transfer |
+| N3 Lorenz dt=0.0125 | 0.137 | no transfer |
+| M1 Sine p15 | 0.200 | 0.599 |
+| N1 Lorenz dt=0.01 | 0.218 | 0.615 |
+| D2 Delay | 0.386 | 0.516 |
+| M2 Sine p200 | 0.405 | 0.535 |
+| D1 Sine p50 | 0.483 | 0.507 |
+| N2 Delay stride=2 | 0.494 | 0.324 |
+
+There is a clean gap between 0.137 and 0.200, and the order almost matches the fine-tune
+losses. Whether transfer happens is decided during pretraining — by whether the volatility
+feature forms — so the open question moves to the pretrain dynamics.
+
 ## Open questions
 
 - What H1 (dt=0.02) lacks that N1 (dt=0.01) has, for the same attractor. Candidates to measure
   per bar: return autocorrelation, curvature/smoothness at the 60-bar window scale, fraction of
   windows containing a lobe switch.
-- A finer `lorenz_dt` sweep (0.0125, 0.015, 0.0175) to locate the flip for Lorenz.
+- Why the N3 pretrain doesn't form the volatility feature when N1's does: per-segment pretrain
+  loss (DDM part vs Lorenz part) over training.
+- Sine amplitude sweep at period 50 to test amplitude directly (would reinterpret I–L).
 - Extended (40K-step) fine-tunes for N1/N2 so magnitudes are converged before comparing them.
