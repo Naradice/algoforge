@@ -122,12 +122,37 @@ feature forms — so the open question moves to the pretrain dynamics.
   is never learned. Learning DDM is necessary but not sufficient — B (DDM only) learns DDM and
   does not transfer.
 
+## Phase 6e — DDM learning across all 26 pretrains (2026-09-26)
+
+`backend/cross_condition_segment_check.py` evaluates every condition's pretrain `best.pt` (the
+checkpoint its fine-tunes warm-started from) on its own pretrain val windows, split by segment.
+Raw output: `backend/cross_condition_segment_check.json`.
+
+**Whether the pretrain learned the DDM segment separates every condition.**
+
+| Group | DDM-segment R² at end of pretraining |
+|---|---|
+| Transfers: D1, D2, E1–E3, M1, M2, N1 ×2 seeds, N2 ×2 seeds | 0.050 – 0.637 (min: N1 seed 99) |
+| No transfer: B, D3, D4, G1, H1, H2 s99, I1, I2, J1, K1, L1, N3–N5 | −1.231 – 0.029 (max: K1) |
+| H2 seed 42 (2/3, ambiguous) | 0.018 |
+
+The margin is thin (0.029 vs 0.050), so this is a strong pattern, not yet a threshold.
+
+- **The Phase 6d compression hypothesis is refuted.** DDM target variance divided by the
+  synthetic residual MSE overlaps between groups (N1 0.69 transfers, I2 11.3 fails).
+- **Fitting the synthetic segment is not what matters.** The `ar1_forced` family fits its
+  synthetic segment almost perfectly (R² 0.96–0.997) and never learns DDM; M1 barely fits its
+  own (R² 0.09) and learns DDM (0.21).
+- **B (DDM only) does not learn DDM either (R² 0.000).** DDM's `vol_20` is heavy-tailed (shock
+  spikes), so after z-scoring most windows sit in a tiny variance band (≈ 0.014) and a DDM-only
+  pretrain collapses to predicting the mean. Some synthetic segments get the pretrain past that
+  collapse (sine, Delay, slow Lorenz); others do not.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
   metrics above don't show it (Phase 6b).
-- Test the Phase 6d hypothesis across every existing pretrain (no training): does "DDM segment
-  R² > 0 at the end of pretraining" — or DDM target variance vs synthetic residual loss —
-  separate all transferring from all non-transferring conditions (D1–N5, incl. M1 at 26×)?
+- Why a DDM-only pretrain collapses to the mean, and which property of a synthetic segment gets
+  training past it. First check: B's own 20 intermediate checkpoints (was DDM R² ever > 0?).
 - Sine amplitude sweep at period 50 to test amplitude directly (would reinterpret I–L).
 - Extended (40K-step) fine-tunes for N1/N2 so magnitudes are converged before comparing them.
