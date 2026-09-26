@@ -98,11 +98,36 @@ There is a clean gap between 0.137 and 0.200, and the order almost matches the f
 losses. Whether transfer happens is decided during pretraining — by whether the volatility
 feature forms — so the open question moves to the pretrain dynamics.
 
+## Phase 6d — per-segment pretraining trajectory, N1 vs N3 (2026-09-26)
+
+`backend/segment_pretrain_trajectory.py` evaluates each pretrain's 20 intermediate checkpoints
+(every 2,000 steps) on the pretrain val windows split by source segment (via
+`OHLCWindowDataset.window_start_timestamps`), plus the USDJPY frozen vol probe. Raw output:
+`backend/segment_pretrain_trajectory.json`.
+
+| | N1 (dt=0.01, transfers) | N3 (dt=0.0125, fails) |
+|---|---|---|
+| Lorenz segment R² | 0.95–0.99 | 0.965–0.995 |
+| DDM segment R² | < 0 until ~18K steps, then 0.12–0.16 | ≤ 0 at every checkpoint (min −0.61) |
+| USDJPY vol probe, layer 3 | 0.11 → rises from ~16K → 0.20–0.24 | 0.11–0.15 throughout |
+| DDM target variance (z-scored) | ~0.009 | ~0.0055 |
+
+- N3 does not fit Lorenz at DDM's expense — DDM loss never gets worse, it simply never drops
+  below predicting the mean. N3 fits Lorenz slightly better than N1.
+- In N1 the USDJPY vol feature forms together with DDM learning (probe rises ~16K, DDM R²
+  turns positive ~18–20K).
+- Working hypothesis: dataset-level z-scoring of the mixture target compresses DDM's `vol_20`
+  variance by the synthetic segment's scale (Lorenz vol 13× DDM in N1, 21× in N3). In N3 the
+  whole DDM signal (var ≈ 0.0055) is smaller than the Lorenz residual loss (0.01–0.05), so DDM
+  is never learned. Learning DDM is necessary but not sufficient — B (DDM only) learns DDM and
+  does not transfer.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
   metrics above don't show it (Phase 6b).
-- Why the N3 pretrain doesn't form the volatility feature when N1's does: per-segment pretrain
-  loss (DDM part vs Lorenz part) over training.
+- Test the Phase 6d hypothesis across every existing pretrain (no training): does "DDM segment
+  R² > 0 at the end of pretraining" — or DDM target variance vs synthetic residual loss —
+  separate all transferring from all non-transferring conditions (D1–N5, incl. M1 at 26×)?
 - Sine amplitude sweep at period 50 to test amplitude directly (would reinterpret I–L).
 - Extended (40K-step) fine-tunes for N1/N2 so magnitudes are converged before comparing them.
