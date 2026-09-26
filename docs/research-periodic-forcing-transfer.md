@@ -178,11 +178,37 @@ is made against — is degenerate: it never learns DDM because of this artifact.
 pretrain shares the same contamination from its DDM runs, and the synthetic segment changes the
 normalizer too. Whether a correctly normalized DDM-only pretrain transfers by itself is untested.
 
+## Phase 7a — B′: corrected target normalization is not enough (2026-09-27)
+
+B′ = DDM-only pretrain (run 1611) with `normalize_scope="valid_windows"` (target z-variance of
+real windows 0.014 → 1.000); everything else as B. Raw output:
+`backend/segment_pretrain_trajectory_Bprime_ddm_only.json`.
+
+- DDM-segment R² stays in [−0.002, 0.002] at all 20 checkpoints; the USDJPY vol probe stays at
+  scratch level (0.103–0.116). **Case 3** of the planned decision tree: DDM is still not learned.
+- The information is there: a single linear feature — std of the last 19 input differences —
+  explains 96% of the target variance in every condition (B′ 0.957; DDM segments of D1/N1/N3/K1
+  0.959–0.962).
+- **The input side is the remaining bottleneck.** The input (`close`, z-scored over the whole
+  dataset) is dominated by the price-level spread across the 48 concatenated simulation runs,
+  so DDM's per-bar change is ~0.2% of the input scale:
+
+| Condition / segment | Median per-bar input change (z-units) |
+|---|---|
+| B′ DDM | 0.0020 |
+| D1 / N1 / N3 / K1 DDM | 0.0014–0.0020 |
+| Synthetic segments (D1, N1, N3, K1) | 0.023–0.080 |
+
+  Synthetic segments move 10–50× more per bar, which may be what gets a mixture pretrain past
+  mean-collapse — but N1 (0.064) and N3 (0.080) are not separated by it.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
   metrics above don't show it (Phase 6b).
-- **B′: DDM-only pretrain with gap-free target normalization.** If it learns DDM and transfers,
-  the synthetic-segment effect is largely rescue from the normalization artifact.
+- B′ fine-tunes (runs 1612–1614) — expected near baseline since the pretrain learned nothing.
+- Input representation: a pretrain whose input exposes per-bar changes (e.g. z-scored returns
+  instead of z-scored price levels). Changes the fine-tune input too, so it needs its own
+  from-scratch USDJPY baseline.
 - Sine amplitude sweep at period 50 to test amplitude directly (would reinterpret I–L).
 - Extended (40K-step) fine-tunes for N1/N2 so magnitudes are converged before comparing them.
