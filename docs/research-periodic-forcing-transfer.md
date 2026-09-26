@@ -206,7 +206,7 @@ real windows 0.014 → 1.000); everything else as B. Raw output:
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
   metrics above don't show it (Phase 6b).
-- B′ fine-tunes (runs 1612–1614) — expected near baseline since the pretrain learned nothing.
+- B′ fine-tunes (runs 1612–1614): mean best val_loss 0.824, 0/3 transfer (B: 0.837, 0/3) — as expected from a pretrain that learned nothing.
 - Input representation: a pretrain whose input exposes per-bar changes (e.g. z-scored returns
   instead of z-scored price levels). Changes the fine-tune input too, so it needs its own
   from-scratch USDJPY baseline.
