@@ -1106,6 +1106,7 @@ async def _train_model(training_run_id: int) -> dict:
                 split_mode=hp.get("split_mode", "chronological"),
                 split_seed=hp.get("split_seed", 42),
                 require_contiguous=hp.get("require_contiguous", False),
+                normalize_scope=hp.get("normalize_scope", "all_rows"),
             )
             # Persisted (not just logged) immediately after construction, before any training
             # happens, so it's visible even if the run later fails or gets orphaned -- exactly

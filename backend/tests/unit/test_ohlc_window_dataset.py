@@ -787,3 +787,73 @@ class TestWindowStartTimestamps:
         ts = pd.DatetimeIndex(starts)
         # a window spans obs_len + pred_len + 1 = 12 rows, so the last valid pre-gap start is n-12
         assert not ((ts < pd.Timestamp("2024-02-01", tz="UTC")) & (ts > idx[n - 12])).any()
+
+
+def _make_two_run_parquet(path, n=600, jump=50.0):
+    """Two independent 'runs' concatenated with a 1-month gap and a price jump between them --
+    the structure of the DDM pretrain data that motivated normalize_scope='valid_windows'."""
+    rng = np.random.default_rng(0)
+    idx = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC")
+    idx = idx.append(pd.date_range("2024-02-01", periods=n, freq="1min", tz="UTC"))
+    close = 100 + np.cumsum(rng.normal(0, 0.01, 2 * n))
+    close[n:] += jump
+    df = pd.DataFrame({"open": close, "high": close, "low": close, "close": close,
+                       "volume": np.ones(2 * n)}, index=idx)
+    df.index.name = "datetime"
+    df.to_parquet(path)
+    return df
+
+
+class TestNormalizeScopeValidWindows:
+    HP = dict(obs_len=10, pred_len=1, feature_cols=["close"], tgt_feature_cols=["vol_5"],
+              preprocessing={"indicators": [{"type": "volatility", "period": 5, "column": "close"}]},
+              normalize="zscore", val_split=0.2, split_mode="chronological", require_contiguous=True)
+
+    def test_cross_gap_rows_do_not_inflate_target_stats(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        _make_two_run_parquet(artifact_store / "runs.parquet")
+        old = OHLCWindowDataset("runs.parquet", **self.HP)
+        new = OHLCWindowDataset("runs.parquet", normalize_scope="valid_windows", **self.HP)
+        tgt_old = np.concatenate([old._train_tgt, old._val_tgt])[:, 1:, 0]
+        tgt_new = np.concatenate([new._train_tgt, new._val_tgt])[:, 1:, 0]
+        # all_rows: the post-gap vol spike inflates sigma, squashing every real target
+        assert np.nanstd(tgt_old) < 0.3
+        # valid_windows: targets are standardized over the rows they occupy
+        assert 0.8 < np.nanstd(tgt_new) < 1.2
+        assert np.nanmax(np.abs(tgt_new)) < 10
+
+    def test_uses_corrected_gap_filter(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        df = _make_two_run_parquet(artifact_store / "runs.parquet")
+        ds = OHLCWindowDataset("runs.parquet", normalize_scope="valid_windows", **self.HP)
+        ts = pd.DatetimeIndex(np.concatenate([ds._train_start_ts, ds._val_start_ts]))
+        pos = df.index.get_indexer(ts)
+        total_len = 10 + 1 + 1
+        # every window lies entirely inside one run (rows [0, 600) or [600, 1200))
+        assert np.all((pos + total_len <= 600) | (pos >= 600))
+        # and the window starting exactly at the first post-gap row is kept
+        assert 600 in set(pos)
+
+    def test_default_scope_is_unchanged(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        _make_two_run_parquet(artifact_store / "runs.parquet")
+        a = OHLCWindowDataset("runs.parquet", **self.HP)
+        b = OHLCWindowDataset("runs.parquet", normalize_scope="all_rows", **self.HP)
+        assert np.array_equal(a._train_tgt, b._train_tgt, equal_nan=True)
+        assert a.normalize_scope == "all_rows"
+
+    def test_rejects_unsupported_configs(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        _make_two_run_parquet(artifact_store / "runs.parquet")
+        with pytest.raises(ValueError):
+            OHLCWindowDataset("runs.parquet", normalize_scope="valid_windows",
+                              **{**self.HP, "require_contiguous": False})
+        with pytest.raises(ValueError):
+            OHLCWindowDataset("runs.parquet", normalize_scope="valid_windows",
+                              **{**self.HP, "normalize": "minmax"})
+        with pytest.raises(ValueError):
+            OHLCWindowDataset("runs.parquet", normalize_scope="bogus", **self.HP)

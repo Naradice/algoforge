@@ -982,6 +982,7 @@ async def run_pretrain_then_finetune(
     pretrain_max_steps: int, pretrain_val_every_steps: int,
     finetune_max_steps: int, finetune_val_every_steps: int,
     execution_target: str = "local",
+    pretrain_hp_overrides: dict | None = None,
 ) -> tuple[int, list[int]]:
     """Shared by condition B (pretrain_dataset_id=DDM_DATASET_ID) and condition C
     (pretrain_dataset_id=MIXTURE_DATASET_ID): pretrain (single seed) on pretrain_dataset_id ->
@@ -997,7 +998,8 @@ async def run_pretrain_then_finetune(
     from model.models import TrainingRun
 
     model_id = await _ensure_model()
-    pretrain_hp = _pretrain_hp(pretrain_seed, pretrain_max_steps, pretrain_val_every_steps)
+    pretrain_hp = {**_pretrain_hp(pretrain_seed, pretrain_max_steps, pretrain_val_every_steps),
+                   **(pretrain_hp_overrides or {})}
     pretrain_run_id = await _submit(model_id, pretrain_dataset_id, pretrain_hp, execution_target)
 
     print(f"Waiting for pretrain run {pretrain_run_id} to complete "
@@ -1175,6 +1177,34 @@ async def _run_condition_d(which: str, seeds: list[int]) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Corrected pipeline (Phase 7, primed-name conditions B', D1', ...): Phase 6f found that on the
+# concatenated DDM pretrain data, vol_20 rows just after each of the gaps between simulation runs
+# inflate the z-score statistics 8.4x (target z-variance ~0.014 on every real window), and that a
+# DDM-only pretrain never learns DDM. The old pipeline's runs are kept as-is; corrected runs are a
+# separate series. Only the PRETRAIN changes (normalize_scope="valid_windows": statistics from the
+# rows each column occupies in kept windows + the corrected gap filter). Fine-tunes keep the old
+# USDJPY settings -- USDJPY's normalizer is barely affected (1.02x) and leaving it untouched keeps
+# every fine-tune val_loss directly comparable with the old series. Indicators themselves are NOT
+# reset at gaps here -- that is a separate factor (B'-B).
+# ---------------------------------------------------------------------------
+CORRECTED_PRETRAIN_HP = {"normalize_scope": "valid_windows"}
+_CORRECTED_DATASET_IDS = {"b": lambda: DDM_DATASET_ID, **_D_DATASET_IDS}
+
+
+async def _run_corrected(which: str, seeds: list[int], pretrain_seed: int = 42) -> None:
+    dataset_id = _CORRECTED_DATASET_IDS[which]()
+    print(f"=== corrected pipeline {which.upper()}' (dataset {dataset_id}) pretrain "
+          f"{CORRECTED_PRETRAIN_HP} -> USDJPY fine-tune (old settings) ===")
+    pretrain_run_id, finetune_ids = await run_pretrain_then_finetune(
+        dataset_id, seeds, pretrain_seed=pretrain_seed,
+        pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
+        finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
+        pretrain_hp_overrides=CORRECTED_PRETRAIN_HP,
+    )
+    print(f"pretrain run {pretrain_run_id}, fine-tune runs {finetune_ids}")
+
+
 async def _run_replicate_pretrain(which: str, pretrain_seed: int, finetune_seeds: list[int]) -> None:
     """Pretrain-seed replication (user-requested robustness check on D1's surprising ~39% loss
     reduction, which so far rests on a SINGLE pretrain seed): re-pretrain the SAME mixture
@@ -1276,6 +1306,11 @@ def main():
         which = sys.argv[2]
         seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
         asyncio.run(_run_condition_d(which, seeds))
+    elif mode == "corrected":
+        if len(sys.argv) < 3 or sys.argv[2] not in _CORRECTED_DATASET_IDS:
+            raise SystemExit(f"usage: corrected <{'|'.join(_CORRECTED_DATASET_IDS)}> [seed ...]")
+        seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
+        asyncio.run(_run_corrected(sys.argv[2], seeds))
     elif mode == "replicate-pretrain":
         if len(sys.argv) < 4 or sys.argv[2] not in _D_DATASET_IDS:
             raise SystemExit(

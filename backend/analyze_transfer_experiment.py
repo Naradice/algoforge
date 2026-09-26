@@ -108,6 +108,7 @@ async def _target_variance(dataset_id: int, hyperparams: dict) -> float:
         normalize=hyperparams["normalize"], preprocessing=hyperparams.get("preprocessing"),
         val_split=hyperparams.get("val_split", 0.2), split_mode=hyperparams.get("split_mode", "chronological"),
         require_contiguous=hyperparams.get("require_contiguous", False),
+        normalize_scope=hyperparams.get("normalize_scope", "all_rows"),
         max_rows=max_rows,
     )
     ds.eval()

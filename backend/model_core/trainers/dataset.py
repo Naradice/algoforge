@@ -92,7 +92,27 @@ class OHLCWindowDataset:
         split_mode: str = "chronological",
         split_seed: int = 42,
         require_contiguous: bool = False,
+        normalize_scope: str = "all_rows",
     ) -> None:
+        # normalize_scope="valid_windows" (opt-in; default "all_rows" keeps every existing run
+        # reproducible): z-score statistics come only from rows that actually play each role in
+        # a kept window -- target stats from target rows, input stats from input rows -- and the
+        # contiguity filter uses the corrected gap check (see _window_ok). Motivation: on
+        # datasets built from concatenated independent runs (DDM pretrain data), vol_20 rows just
+        # after each gap carry huge cross-gap returns; require_contiguous already drops their
+        # windows, but "all_rows" statistics still include them (8.4x inflated std on the DDM
+        # pretrain set -- docs/research-periodic-forcing-transfer.md, Phase 6f).
+        if normalize_scope not in ("all_rows", "valid_windows"):
+            raise ValueError(f"Unknown normalize_scope: {normalize_scope!r}")
+        if normalize_scope == "valid_windows" and not (
+            require_contiguous and token_level is None and normalize == "zscore"
+            and src_normalize in (None, "zscore")
+        ):
+            raise ValueError(
+                "normalize_scope='valid_windows' requires require_contiguous=True, token_level=None "
+                "and zscore normalization"
+            )
+        self.normalize_scope = normalize_scope
         df, feature_cols, self.data_provenance = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         raw = df[feature_cols].values.astype(np.float32)
 
@@ -116,7 +136,14 @@ class OHLCWindowDataset:
         # exactly as before (src_data is literally tgt_data, same object).
         same_column = tgt_feature_cols is None or tgt_feature_cols == feature_cols
         tgt_raw = raw if same_column else df[tgt_feature_cols].values.astype(np.float32)
-        tgt_data = self._apply_normalize(tgt_raw, normalize)
+        if normalize_scope == "valid_windows":
+            ok = self._window_ok(raw_gap_mask_full, len(raw), obs_len + pred_len + 1, corrected=True)
+            starts = np.where(ok)[0]
+            src_rows = self._role_rows(len(raw), starts, 0, obs_len)                  # rows i .. i+obs_len-1
+            tgt_rows = self._role_rows(len(raw), starts, obs_len - 1, pred_len + 2)  # rows i+obs_len-1 .. i+obs_len+pred_len
+            tgt_data = self._zscore_over(tgt_raw, tgt_rows | src_rows if same_column else tgt_rows)
+        else:
+            tgt_data = self._apply_normalize(tgt_raw, normalize)
 
         # Store normalisation params for inverse transform at inference
         self._normalize = normalize
@@ -135,7 +162,10 @@ class OHLCWindowDataset:
             if same_column:
                 src_data = tgt_data
             else:
-                src_data = self._apply_normalize(raw, src_normalize if src_normalize is not None else normalize)
+                src_data = (
+                    self._zscore_over(raw, src_rows) if normalize_scope == "valid_windows"
+                    else self._apply_normalize(raw, src_normalize if src_normalize is not None else normalize)
+                )
                 # src and tgt may now come from independently-normalized columns with different
                 # diff-induced lengths (e.g. src="returns" drops 1 row, tgt="zscore" doesn't) --
                 # trim both to a common length from the front, keeping the tail aligned, so
@@ -321,10 +351,7 @@ class OHLCWindowDataset:
             # window starting at position i spans rows [i, i+total_len-1] -- valid iff none of
             # its total_len-1 internal row-to-row transitions (gap_mask[i+1 .. i+total_len-1])
             # is a gap. Prefix-sum lets every window's check run in O(1).
-            bad_prefix = np.concatenate([[0], np.cumsum(gap_mask.astype(np.int64))])
-            starts = np.arange(n_windows)
-            gap_sum = bad_prefix[starts + total_len - 1] - bad_prefix[starts]
-            window_ok = gap_sum == 0
+            window_ok = self._window_ok(gap_mask, n, total_len, corrected=normalize_scope == "valid_windows")
             all_src, all_tgt = all_src[window_ok], all_tgt[window_ok]
             all_start_ts = all_start_ts[window_ok]
             n_windows = len(all_src)
@@ -407,6 +434,41 @@ class OHLCWindowDataset:
         tol = max(1e-6, stride_seconds * 1e-6)
         gap[1:] = np.abs(deltas[1:] - stride_seconds) > tol
         return gap
+
+    @staticmethod
+    def _window_ok(gap_mask: np.ndarray, n: int, total_len: int, corrected: bool) -> np.ndarray:
+        """bool per candidate window start (n - total_len + 1 of them): True if the window's
+        rows [i, i+total_len-1] contain no gap. A window crosses a gap iff gap_mask is True at
+        any of rows i+1 .. i+total_len-1 (gap_mask[k] = row k does not follow row k-1).
+
+        corrected=False reproduces the original check, which sums gap_mask[i .. i+total_len-2]
+        -- off by one: the window whose LAST row is the first post-gap row survives, and the
+        window starting AT a post-gap row is dropped. Kept as the default path so existing runs
+        stay bit-for-bit reproducible (fixing it changes the window set and therefore every
+        regime_controlled split)."""
+        bad_prefix = np.concatenate([[0], np.cumsum(gap_mask.astype(np.int64))])
+        starts = np.arange(n - total_len + 1)
+        if corrected:
+            gap_sum = bad_prefix[starts + total_len] - bad_prefix[starts + 1]
+        else:
+            gap_sum = bad_prefix[starts + total_len - 1] - bad_prefix[starts]
+        return gap_sum == 0
+
+    @staticmethod
+    def _role_rows(n: int, starts: np.ndarray, offset: int, length: int) -> np.ndarray:
+        """bool mask over n rows: rows starts+offset .. starts+offset+length-1 for every start."""
+        cover = np.zeros(n + 1, dtype=np.int64)
+        np.add.at(cover, starts + offset, 1)
+        np.add.at(cover, starts + offset + length, -1)
+        return np.cumsum(cover)[:n] > 0
+
+    @staticmethod
+    def _zscore_over(data: np.ndarray, rows: np.ndarray) -> np.ndarray:
+        """zscore every row of data using mean/std computed only over the masked rows."""
+        mu = np.nanmean(data[rows], axis=0)
+        sigma = np.nanstd(data[rows], axis=0)
+        sigma = np.where(sigma == 0, 1.0, sigma)
+        return (data - mu) / sigma
 
     @staticmethod
     def _apply_normalize(data: np.ndarray, normalize: str) -> np.ndarray:
