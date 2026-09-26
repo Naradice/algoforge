@@ -100,9 +100,8 @@ feature forms — so the open question moves to the pretrain dynamics.
 
 ## Open questions
 
-- What H1 (dt=0.02) lacks that N1 (dt=0.01) has, for the same attractor. Candidates to measure
-  per bar: return autocorrelation, curvature/smoothness at the 60-bar window scale, fraction of
-  windows containing a lobe switch.
+- What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
+  metrics above don't show it (Phase 6b).
 - Why the N3 pretrain doesn't form the volatility feature when N1's does: per-segment pretrain
   loss (DDM part vs Lorenz part) over training.
 - Sine amplitude sweep at period 50 to test amplitude directly (would reinterpret I–L).
