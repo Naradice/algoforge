@@ -718,3 +718,72 @@ class TestRequireContiguous:
                 token_level="cluster", cluster_window=5, n_clusters=4,
                 require_contiguous=True,
             )
+
+
+class TestWindowStartTimestamps:
+    """window_start_timestamps lets callers attribute each window to its source rows (e.g.
+    per-segment loss on a mixture dataset)."""
+
+    @pytest.mark.parametrize("split_mode", ["chronological", "regime_controlled"])
+    def test_start_timestamp_matches_window_first_row(self, artifact_store, split_mode):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        path = _make_regime_shift_parquet(artifact_store / "ds.parquet", n=2000)
+        close = pd.read_parquet(path)["close"]
+        ds = OHLCWindowDataset(
+            "ds.parquet", obs_len=10, pred_len=5, normalize="none", val_split=0.2,
+            split_mode=split_mode, split_seed=3,
+        )
+        for is_train in (True, False):
+            ds.train() if is_train else ds.eval()
+            ts = ds.window_start_timestamps
+            src = ds._train_src if is_train else ds._val_src
+            assert len(ts) == len(src)
+            assert np.allclose(close.loc[ts].values, src[:, 0, 0])
+
+    def test_contiguity_filter_keeps_timestamps_aligned(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        n = 600
+        idx = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC")
+        idx = idx.append(pd.date_range("2024-02-01", periods=n, freq="1min", tz="UTC"))  # gap
+        close = np.arange(2 * n, dtype=float)
+        df = pd.DataFrame({"open": close, "high": close, "low": close, "close": close,
+                           "volume": np.ones(2 * n)}, index=idx)
+        df.index.name = "datetime"
+        df.to_parquet(artifact_store / "gap.parquet")
+
+        ds = OHLCWindowDataset(
+            "gap.parquet", obs_len=10, pred_len=1, normalize="none", val_split=0.2,
+            split_mode="regime_controlled", require_contiguous=True,
+        )
+        ds.eval()
+        ts = pd.DatetimeIndex(ds.window_start_timestamps)
+        assert np.allclose(df["close"].loc[ts].values, ds._val_src[:, 0, 0])
+
+    @pytest.mark.xfail(strict=True, reason=(
+        "Known off-by-one in require_contiguous: gap_sum sums gap_mask[i .. i+total_len-2] instead "
+        "of gap_mask[i+1 .. i+total_len-1], so the window whose LAST row is the first post-gap row "
+        "survives (and the first window starting at the post-gap row is dropped). Left unfixed "
+        "while the transfer investigation runs: fixing it re-randomizes every regime_controlled "
+        "split and breaks comparability with existing runs."))
+    def test_no_window_straddles_a_gap(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        n = 600
+        idx = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC")
+        idx = idx.append(pd.date_range("2024-02-01", periods=n, freq="1min", tz="UTC"))
+        close = np.arange(2 * n, dtype=float)
+        df = pd.DataFrame({"open": close, "high": close, "low": close, "close": close,
+                           "volume": np.ones(2 * n)}, index=idx)
+        df.index.name = "datetime"
+        df.to_parquet(artifact_store / "gap.parquet")
+
+        ds = OHLCWindowDataset(
+            "gap.parquet", obs_len=10, pred_len=1, normalize="none", val_split=0.5,
+            split_mode="chronological", require_contiguous=True,
+        )
+        starts = np.concatenate([ds._train_start_ts, ds._val_start_ts])
+        ts = pd.DatetimeIndex(starts)
+        # a window spans obs_len + pred_len + 1 = 12 rows, so the last valid pre-gap start is n-12
+        assert not ((ts < pd.Timestamp("2024-02-01", tz="UTC")) & (ts > idx[n - 12])).any()

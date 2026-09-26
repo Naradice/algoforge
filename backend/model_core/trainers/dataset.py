@@ -303,6 +303,13 @@ class OHLCWindowDataset:
         total_len = obs_len + pred_len + 1   # +1 for the teacher-forced tgt shift
         all_src, all_tgt = self._make_windows(src_data, tgt_data, obs_len, pred_len + 1)
         n_windows = len(all_src)
+        # Timestamp of each window's first row, carried through filtering/splitting so callers
+        # can attribute windows back to source segments (e.g. per-segment loss on a mixture
+        # dataset). tgt_data is tail-aligned with df (every token_level branch front-trims), so
+        # df.index[-n:] lines up with it -- except sax, whose strided PAA rows have no single start.
+        all_start_ts = (
+            np.asarray(df.index[-n:][: n_windows]) if token_level != "sax" else np.full(n_windows, None)
+        )
 
         if require_contiguous:
             if token_level not in (None, "quantize_diff"):
@@ -319,15 +326,19 @@ class OHLCWindowDataset:
             gap_sum = bad_prefix[starts + total_len - 1] - bad_prefix[starts]
             window_ok = gap_sum == 0
             all_src, all_tgt = all_src[window_ok], all_tgt[window_ok]
+            all_start_ts = all_start_ts[window_ok]
             n_windows = len(all_src)
 
         if split_mode == "chronological":
             split_idx = int(n_windows * (1 - val_split))
             self._train_src, self._train_tgt = all_src[:split_idx], all_tgt[:split_idx]
+            self._train_start_ts = all_start_ts[:split_idx]
             if n_windows - split_idx > 0:
                 self._val_src, self._val_tgt = all_src[split_idx:], all_tgt[split_idx:]
+                self._val_start_ts = all_start_ts[split_idx:]
             else:
                 self._val_src, self._val_tgt = self._train_src, self._train_tgt
+                self._val_start_ts = self._train_start_ts
         elif split_mode == "regime_controlled":
             # Stratify by each window's own target level (mean over its pred_len horizon) into
             # decile bins, then split (1 - val_split)/val_split *within* each bin -- train and
@@ -352,10 +363,13 @@ class OHLCWindowDataset:
             rng.shuffle(train_idx)
             rng.shuffle(val_idx)
             self._train_src, self._train_tgt = all_src[train_idx], all_tgt[train_idx]
+            self._train_start_ts = all_start_ts[train_idx]
             if len(val_idx) > 0:
                 self._val_src, self._val_tgt = all_src[val_idx], all_tgt[val_idx]
+                self._val_start_ts = all_start_ts[val_idx]
             else:
                 self._val_src, self._val_tgt = self._train_src, self._train_tgt
+                self._val_start_ts = self._train_start_ts
         else:
             raise ValueError(f"Unknown split_mode: {split_mode!r}")
 
@@ -557,6 +571,12 @@ class OHLCWindowDataset:
 
     def __len__(self) -> int:
         return len(self._train_src) if self._is_train else len(self._val_src)
+
+    @property
+    def window_start_timestamps(self) -> np.ndarray:
+        """Timestamp of each window's first source row, aligned with the active split's
+        indexing (train or val, per train()/eval())."""
+        return self._train_start_ts if self._is_train else self._val_start_ts
 
     def __getitem__(self, key):
         src_arr = self._train_src if self._is_train else self._val_src
