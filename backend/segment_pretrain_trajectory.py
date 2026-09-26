@@ -50,6 +50,8 @@ RUNS = {
     "N1_dt0.01": (1579, 175, 80, ABLATION_COMPONENT_ROWS),
     "N3_dt0.0125": (1599, 179, 82, ABLATION_COMPONENT_ROWS),
     "B_ddm_only": (1442, 125, 52, 0),  # Phase 6e: DDM-only pretrain ends at DDM R^2 = 0.000
+    # Phase 7 corrected pipeline: evaluated with the normalize_scope the run trained with
+    "Bprime_ddm_only": (1611, 182, 52, 0, {"normalize_scope": "valid_windows"}),
 }
 DEFAULT_LABELS = ["N1_dt0.01", "N3_dt0.0125"]
 N_EPOCHS = 20
@@ -99,14 +101,15 @@ async def main() -> None:
     labels = sys.argv[1:] or DEFAULT_LABELS
     results = {}
     for label in labels:
-        run_id, model_id, dataset_id, syn_rows = RUNS[label]
+        run_id, model_id, dataset_id, syn_rows, *extra = RUNS[label]
+        hp_overrides = extra[0] if extra else {}
         artifact = await _dataset_artifact_path(dataset_id)
 
         hp = {k: BASE_HP[k] for k in (
             "obs_len", "pred_len", "feature_cols", "tgt_feature_cols", "preprocessing", "normalize",
             "split_mode", "require_contiguous", "max_rows", "val_split",
         )}
-        ds = OHLCWindowDataset(artifact_path=artifact, **hp)
+        ds = OHLCWindowDataset(artifact_path=artifact, **hp, **hp_overrides)
         ds.eval()
         if syn_rows:
             raw_index = pd.read_parquet(_artifact_store() / artifact, columns=["close"]).index
