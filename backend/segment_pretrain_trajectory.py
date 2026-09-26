@@ -20,7 +20,11 @@ The pretrain dataset is rebuilt with the exact BASE_HP the runs used (regime_con
 split_seed default) so the val windows are the ones the trainer validated on. The synthetic
 component is the last ABLATION_COMPONENT_ROWS rows of each mixture dataset.
 
-Usage: python segment_pretrain_trajectory.py   (writes segment_pretrain_trajectory.json)
+Usage:
+    python segment_pretrain_trajectory.py                 # N1 + N3 -> segment_pretrain_trajectory.json
+    python segment_pretrain_trajectory.py B_ddm_only ...  # chosen RUNS labels -> ..._<labels>.json
+Per-segment keys are "ddm_*" and "lorenz_*" (the synthetic segment, whatever its generator; a
+DDM-only run like B has no synthetic keys).
 """
 
 from __future__ import annotations
@@ -42,10 +46,12 @@ from probe_representations import (
 from submit_transfer_experiment import ABLATION_COMPONENT_ROWS, BASE_HP
 
 RUNS = {
-    # label: (pretrain run id, model id, mixture dataset id)
-    "N1_dt0.01": (1579, 175, 80),
-    "N3_dt0.0125": (1599, 179, 82),
+    # label: (pretrain run id, model id, dataset id, synthetic rows at the tail)
+    "N1_dt0.01": (1579, 175, 80, ABLATION_COMPONENT_ROWS),
+    "N3_dt0.0125": (1599, 179, 82, ABLATION_COMPONENT_ROWS),
+    "B_ddm_only": (1442, 125, 52, 0),  # Phase 6e: DDM-only pretrain ends at DDM R^2 = 0.000
 }
+DEFAULT_LABELS = ["N1_dt0.01", "N3_dt0.0125"]
 N_EPOCHS = 20
 N_SEG_SAMPLES = 8_000      # val windows per segment per checkpoint
 N_PROBE_SAMPLES = 10_000   # USDJPY val windows for the probe
@@ -90,11 +96,11 @@ async def main() -> None:
     usd_src = usd._val_src[usd_idx]
     usd_vol = usd._val_tgt[usd_idx][:, 1, PROBE_HP["tgt_feature_cols"].index("vol_20")]
 
+    labels = sys.argv[1:] or DEFAULT_LABELS
     results = {}
-    for label, (run_id, model_id, dataset_id) in RUNS.items():
+    for label in labels:
+        run_id, model_id, dataset_id, syn_rows = RUNS[label]
         artifact = await _dataset_artifact_path(dataset_id)
-        raw_index = pd.read_parquet(_artifact_store() / artifact, columns=["close"]).index
-        boundary = raw_index[len(raw_index) - ABLATION_COMPONENT_ROWS]
 
         hp = {k: BASE_HP[k] for k in (
             "obs_len", "pred_len", "feature_cols", "tgt_feature_cols", "preprocessing", "normalize",
@@ -102,11 +108,15 @@ async def main() -> None:
         )}
         ds = OHLCWindowDataset(artifact_path=artifact, **hp)
         ds.eval()
-        is_syn = pd.DatetimeIndex(ds.window_start_timestamps) >= boundary
-        seg_idx = {
-            "ddm": rng.choice(np.where(~is_syn)[0], size=N_SEG_SAMPLES, replace=False),
-            "lorenz": rng.choice(np.where(is_syn)[0], size=N_SEG_SAMPLES, replace=False),
-        }
+        if syn_rows:
+            raw_index = pd.read_parquet(_artifact_store() / artifact, columns=["close"]).index
+            boundary = raw_index[len(raw_index) - syn_rows]
+            is_syn = pd.DatetimeIndex(ds.window_start_timestamps) >= boundary
+        else:
+            is_syn = np.zeros(len(ds), dtype=bool)
+        seg_idx = {"ddm": rng.choice(np.where(~is_syn)[0], size=N_SEG_SAMPLES, replace=False)}
+        if syn_rows:
+            seg_idx["lorenz"] = rng.choice(np.where(is_syn)[0], size=N_SEG_SAMPLES, replace=False)
         syn_frac = float(is_syn.mean())
         print(f"\n=== {label} (run {run_id}) === val windows={len(is_syn)}, lorenz share={syn_frac:.3f}")
         print(f"{'ckpt':>5}{'step':>7}{'ddm_mse':>9}{'lor_mse':>9}{'all_mse':>9}"
@@ -124,16 +134,17 @@ async def main() -> None:
                 mse = float(((pred - y) ** 2).mean())
                 row[f"{seg}_mse"] = mse
                 row[f"{seg}_r2"] = 1 - mse / float(y.var())
-            row["all_mse"] = (1 - syn_frac) * row["ddm_mse"] + syn_frac * row["lorenz_mse"]
+            row["all_mse"] = (1 - syn_frac) * row["ddm_mse"] + syn_frac * row.get("lorenz_mse", 0.0)
             _, usd_layers = _predict(model, usd_src, usd._val_tgt[usd_idx][:, :, :1])
             row["usd_probe_r2"] = [_probe_r2(h, usd_vol) for h in usd_layers]
             rows.append(row)
-            print(f"{epoch:>5}{row['step']:>7}{row['ddm_mse']:>9.4f}{row['lorenz_mse']:>9.4f}"
-                  f"{row['all_mse']:>9.4f}{row['ddm_r2']:>8.3f}{row['lorenz_r2']:>8.3f}  "
+            print(f"{epoch:>5}{row['step']:>7}{row['ddm_mse']:>9.4f}{row.get('lorenz_mse', float('nan')):>9.4f}"
+                  f"{row['all_mse']:>9.4f}{row['ddm_r2']:>8.3f}{row.get('lorenz_r2', float('nan')):>8.3f}  "
                   + " ".join(f"{v:.3f}" for v in row["usd_probe_r2"]), flush=True)
         results[label] = {"run_id": run_id, "lorenz_val_share": syn_frac, "trajectory": rows}
 
-    out = Path(__file__).resolve().parent / "segment_pretrain_trajectory.json"
+    suffix = "" if labels == DEFAULT_LABELS else "_" + "_".join(labels)
+    out = Path(__file__).resolve().parent / f"segment_pretrain_trajectory{suffix}.json"
     out.write_text(json.dumps(results, indent=2))
     print(f"\nSaved {out}")
 

@@ -148,11 +148,41 @@ The margin is thin (0.029 vs 0.050), so this is a strong pattern, not yet a thre
   pretrain collapses to predicting the mean. Some synthetic segments get the pretrain past that
   collapse (sine, Delay, slow Lorenz); others do not.
 
+## Phase 6f — B never learns DDM: a normalization artifact (2026-09-26)
+
+B's 20 intermediate checkpoints (`segment_pretrain_trajectory.py B_ddm_only`, raw output
+`backend/segment_pretrain_trajectory_B_ddm_only.json`): DDM-segment R² stays in
+[−0.076, 0.001] from step 2K to 40K, and the USDJPY vol probe stays at scratch level
+(0.095–0.109). The DDM-only pretrain collapses to predicting the mean immediately and never
+leaves it.
+
+**Cause: cross-gap returns inflate the target normalizer.** The DDM pretrain data is 48
+independent simulation runs concatenated with 1-day gaps; each run starts at a different price,
+so `pct_change` across a gap reaches 21%. `vol_20` on the 20 rows after each of the 59 gaps
+reaches 4.8e-2 vs a clean maximum of 1.0e-3. `require_contiguous` drops those windows from
+training, but `normalize="zscore"` computes its statistics over all rows:
+
+| | Value |
+|---|---|
+| Rows whose `vol_20` spans a gap | 1,180 of 300,000 (0.4%) |
+| `vol_20` std, all rows | 1.027e-3 |
+| `vol_20` std, excluding gap-affected rows | 1.221e-4 |
+| Inflation | 8.4× std (≈ 70× variance) |
+
+So every real training window's target has z-variance ≈ 1/70 ≈ 0.014 — exactly the DDM variance
+measured in Phase 6e (0.0142). The USDJPY fine-tune target is essentially unaffected: 4,203
+weekend gaps inflate its `vol_20` std by only 1.02×.
+
+**Implication.** Condition B — the baseline every "does the synthetic segment help" comparison
+is made against — is degenerate: it never learns DDM because of this artifact. Every mixture
+pretrain shares the same contamination from its DDM runs, and the synthetic segment changes the
+normalizer too. Whether a correctly normalized DDM-only pretrain transfers by itself is untested.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
   metrics above don't show it (Phase 6b).
-- Why a DDM-only pretrain collapses to the mean, and which property of a synthetic segment gets
-  training past it. First check: B's own 20 intermediate checkpoints (was DDM R² ever > 0?).
+- **B′: DDM-only pretrain with gap-free target normalization.** If it learns DDM and transfers,
+  the synthetic-segment effect is largely rescue from the normalization artifact.
 - Sine amplitude sweep at period 50 to test amplitude directly (would reinterpret I–L).
 - Extended (40K-step) fine-tunes for N1/N2 so magnitudes are converged before comparing them.
