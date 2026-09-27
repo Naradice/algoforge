@@ -894,3 +894,81 @@ class TestValidWindowsReturnsInput:
         _make_two_run_parquet(artifact_store / "runs.parquet")
         with pytest.raises(ValueError):
             OHLCWindowDataset("runs.parquet", **{**self.HP, "tgt_feature_cols": None})
+
+
+class TestFutureLogVolTarget:
+    """future_log_vol target + target_lookahead + blocked split (Phase 8)."""
+    P = 5
+    HP = dict(obs_len=10, pred_len=1, feature_cols=["close"], tgt_feature_cols=["future_log_vol_5"],
+              preprocessing={"indicators": [{"type": "future_log_vol", "period": 5, "column": "close"}]},
+              normalize="zscore", src_normalize="returns_zscore", val_split=0.2,
+              split_mode="chronological", require_contiguous=True, normalize_scope="valid_windows",
+              target_lookahead=4)
+
+    def test_indicator_is_log_std_of_next_p_returns(self):
+        from model_core.trainers.preprocessing import apply_preprocessing
+
+        rng = np.random.default_rng(1)
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, 200)))
+        df = pd.DataFrame({"close": close}, index=pd.date_range("2024-01-01", periods=200, freq="1min"))
+        out = apply_preprocessing(df, {"indicators": [{"type": "future_log_vol", "period": 5}]})
+        r = np.log(close[1:] / close[:-1])          # r[j-1] = return into row j
+        k = 50
+        assert np.isclose(out["future_log_vol_5"].iloc[k], np.log(np.std(r[k - 1:k - 1 + 5], ddof=1)))
+        assert out["future_log_vol_5"].iloc[-4:].isna().all()
+
+    def test_target_is_future_only_and_aligned(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        df = _make_two_run_parquet(artifact_store / "runs.parquet")
+        hp = {**self.HP, "normalize": "zscore"}
+        ds = OHLCWindowDataset("runs.parquet", **hp)
+        ds.train()
+        logret = np.log(df["close"]).diff().to_numpy()
+        pos = df.index.get_indexer(pd.DatetimeIndex(ds.window_start_timestamps))
+        # returns-trimmed space: window start ts = row of the first input return; the last input
+        # return is at row pos+obs-1 (= t); the target must be log std of rows t+1 .. t+P
+        t = pos + 10 - 1
+        expected = np.array([np.log(np.std(logret[i + 1:i + 1 + self.P], ddof=1)) for i in t])
+        got = ds._train_tgt[:, 1, 0]
+        assert np.corrcoef(expected, got)[0, 1] > 0.9999   # z-scoring is affine
+
+    def test_no_window_target_crosses_the_gap_or_the_end(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        df = _make_two_run_parquet(artifact_store / "runs.parquet", jump=50.0)
+        ds = OHLCWindowDataset("runs.parquet", **self.HP)
+        pos = df.index.get_indexer(pd.DatetimeIndex(np.concatenate([ds._train_start_ts, ds._val_start_ts])))
+        last_needed = pos + 10 - 1 + self.P      # last row the target reads
+        assert np.all((last_needed < 600) | (pos >= 600))
+        assert last_needed.max() <= 1199
+        tgt = np.concatenate([ds._train_tgt, ds._val_tgt])[:, 1:, 0]
+        assert np.isfinite(tgt).all() and np.abs(tgt).max() < 10
+
+    def test_lookahead_requires_valid_windows(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        _make_two_run_parquet(artifact_store / "runs.parquet")
+        with pytest.raises(ValueError):
+            OHLCWindowDataset("runs.parquet", **{**self.HP, "normalize_scope": "all_rows"})
+
+    def test_blocked_split_separates_days_and_purges_boundaries(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        n = 6 * 1440  # six contiguous days of 1-minute bars
+        rng = np.random.default_rng(2)
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 1e-4, n)))
+        idx = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC")
+        pd.DataFrame({"open": close, "high": close, "low": close, "close": close, "volume": np.ones(n)},
+                     index=idx).rename_axis("datetime").to_parquet(artifact_store / "days.parquet")
+        ds = OHLCWindowDataset("days.parquet", **{**self.HP, "split_mode": "blocked", "val_split": 0.34,
+                                                  "split_seed": 3})
+        tr = pd.DatetimeIndex(ds._train_start_ts)
+        va = pd.DatetimeIndex(ds._val_start_ts)
+        assert len(tr) and len(va)
+        assert not set(tr.normalize()) & set(va.normalize())
+        span = 10 + 1 + 4
+        tr_min = (tr - idx[0]) // pd.Timedelta(minutes=1)
+        va_min = (va - idx[0]) // pd.Timedelta(minutes=1)
+        gap_min = np.abs(np.asarray(tr_min)[:, None] - np.asarray(va_min)[None, :]).min()
+        assert gap_min > span

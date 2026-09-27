@@ -1085,6 +1085,16 @@ async def _train_model(training_run_id: int) -> dict:
                 np.random.seed(int(seed))
                 random.seed(int(seed))
 
+            # A future-looking target (target_lookahead > 0, e.g. future_log_vol) is only safe for
+            # architectures that ignore the teacher-forced tgt input: the trainer passes
+            # tgt[:, :-1] -- the target at the window's last row, which for a future-looking
+            # column overlaps the answer. decoder_only ignores tgt (see its forward()).
+            if hp.get("target_lookahead") and architecture != "decoder_only":
+                raise ValueError(
+                    f"target_lookahead > 0 is only supported for decoder_only (got {architecture!r}): "
+                    "other architectures read the teacher-forced target, which would leak the future"
+                )
+
             dataset = OHLCWindowDataset(
                 dataset_artifact,
                 obs_len=hp.get("obs_len", 60),
@@ -1107,6 +1117,7 @@ async def _train_model(training_run_id: int) -> dict:
                 split_seed=hp.get("split_seed", 42),
                 require_contiguous=hp.get("require_contiguous", False),
                 normalize_scope=hp.get("normalize_scope", "all_rows"),
+                target_lookahead=hp.get("target_lookahead", 0),
             )
             # Persisted (not just logged) immediately after construction, before any training
             # happens, so it's visible even if the run later fails or gets orphaned -- exactly

@@ -136,6 +136,22 @@ def _add_autocorr(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     return df
 
 
+def _add_future_log_vol(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """FUTURE-LOOKING -- use only as a target column, never as a model input.
+
+    future_log_vol_{p} at row k = log(std(r_k, ..., r_{k+p-1})), r_j = log(close_j / close_{j-1}).
+    At the row right after an input window ending at row t, this is log std(r_{t+1} .. r_{t+p}):
+    realized volatility over the next p returns, sharing none with the window. The last p-1 rows
+    are NaN (no future). The value at row k depends on rows k-1 .. k+p-1, so a dataset must also
+    reject windows whose target reaches past a gap -- OHLCWindowDataset's target_lookahead."""
+    p = int(cfg.get("period", 20))
+    col = cfg.get("column", "close")
+    r = np.log(df[col]).diff()
+    std = r.rolling(p).std().shift(-(p - 1))
+    df[f"future_log_vol_{p}"] = np.log(std.where(std > 0))
+    return df
+
+
 _INDICATOR_MAP = {
     "sma":        _add_sma,
     "ema":        _add_ema,
@@ -147,6 +163,7 @@ _INDICATOR_MAP = {
     "volatility": _add_volatility,
     "kurtosis":   _add_kurtosis,
     "autocorr":   _add_autocorr,
+    "future_log_vol": _add_future_log_vol,
 }
 
 

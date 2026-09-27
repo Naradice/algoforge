@@ -93,6 +93,7 @@ class OHLCWindowDataset:
         split_seed: int = 42,
         require_contiguous: bool = False,
         normalize_scope: str = "all_rows",
+        target_lookahead: int = 0,
     ) -> None:
         # normalize_scope="valid_windows" (opt-in; default "all_rows" keeps every existing run
         # reproducible): z-score statistics come only from rows that actually play each role in
@@ -114,7 +115,15 @@ class OHLCWindowDataset:
                 "normalize='zscore', and src_normalize in (None, 'zscore', 'returns_zscore') -- the "
                 "latter only with a separate tgt_feature_cols"
             )
+        # target_lookahead (valid_windows only): how many rows past the last target row the target
+        # VALUE depends on -- e.g. 19 for preprocessing's future_log_vol with period=20. Windows
+        # whose extended span crosses a gap or runs past the data are rejected, and so are
+        # windows with a NaN target (a future-looking column is NaN at the end of each series).
+        if target_lookahead and normalize_scope != "valid_windows":
+            raise ValueError("target_lookahead requires normalize_scope='valid_windows'")
         self.normalize_scope = normalize_scope
+        self.target_lookahead = int(target_lookahead)
+        span = max(obs_len + pred_len + 1, obs_len + pred_len + self.target_lookahead)
         df, feature_cols, self.data_provenance = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
         raw = df[feature_cols].values.astype(np.float32)
 
@@ -151,7 +160,7 @@ class OHLCWindowDataset:
                 role_src, role_tgt, role_gap = raw, tgt_raw, raw_gap_mask_full
             m = len(role_tgt)
             ok = self._window_ok(role_gap, m, obs_len + pred_len + 1, corrected=True,
-                                 include_first=self._src_differenced)
+                                 include_first=self._src_differenced, span=span)
             starts = np.where(ok)[0]
             src_rows = self._role_rows(m, starts, 0, obs_len)                  # rows i .. i+obs_len-1
             tgt_rows = self._role_rows(m, starts, obs_len - 1, pred_len + 2)  # rows i+obs_len-1 .. i+obs_len+pred_len
@@ -367,7 +376,10 @@ class OHLCWindowDataset:
             # its total_len-1 internal row-to-row transitions (gap_mask[i+1 .. i+total_len-1])
             # is a gap. Prefix-sum lets every window's check run in O(1).
             window_ok = self._window_ok(gap_mask, n, total_len, corrected=normalize_scope == "valid_windows",
-                                        include_first=self._src_differenced)
+                                        include_first=self._src_differenced,
+                                        span=span if normalize_scope == "valid_windows" else None)
+            if normalize_scope == "valid_windows":
+                window_ok &= np.isfinite(all_tgt[:, 1:, :]).all(axis=(1, 2))
             all_src, all_tgt = all_src[window_ok], all_tgt[window_ok]
             all_start_ts = all_start_ts[window_ok]
             n_windows = len(all_src)
@@ -413,6 +425,31 @@ class OHLCWindowDataset:
             else:
                 self._val_src, self._val_tgt = self._train_src, self._train_tgt
                 self._val_start_ts = self._train_start_ts
+        elif split_mode == "blocked":
+            # Whole calendar days (by window start) go to train or val at random, and windows within
+            # `span` positions of a train/val boundary are purged -- with overlapping windows and a
+            # future-looking target, a random or regime_controlled split puts neighbouring windows
+            # (which share most of their target) on both sides. See docs/model-layer.md point 6.
+            if token_level == "sax":
+                raise NotImplementedError("split_mode='blocked' needs per-window start timestamps (not available for sax)")
+            day = pd.DatetimeIndex(all_start_ts).normalize().asi8
+            days = np.unique(day)
+            rng = np.random.default_rng(split_seed)
+            val_days = rng.choice(days, size=max(1, int(round(len(days) * val_split))), replace=False)
+            is_val = np.isin(day, val_days)
+            change = np.flatnonzero(is_val[1:] != is_val[:-1])
+            near = np.zeros(n_windows + 1, dtype=np.int64)
+            np.add.at(near, np.maximum(change - span + 1, 0), 1)
+            np.add.at(near, np.minimum(change + span + 1, n_windows), -1)
+            near = np.cumsum(near)[:n_windows] > 0
+            train_idx = np.flatnonzero(~is_val & ~near)
+            val_idx = np.flatnonzero(is_val & ~near)
+            rng.shuffle(train_idx)
+            rng.shuffle(val_idx)
+            self._train_src, self._train_tgt = all_src[train_idx], all_tgt[train_idx]
+            self._train_start_ts = all_start_ts[train_idx]
+            self._val_src, self._val_tgt = all_src[val_idx], all_tgt[val_idx]
+            self._val_start_ts = all_start_ts[val_idx]
         else:
             raise ValueError(f"Unknown split_mode: {split_mode!r}")
 
@@ -453,7 +490,7 @@ class OHLCWindowDataset:
 
     @staticmethod
     def _window_ok(gap_mask: np.ndarray, n: int, total_len: int, corrected: bool,
-                   include_first: bool = False) -> np.ndarray:
+                   include_first: bool = False, span: int | None = None) -> np.ndarray:
         """bool per candidate window start (n - total_len + 1 of them): True if the window's
         rows [i, i+total_len-1] contain no gap. A window crosses a gap iff gap_mask is True at
         any of rows i+1 .. i+total_len-1 (gap_mask[k] = row k does not follow row k-1).
@@ -465,9 +502,20 @@ class OHLCWindowDataset:
         regime_controlled split).
 
         include_first=True also rejects a gap at row i itself -- needed when each position holds
-        a first difference (a return), whose value at row i spans rows i-1 -> i."""
+        a first difference (a return), whose value at row i spans rows i-1 -> i.
+
+        span (corrected mode only, >= total_len) checks rows i .. i+span-1 instead -- for targets
+        that look past the window (target_lookahead); starts whose span runs past n are rejected."""
         bad_prefix = np.concatenate([[0], np.cumsum(gap_mask.astype(np.int64))])
         starts = np.arange(n - total_len + 1)
+        if span is not None and span > total_len:
+            if not corrected:
+                raise ValueError("span > total_len is only supported with corrected=True")
+            fits = starts + span <= n
+            end = np.minimum(starts + span, n)
+            first = starts if include_first else starts + 1
+            gap_sum = bad_prefix[end] - bad_prefix[first]
+            return fits & (gap_sum == 0)
         if include_first:
             gap_sum = bad_prefix[starts + total_len] - bad_prefix[starts]
         elif corrected:
