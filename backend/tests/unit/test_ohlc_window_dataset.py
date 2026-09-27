@@ -857,3 +857,40 @@ class TestNormalizeScopeValidWindows:
                               **{**self.HP, "normalize": "minmax"})
         with pytest.raises(ValueError):
             OHLCWindowDataset("runs.parquet", normalize_scope="bogus", **self.HP)
+
+
+class TestValidWindowsReturnsInput:
+    HP = dict(obs_len=10, pred_len=1, feature_cols=["close"], tgt_feature_cols=["vol_5"],
+              preprocessing={"indicators": [{"type": "volatility", "period": 5, "column": "close"}]},
+              normalize="zscore", src_normalize="returns_zscore", val_split=0.2,
+              split_mode="chronological", require_contiguous=True, normalize_scope="valid_windows")
+
+    def test_no_window_contains_the_cross_gap_return(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        df = _make_two_run_parquet(artifact_store / "runs.parquet", jump=50.0)
+        ds = OHLCWindowDataset("runs.parquet", **self.HP)
+        src = np.concatenate([ds._train_src, ds._val_src])[:, :, 0]
+        # the +50 price jump is a ~40% log return; every in-run return is ~1e-4
+        assert np.abs(src).max() < 10
+        assert 0.8 < src.std() < 1.2
+        tgt = np.concatenate([ds._train_tgt, ds._val_tgt])[:, 1:, 0]
+        assert 0.8 < np.nanstd(tgt) < 1.2
+
+    def test_input_is_the_return_ending_at_start_timestamp(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        df = _make_two_run_parquet(artifact_store / "runs.parquet")
+        ds = OHLCWindowDataset("runs.parquet", **self.HP)
+        ds.train()
+        logret = np.log(df["close"]).diff()
+        first = logret.loc[pd.DatetimeIndex(ds.window_start_timestamps)].values
+        # z-scoring is affine, so the first input position is perfectly correlated with the raw return
+        assert np.corrcoef(first, ds._train_src[:, 0, 0])[0, 1] > 0.9999
+
+    def test_returns_input_requires_separate_target(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        _make_two_run_parquet(artifact_store / "runs.parquet")
+        with pytest.raises(ValueError):
+            OHLCWindowDataset("runs.parquet", **{**self.HP, "tgt_feature_cols": None})

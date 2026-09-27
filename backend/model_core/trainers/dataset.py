@@ -106,11 +106,13 @@ class OHLCWindowDataset:
             raise ValueError(f"Unknown normalize_scope: {normalize_scope!r}")
         if normalize_scope == "valid_windows" and not (
             require_contiguous and token_level is None and normalize == "zscore"
-            and src_normalize in (None, "zscore")
+            and src_normalize in (None, "zscore", "returns_zscore")
+            and not (src_normalize == "returns_zscore" and (tgt_feature_cols is None or tgt_feature_cols == feature_cols))
         ):
             raise ValueError(
-                "normalize_scope='valid_windows' requires require_contiguous=True, token_level=None "
-                "and zscore normalization"
+                "normalize_scope='valid_windows' requires require_contiguous=True, token_level=None, "
+                "normalize='zscore', and src_normalize in (None, 'zscore', 'returns_zscore') -- the "
+                "latter only with a separate tgt_feature_cols"
             )
         self.normalize_scope = normalize_scope
         df, feature_cols, self.data_provenance = self._load_preprocessed_df(artifact_path, feature_cols, preprocessing, max_rows)
@@ -136,12 +138,25 @@ class OHLCWindowDataset:
         # exactly as before (src_data is literally tgt_data, same object).
         same_column = tgt_feature_cols is None or tgt_feature_cols == feature_cols
         tgt_raw = raw if same_column else df[tgt_feature_cols].values.astype(np.float32)
+        # Differenced input (src_normalize="returns_zscore") under valid_windows: work in the
+        # front-trimmed space the returns live in (position j = row j+1, its return being
+        # row j -> j+1), and also reject windows whose FIRST return crosses a gap.
+        self._src_differenced = normalize_scope == "valid_windows" and src_normalize == "returns_zscore"
         if normalize_scope == "valid_windows":
-            ok = self._window_ok(raw_gap_mask_full, len(raw), obs_len + pred_len + 1, corrected=True)
+            if self._src_differenced:
+                role_src = np.diff(np.log(raw + 1e-8), axis=0)
+                role_tgt = tgt_raw[1:]
+                role_gap = raw_gap_mask_full[1:]
+            else:
+                role_src, role_tgt, role_gap = raw, tgt_raw, raw_gap_mask_full
+            m = len(role_tgt)
+            ok = self._window_ok(role_gap, m, obs_len + pred_len + 1, corrected=True,
+                                 include_first=self._src_differenced)
             starts = np.where(ok)[0]
-            src_rows = self._role_rows(len(raw), starts, 0, obs_len)                  # rows i .. i+obs_len-1
-            tgt_rows = self._role_rows(len(raw), starts, obs_len - 1, pred_len + 2)  # rows i+obs_len-1 .. i+obs_len+pred_len
-            tgt_data = self._zscore_over(tgt_raw, tgt_rows | src_rows if same_column else tgt_rows)
+            src_rows = self._role_rows(m, starts, 0, obs_len)                  # rows i .. i+obs_len-1
+            tgt_rows = self._role_rows(m, starts, obs_len - 1, pred_len + 2)  # rows i+obs_len-1 .. i+obs_len+pred_len
+            tgt_data = self._zscore_over(role_tgt, tgt_rows | src_rows if same_column else tgt_rows)
+            valid_src_data = None if same_column else self._zscore_over(role_src, src_rows)
         else:
             tgt_data = self._apply_normalize(tgt_raw, normalize)
 
@@ -163,7 +178,7 @@ class OHLCWindowDataset:
                 src_data = tgt_data
             else:
                 src_data = (
-                    self._zscore_over(raw, src_rows) if normalize_scope == "valid_windows"
+                    valid_src_data if normalize_scope == "valid_windows"
                     else self._apply_normalize(raw, src_normalize if src_normalize is not None else normalize)
                 )
                 # src and tgt may now come from independently-normalized columns with different
@@ -351,7 +366,8 @@ class OHLCWindowDataset:
             # window starting at position i spans rows [i, i+total_len-1] -- valid iff none of
             # its total_len-1 internal row-to-row transitions (gap_mask[i+1 .. i+total_len-1])
             # is a gap. Prefix-sum lets every window's check run in O(1).
-            window_ok = self._window_ok(gap_mask, n, total_len, corrected=normalize_scope == "valid_windows")
+            window_ok = self._window_ok(gap_mask, n, total_len, corrected=normalize_scope == "valid_windows",
+                                        include_first=self._src_differenced)
             all_src, all_tgt = all_src[window_ok], all_tgt[window_ok]
             all_start_ts = all_start_ts[window_ok]
             n_windows = len(all_src)
@@ -436,7 +452,8 @@ class OHLCWindowDataset:
         return gap
 
     @staticmethod
-    def _window_ok(gap_mask: np.ndarray, n: int, total_len: int, corrected: bool) -> np.ndarray:
+    def _window_ok(gap_mask: np.ndarray, n: int, total_len: int, corrected: bool,
+                   include_first: bool = False) -> np.ndarray:
         """bool per candidate window start (n - total_len + 1 of them): True if the window's
         rows [i, i+total_len-1] contain no gap. A window crosses a gap iff gap_mask is True at
         any of rows i+1 .. i+total_len-1 (gap_mask[k] = row k does not follow row k-1).
@@ -445,10 +462,15 @@ class OHLCWindowDataset:
         -- off by one: the window whose LAST row is the first post-gap row survives, and the
         window starting AT a post-gap row is dropped. Kept as the default path so existing runs
         stay bit-for-bit reproducible (fixing it changes the window set and therefore every
-        regime_controlled split)."""
+        regime_controlled split).
+
+        include_first=True also rejects a gap at row i itself -- needed when each position holds
+        a first difference (a return), whose value at row i spans rows i-1 -> i."""
         bad_prefix = np.concatenate([[0], np.cumsum(gap_mask.astype(np.int64))])
         starts = np.arange(n - total_len + 1)
-        if corrected:
+        if include_first:
+            gap_sum = bad_prefix[starts + total_len] - bad_prefix[starts]
+        elif corrected:
             gap_sum = bad_prefix[starts + total_len] - bad_prefix[starts + 1]
         else:
             gap_sum = bad_prefix[starts + total_len - 1] - bad_prefix[starts]

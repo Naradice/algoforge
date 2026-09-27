@@ -983,6 +983,7 @@ async def run_pretrain_then_finetune(
     finetune_max_steps: int, finetune_val_every_steps: int,
     execution_target: str = "local",
     pretrain_hp_overrides: dict | None = None,
+    finetune_hp_overrides: dict | None = None,
 ) -> tuple[int, list[int]]:
     """Shared by condition B (pretrain_dataset_id=DDM_DATASET_ID) and condition C
     (pretrain_dataset_id=MIXTURE_DATASET_ID): pretrain (single seed) on pretrain_dataset_id ->
@@ -1017,7 +1018,7 @@ async def run_pretrain_then_finetune(
     checkpoint_path = f"models/{model_id}/training_{pretrain_run_id}/best.pt"
     finetune_run_ids = []
     for seed in seeds:
-        hp = _finetune_hp(seed, warm_start_checkpoint=checkpoint_path)
+        hp = {**_finetune_hp(seed, warm_start_checkpoint=checkpoint_path), **(finetune_hp_overrides or {})}
         hp["max_steps"], hp["val_every_steps"] = finetune_max_steps, finetune_val_every_steps
         finetune_run_ids.append(await _submit(model_id, USDJPY_DATASET_ID, hp, execution_target))
     return pretrain_run_id, finetune_run_ids
@@ -1205,6 +1206,42 @@ async def _run_corrected(which: str, seeds: list[int], pretrain_seed: int = 42) 
     print(f"pretrain run {pretrain_run_id}, fine-tune runs {finetune_ids}")
 
 
+# ---------------------------------------------------------------------------
+# Returns-input pipeline (Phase 7b, double-primed conditions A'', B'-C, ...): Phase 7a found B'
+# still never learns DDM because the input (close, z-scored over price LEVELS across the 48
+# concatenated DDM runs) moves only ~0.002 z per bar. Here the input is per-dataset z-scored log
+# returns (src_normalize="returns_zscore") with valid-window statistics, for BOTH pretrain and
+# fine-tune -- the input semantics must match across the warm start. Per-dataset scaling is
+# deliberate: DDM and USDJPY differ 1.6x in raw return std but have near-identical
+# mean_vol/sigma_r (0.81 vs 0.79) and sd_vol/sigma_r (0.60 vs 0.61), so per-dataset z-scoring
+# makes the input->target map line up. Fine-tune val_loss is comparable only within this series
+# (valid_windows changes the USDJPY window set/split), hence its own from-scratch baseline A''.
+# ---------------------------------------------------------------------------
+RETURNS_HP = {"normalize_scope": "valid_windows", "src_normalize": "returns_zscore"}
+
+
+async def _run_returns(which: str, seeds: list[int], pretrain_seed: int = 42) -> None:
+    dataset_id = _CORRECTED_DATASET_IDS[which]()
+    print(f"=== returns pipeline {which.upper()} (dataset {dataset_id}) {RETURNS_HP} ===")
+    pretrain_run_id, finetune_ids = await run_pretrain_then_finetune(
+        dataset_id, seeds, pretrain_seed=pretrain_seed,
+        pretrain_max_steps=PRETRAIN_MAX_STEPS, pretrain_val_every_steps=PRETRAIN_VAL_EVERY_STEPS,
+        finetune_max_steps=FINETUNE_MAX_STEPS, finetune_val_every_steps=FINETUNE_VAL_EVERY_STEPS,
+        pretrain_hp_overrides=RETURNS_HP, finetune_hp_overrides=RETURNS_HP,
+    )
+    print(f"pretrain run {pretrain_run_id}, fine-tune runs {finetune_ids}")
+
+
+async def _run_returns_scratch(seeds: list[int]) -> None:
+    """A'': USDJPY from scratch with the returns-pipeline fine-tune settings."""
+    model_id = await _ensure_model()
+    run_ids = []
+    for seed in seeds:
+        hp = {**_finetune_hp(seed, warm_start_checkpoint=None), **RETURNS_HP}
+        run_ids.append(await _submit(model_id, USDJPY_DATASET_ID, hp))
+    print(f"A'' scratch runs {run_ids}")
+
+
 async def _run_replicate_pretrain(which: str, pretrain_seed: int, finetune_seeds: list[int]) -> None:
     """Pretrain-seed replication (user-requested robustness check on D1's surprising ~39% loss
     reduction, which so far rests on a SINGLE pretrain seed): re-pretrain the SAME mixture
@@ -1311,6 +1348,14 @@ def main():
             raise SystemExit(f"usage: corrected <{'|'.join(_CORRECTED_DATASET_IDS)}> [seed ...]")
         seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
         asyncio.run(_run_corrected(sys.argv[2], seeds))
+    elif mode == "returns":
+        if len(sys.argv) < 3 or sys.argv[2] not in _CORRECTED_DATASET_IDS:
+            raise SystemExit(f"usage: returns <{'|'.join(_CORRECTED_DATASET_IDS)}> [seed ...]")
+        seeds = [int(s) for s in sys.argv[3:]] if len(sys.argv) > 3 else SEEDS_FULL
+        asyncio.run(_run_returns(sys.argv[2], seeds))
+    elif mode == "returns-scratch":
+        seeds = [int(s) for s in sys.argv[2:]] if len(sys.argv) > 2 else SEEDS_FULL
+        asyncio.run(_run_returns_scratch(seeds))
     elif mode == "replicate-pretrain":
         if len(sys.argv) < 4 or sys.argv[2] not in _D_DATASET_IDS:
             raise SystemExit(
