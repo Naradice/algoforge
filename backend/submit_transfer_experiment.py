@@ -1242,6 +1242,36 @@ async def _run_returns_scratch(seeds: list[int]) -> None:
     print(f"A'' scratch runs {run_ids}")
 
 
+# ---------------------------------------------------------------------------
+# Future-volatility pipeline (Phase 8, triple-primed conditions A''' ...): target = log std of the
+# NEXT 20 log returns after the 60-return input window (preprocessing future_log_vol,
+# target_lookahead=19) -- no return shared with the input, unlike vol_20 (Phase 7b: a hand feature
+# solved that at R^2 0.994). Returns input as in the returns pipeline; blocked split, since
+# overlapping windows share most of a future target (docs/model-layer.md point 6).
+# Phase 8a reference on USDJPY (blocked split, log-R^2): persistence 0.60, HAR 0.68.
+# ---------------------------------------------------------------------------
+FUTURE_VOL_PERIOD = 20
+FUTURE_VOL_HP = {
+    **RETURNS_HP,
+    "tgt_feature_cols": [f"future_log_vol_{FUTURE_VOL_PERIOD}"],
+    "preprocessing": {"indicators": [
+        {"type": "future_log_vol", "period": FUTURE_VOL_PERIOD, "column": "close"},
+    ]},
+    "target_lookahead": FUTURE_VOL_PERIOD - 1,
+    "split_mode": "blocked",
+}
+
+
+async def _run_future_vol_scratch(seeds: list[int]) -> None:
+    """A''': USDJPY from scratch on the future-only log-volatility target."""
+    model_id = await _ensure_model()
+    run_ids = []
+    for seed in seeds:
+        hp = {**_finetune_hp(seed, warm_start_checkpoint=None), **FUTURE_VOL_HP}
+        run_ids.append(await _submit(model_id, USDJPY_DATASET_ID, hp))
+    print(f"A''' scratch runs {run_ids}")
+
+
 async def _run_replicate_pretrain(which: str, pretrain_seed: int, finetune_seeds: list[int]) -> None:
     """Pretrain-seed replication (user-requested robustness check on D1's surprising ~39% loss
     reduction, which so far rests on a SINGLE pretrain seed): re-pretrain the SAME mixture
@@ -1356,6 +1386,9 @@ def main():
     elif mode == "returns-scratch":
         seeds = [int(s) for s in sys.argv[2:]] if len(sys.argv) > 2 else SEEDS_FULL
         asyncio.run(_run_returns_scratch(seeds))
+    elif mode == "future-vol-scratch":
+        seeds = [int(s) for s in sys.argv[2:]] if len(sys.argv) > 2 else SEEDS_FULL
+        asyncio.run(_run_future_vol_scratch(seeds))
     elif mode == "replicate-pretrain":
         if len(sys.argv) < 4 or sys.argv[2] not in _D_DATASET_IDS:
             raise SystemExit(
