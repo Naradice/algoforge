@@ -52,6 +52,9 @@ RUNS = {
     "B_ddm_only": (1442, 125, 52, 0),  # Phase 6e: DDM-only pretrain ends at DDM R^2 = 0.000
     # Phase 7 corrected pipeline: evaluated with the normalize_scope the run trained with
     "Bprime_ddm_only": (1611, 182, 52, 0, {"normalize_scope": "valid_windows"}),
+    # Phase 7b returns-input pipeline (input = per-dataset z-scored log returns)
+    "BprimeC_ddm_only": (1615, 183, 52, 0,
+                         {"normalize_scope": "valid_windows", "src_normalize": "returns_zscore"}),
 }
 DEFAULT_LABELS = ["N1_dt0.01", "N3_dt0.0125"]
 N_EPOCHS = 20
@@ -91,18 +94,33 @@ async def main() -> None:
 
     rng = np.random.default_rng(SEED)
 
-    # USDJPY probe windows (shared across all checkpoints)
-    usd = OHLCWindowDataset(artifact_path=await _dataset_artifact_path(USDJPY_DATASET_ID), **PROBE_HP)
-    usd.eval()
-    usd_idx = rng.choice(len(usd._val_src), size=N_PROBE_SAMPLES, replace=False)
-    usd_src = usd._val_src[usd_idx]
-    usd_vol = usd._val_tgt[usd_idx][:, 1, PROBE_HP["tgt_feature_cols"].index("vol_20")]
+    # USDJPY probe windows, one set per input representation: a checkpoint trained on returns
+    # input (src_normalize) must be probed with returns input too. Level-input checkpoints keep
+    # the original PROBE_HP windows so their numbers stay comparable with earlier phases.
+    usd_cache: dict[tuple, tuple] = {}
+
+    async def _usd_windows(hp_overrides: dict) -> tuple:
+        probe_overrides = (
+            {k: hp_overrides[k] for k in ("normalize_scope", "src_normalize")}
+            if "src_normalize" in hp_overrides else {}
+        )
+        key = tuple(sorted(probe_overrides.items()))
+        if key not in usd_cache:
+            usd = OHLCWindowDataset(artifact_path=await _dataset_artifact_path(USDJPY_DATASET_ID),
+                                    **PROBE_HP, **probe_overrides)
+            usd.eval()
+            idx = np.random.default_rng(SEED).choice(len(usd._val_src), size=N_PROBE_SAMPLES, replace=False)
+            vol = usd._val_tgt[idx][:, 1, PROBE_HP["tgt_feature_cols"].index("vol_20")]
+            usd_cache[key] = (usd._val_src[idx], usd._val_tgt[idx][:, :, :1], vol)
+            del usd
+        return usd_cache[key]
 
     labels = sys.argv[1:] or DEFAULT_LABELS
     results = {}
     for label in labels:
         run_id, model_id, dataset_id, syn_rows, *extra = RUNS[label]
         hp_overrides = extra[0] if extra else {}
+        usd_src, usd_tgt_in, usd_vol = await _usd_windows(hp_overrides)
         artifact = await _dataset_artifact_path(dataset_id)
 
         hp = {k: BASE_HP[k] for k in (
@@ -138,7 +156,7 @@ async def main() -> None:
                 row[f"{seg}_mse"] = mse
                 row[f"{seg}_r2"] = 1 - mse / float(y.var())
             row["all_mse"] = (1 - syn_frac) * row["ddm_mse"] + syn_frac * row.get("lorenz_mse", 0.0)
-            _, usd_layers = _predict(model, usd_src, usd._val_tgt[usd_idx][:, :, :1])
+            _, usd_layers = _predict(model, usd_src, usd_tgt_in)
             row["usd_probe_r2"] = [_probe_r2(h, usd_vol) for h in usd_layers]
             rows.append(row)
             print(f"{epoch:>5}{row['step']:>7}{row['ddm_mse']:>9.4f}{row.get('lorenz_mse', float('nan')):>9.4f}"
