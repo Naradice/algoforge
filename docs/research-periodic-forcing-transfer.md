@@ -269,6 +269,31 @@ future volatility at this horizon.
   the target should be log volatility.
 - DDM cannot teach this skill as-is: a DDM-only pretrain on this target would be fitting noise.
 
+## Phase 8b — DDM variant screen: no DDM variant has predictable future volatility (2026-09-28)
+
+`backend/ddm_variant_vol_screen.py`; raw output `backend/ddm_variant_vol_screen.json`. Each
+variant: 12 independent runs × 5,000 candles (the pretrain data's layout), split by run 9/3;
+windows never cross runs. USDJPY: last 1M rows split into gap-free segments, chronological 3/4
+by segment (so its numbers differ from Phase 8a's blocked split). Target: log std of the next 20
+returns after a 60-return window.
+
+| Source | Persistence R² (log) | HAR R² (log) | HAR coef 5/20/60 | \|r\| ACF lag 1/5/20/60/240 | log-vol block ACF lag 1/3/12 | Kurtosis |
+|---|---|---|---|---|---|---|
+| USDJPY | 0.434 | 0.523 | 0.07 / 0.24 / 0.54 | 0.34 / 0.29 / 0.26 / 0.22 / 0.15 | 0.76 / 0.66 / 0.40 | 278 |
+| v3_shock (current pretrain) | −0.950 | −0.007 | 0.01 / 0.04 / 0.10 | 0.21 / 0.00 / 0.01 / 0.01 / −0.01 | 0.07 / 0.07 / 0.04 | 37 |
+| v3, no shock | −1.009 | −0.086 | 0.00 / −0.01 / 0.52 | 0.06 / 0.01 / 0.01 / 0.02 / 0.02 | 0.21 / 0.21 / 0.21 | 1 |
+| decayed shock, τ=300 | −0.563 | −0.170 | 0.00 / −0.02 / 0.15 | 0.05 / 0.01 / 0.01 / 0.01 / 0.01 | 0.14 / 0.15 / 0.17 | 3 |
+| spread feedback a=0.25 | −0.747 | −0.035 | 0.02 / 0.05 / 0.13 | 0.22 / 0.00 / 0.02 / 0.00 / 0.02 | 0.13 / 0.07 / 0.11 | 44 |
+| loss limit 1.404 | −0.628 | 0.022 | 0.02 / 0.04 / 0.08 | 0.20 / 0.01 / 0.02 / 0.00 / 0.00 | 0.12 / 0.06 / 0.11 | 45 |
+
+- No DDM variant has volatility clustering: the |r| ACF is ~0 from lag 5 on in every variant
+  (first lag below 0.05: 2), while USDJPY's is still 0.15 at lag 240 (long memory).
+- The flat log-vol ACF of "no shock" / "decayed shock" (≈0.21 / 0.15 at every lag) is a
+  between-run level difference, not within-run clustering — HAR cannot use it (R² < 0).
+- Consequence: a B‴ (DDM → USDJPY on the future-volatility target) with any existing DDM variant
+  would pretrain on a target with no learnable signal. Testing whether "synthetic volatility
+  dynamics transfer" needs a synthetic source that has them.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
