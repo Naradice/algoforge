@@ -230,6 +230,45 @@ For comparison, the old pipeline's USDJPY fine-tunes sit at 0.84 (R² 0.16) for 
 - Consequence for future work: a transfer question needs a target that is not computable from the
   window — e.g. realized volatility over a horizon that does not overlap the input.
 
+## Phase 8a — difficulty of a future-only volatility target (2026-09-27)
+
+Target y_t = std(r_{t+1} … r_{t+20}) of log returns after a 60-return input window (no overlap);
+only windows whose whole 80-return span is gap-free. `backend/future_vol_task_difficulty.py`;
+raw output `backend/future_vol_task_difficulty.json` (USDJPY + DDM, chronological/random) and
+`backend/future_vol_task_difficulty_usdjpy.json` (USDJPY, adds the blocked split and |r| k-NN).
+
+Splits: chronological = last 20% as test with an 80-window purge; random = random 80/20 windows
+(like `regime_controlled`); blocked = 1-day blocks assigned randomly 80/20, purged at each
+boundary (same regime mix as random, no adjacent-window sharing).
+
+**USDJPY, 926K windows — R² of log y**
+
+| Predictor | Chronological | Random | Blocked |
+|---|---|---|---|
+| mean | −0.303 | −0.098 | −0.120 |
+| time of day | −0.135 | 0.131 | 0.081 |
+| persistence (std of last 20 returns, no fitting) | 0.465 | 0.552 | 0.595 |
+| persistence, linear fit | 0.520 | 0.572 | 0.592 |
+| HAR (log std over last 5/20/60, linear) | **0.558** | **0.644** | **0.676** |
+| k-NN on raw z-returns | −1.579 | −0.563 | −0.487 |
+| k-NN on \|z-returns\| | 0.228 | 0.502 | 0.540 |
+| MLP 2×64 on z-returns | 0.486 | 0.621 | 0.644 |
+
+**DDM, 295K windows:** every predictor is at R² ≈ 0 (best: persistence fit 0.003 level, HAR
+0.017 log; unfitted persistence −0.83 log). The DDM v3_shock pretrain data has no predictable
+future volatility at this horizon.
+
+- USDJPY future volatility is predictable (log R² 0.56–0.68) but persistence-dominated: an
+  unfitted predictor gets 0.47–0.60, HAR adds ~0.08, and neither k-NN nor the MLP beats HAR.
+  Headroom for "extracting state from 60 bars" beyond HAR is unmeasured but not obviously large.
+- Split leakage is small for these predictors (blocked ≥ random). The random-vs-chronological gap
+  is regime shift: the chronological test period (2022) has much higher volatility, so even the
+  mean scores −0.30. A high-capacity model could still exploit adjacency, so blocked is the safe
+  choice for training runs.
+- Level-scale R² is unstable under heavy tails (MLP chronological level R² −2155 vs log 0.486);
+  the target should be log volatility.
+- DDM cannot teach this skill as-is: a DDM-only pretrain on this target would be fitting noise.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale

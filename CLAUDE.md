@@ -286,6 +286,12 @@ architectures, model sizes, or datasets against each other:
    `early_stop_patience_checks` instead of `early_stop_patience`) — both are epoch-keyed by
    default and carry the same asymmetry as point 3.
 5. **Treat an especially clean result as a reason for more scrutiny, not less.**
+6. **Check the target before training.** Rule out input/target overlap, score trivial predictors
+   (mean, persistence, a hand feature, k-NN, small MLP) on the same windows, compare a purged
+   chronological split against the random/`regime_controlled` split to size split leakage, and
+   make sure normalization statistics come only from rows in kept windows. A whole "transfer"
+   investigation once ran on a target a hand feature solved at R² 0.994 (see
+   `docs/model-layer.md` point 6).
 
 ---
 

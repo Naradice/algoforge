@@ -219,6 +219,24 @@ not just for data-volume sweeps:
    non-monotonic dose-response curve in β1 — were also, in order, the ones that turned out to be
    partly or wholly artifacts once checked against seeds and, finally, validation-frequency
    parity. Treat "this fits a satisfying narrative" as orthogonal to "this is true."
+6. **Before training anything, check that the target measures the ability you care about.** From
+   a second investigation (`docs/research-periodic-forcing-transfer.md`, Phases 6f–7b): a whole
+   series of "transfer" results was measured on a target (`vol_20` at the bar after the window)
+   that shares 19 of its 20 returns with the input — a hand feature scores R² 0.994 on it — and
+   the effect being measured turned out to be recovery from a bad input representation. Before a
+   comparison:
+   - **Overlap:** does the target reuse data inside the input window? Define future-only targets
+     when the question is about prediction.
+   - **Trivial predictors:** score mean, persistence, a hand feature or two, k-NN and a small
+     MLP on the same windows. If a trivial predictor nearly solves the task, model differences on
+     it are not informative.
+   - **Split leakage:** with overlapping windows and a future target, a random or
+     `regime_controlled` split puts neighbouring windows — sharing most of their target — on
+     both sides. Compare the trivial predictors' scores under a chronological, purged split
+     against the random split; the gap is the leak.
+   - **Normalization:** compute statistics only over rows that actually enter kept windows
+     (`normalize_scope="valid_windows"`), and check the input actually exposes the signal at a
+     usable scale (e.g. per-bar changes vs. the input's normalized range).
 
 ### Token-level characteristics — comparing input representations, not just row counts
 
