@@ -202,6 +202,34 @@ real windows 0.014 → 1.000); everything else as B. Raw output:
   Synthetic segments move 10–50× more per bar, which may be what gets a mixture pretrain past
   mean-collapse — but N1 (0.064) and N3 (0.080) are not separated by it.
 
+## Phase 7b — returns input: the pretraining question dissolves (2026-09-27)
+
+Input switched to per-dataset z-scored log returns (`src_normalize="returns_zscore"`,
+`normalize_scope="valid_windows"`) for both pretrain and fine-tune. DDM and USDJPY differ 1.6× in
+raw return std but have near-identical mean_vol/σ_r (0.81 vs 0.79) and sd_vol/σ_r (0.60 vs 0.61),
+so per-dataset z-scoring aligns the input→target map (tails still differ: kurtosis 41 vs 278).
+
+| Run(s) | What | Result |
+|---|---|---|
+| 1615 | B′-C: DDM-only pretrain, returns input | DDM R² 0.94 at 2K steps, 0.95–0.96 thereafter; USDJPY layer-3 vol probe 0.98–0.99 |
+| — | Untrained model, returns input | layer-3 probe 0.34 |
+| — | Hand feature: std of last 19 input returns, linear | R² 0.994 on USDJPY |
+| 1616–1618 | A″: USDJPY from scratch, returns input | best val_loss 0.0170 ± 0.0021 (R² 0.98) |
+| 1619–1621 | B′-C fine-tunes | crashed (OOM, 2026-09-27 21:40; marked error), not re-run |
+
+For comparison, the old pipeline's USDJPY fine-tunes sit at 0.84 (R² 0.16) for B and 0.32–0.60
+(R² 0.4–0.68) for the best transferring conditions.
+
+- With returns input the task is nearly trivial: `vol_20` at the next bar shares 19 of its 20
+  returns with the input window, and a single hand-made feature explains 99.4% of it. A from-scratch
+  model reaches R² 0.98 with no pretraining at all.
+- **What Phases 1–6 measured was how much each pretrain helped the model overcome the level-input
+  representation** (z-scored prices, in which per-bar changes are ~0.2% of the input scale) — a real,
+  reproducible effect, but not transfer of volatility forecasting from synthetic to real data.
+- B′-C fine-tunes could at most close part of the 0.017 gap to zero, so they were not re-run.
+- Consequence for future work: a transfer question needs a target that is not computable from the
+  window — e.g. realized volatility over a horizon that does not overlap the input.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
