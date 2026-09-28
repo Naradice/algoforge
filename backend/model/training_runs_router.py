@@ -45,9 +45,12 @@ async def get_epoch_metrics(run_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @tr_router.post("/{run_id}/stop")
-async def stop_training_run(run_id: int, db: AsyncSession = Depends(get_db)):
-    run = await model_service.stop_training_run(db, run_id)
-    return DataResponse(data={"id": run.id, "status": run.status, "stop_requested": run.stop_requested})
+async def stop_training_run(run_id: int, force: bool = False, db: AsyncSession = Depends(get_db)):
+    """Graceful stop; ?force=true ends a worker-lost (stale-heartbeat) run immediately -- see
+    ModelService.stop_training_run."""
+    run = await model_service.stop_training_run(db, run_id, force=force)
+    return DataResponse(data={"id": run.id, "status": run.status, "stop_requested": run.stop_requested,
+                              "error_message": run.error_message})
 
 
 @tr_router.get("/{run_id}/events")

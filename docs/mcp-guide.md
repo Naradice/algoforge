@@ -44,8 +44,8 @@ The MCP server is mounted at `http://localhost:8000/mcp` using SSE transport. Ad
 | `list_preprocessed_datasets(dataset_id=None)` | List saved preprocessing recipes (optionally for one dataset) |
 | `get_preprocessed_dataset(preprocessed_dataset_id)` | Recipe config + its structure characteristics |
 | `start_training_run(model_id, hyperparams, dataset_id=None, preprocessed_dataset_id=None, execution_target="local")` | Start training — prefer `preprocessed_dataset_id` when a recipe exists. `execution_target="colab"` runs on a Google Colab CPU runtime instead of this backend's own worker (see [colab-workflow.md](colab-workflow.md)); only `architecture="lstm"` with no recipe/token_level/preprocessing and `split_mode="chronological"` is supported for it today |
-| `get_training_status(training_run_id)` | Poll status with epoch/ETA — for a Colab run, also returns `colab_timeout_seconds`/`colab_timeout_remaining_seconds`/`likely_to_finish_before_timeout` (see [colab-workflow.md](colab-workflow.md#timeout-budget-instead-of-quota)) |
-| `stop_training_run(training_run_id)` | Gracefully stop training |
+| `get_training_status(training_run_id)` | Poll status with epoch/ETA — for a Colab run, also returns `colab_timeout_seconds`/`colab_timeout_remaining_seconds`/`likely_to_finish_before_timeout` (see [colab-workflow.md](colab-workflow.md#timeout-budget-instead-of-quota)). Also `last_heartbeat_at`, `heartbeat_stale` (`true` = the executing worker stopped heartbeating — likely dead; `null` = no heartbeat to judge, e.g. a run from a worker that predates heartbeats) and `error_message` |
+| `stop_training_run(training_run_id, force=False)` | Gracefully stop training. `force=True` ends a worker-lost run immediately (status `error`, `error_message` set, `training.error` dispatched) — only allowed when its heartbeat is stale, or it has none and started more than the stale threshold ago; a live run gets `409 RUN_NOT_STALE`. Stale runs are also reaped automatically (see below) |
 | `get_model_training_runs(model_id)` | List training run history |
 | `get_model_validations(model_id)` | Get validation metrics |
 | `compare_model_runs(model_id)` | Compare runs ranked by val_loss |
@@ -105,6 +105,7 @@ Resources expose structured read-only data without tool calls:
 3. create_model("LSTM v1", "lstm", {...})                 → create model
 4. start_training_run(model_id, hp, preprocessed_dataset_id=recipe_id)   → start training
 5. loop: get_training_status(run_id)                      → wait for completion
+   (status "error" with error_message "worker lost: ..." means the worker died, not the model)
 6. get_model_validations(model_id)                        → check val metrics
 7. if val_loss > threshold: update hyperparams, goto 4
 8. deploy_model(model_id, best_run_id)
@@ -147,3 +148,23 @@ POST /webhooks
 Payload is HMAC-SHA256 signed with the secret in `X-AlgoForge-Signature` header. Verify before processing.
 
 Event types: `run.completed`, `run.error`, `training.completed`, `training.error`, `collection.completed`, `collection.error`.
+
+A `training.error` caused by a dead worker carries `"error_code": "worker_lost"` and an `error`
+message naming the last heartbeat.
+
+## Training-run liveness (heartbeat and reaper)
+
+A worker executing a training run writes `last_heartbeat_at` about every minute from a dedicated
+thread, so it keeps beating through slow steps and stops only if the worker process dies. The API
+process runs a reaper every 2 minutes: a `running` run whose heartbeat is older than 10 minutes is
+moved to `error` with `error_message = "worker lost: no heartbeat since …"`, `training.error` is
+dispatched, and the run's Redis locks are cleared so a retry is not skipped as a duplicate. Runs
+with no heartbeat at all (started by workers that predate this) are never reaped automatically —
+end those with `stop_training_run(force=True)`.
+
+| Env var (API/worker) | Default | Meaning |
+|---|---|---|
+| `ALGOFORGE_HEARTBEAT_INTERVAL_SECONDS` | `60` | Worker heartbeat period |
+| `ALGOFORGE_HEARTBEAT_STALE_SECONDS` | `600` | Heartbeat age after which a run counts as worker-lost |
+| `ALGOFORGE_REAPER_INTERVAL_SECONDS` | `120` | How often the API's reaper runs |
+| `ALGOFORGE_DISABLE_REAPER` | unset | `1` disables the reaper in this API process |

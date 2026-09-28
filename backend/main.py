@@ -6,6 +6,7 @@ Start with:
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 
@@ -66,11 +67,36 @@ for _attr in ("get_asgi_app", "http_app", "sse_app", "asgi_app"):
 if not _mcp_mounted:
     logging.getLogger("main").warning("MCP server could not be mounted — upgrade fastmcp or run it standalone")
 
+@contextlib.asynccontextmanager
+async def _lifespan(app_):
+    """MCP's own lifespan (see above) plus the training-run reaper (requirements.md R-13,
+    model/heartbeat.py): marks `running` runs whose worker stopped heartbeating as `error`.
+    Lives in the API because it is the one process that is always up. Disable with
+    ALGOFORGE_DISABLE_REAPER=1."""
+    from model.heartbeat import reaper_loop
+
+    reaper = None
+    if os.getenv("ALGOFORGE_DISABLE_REAPER") != "1":
+        reaper = asyncio.create_task(reaper_loop())
+    try:
+        mcp_lifespan = getattr(_mcp_asgi, "lifespan", None) if _mcp_mounted else None
+        if mcp_lifespan is not None:
+            async with mcp_lifespan(app_):
+                yield
+        else:
+            yield
+    finally:
+        if reaper is not None:
+            reaper.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reaper
+
+
 app = FastAPI(
     title="AlgoForge API",
     version="0.1.0",
     description="Unified algorithmic trading platform — Strategy · Model · Data",
-    lifespan=getattr(_mcp_asgi, "lifespan", None) if _mcp_mounted else None,
+    lifespan=_lifespan,
 )
 
 app.add_middleware(

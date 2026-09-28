@@ -1055,6 +1055,12 @@ async def _train_model(training_run_id: int) -> dict:
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
 
     factory, engine = _make_db()
+    # Liveness heartbeat for the whole execution, every architecture path included (R-13,
+    # model/heartbeat.py). Its own thread + event loop + engine, so synchronous work blocking this
+    # task's loop (dataset construction, characteristics) cannot starve it; it stops only when
+    # this process does.
+    from model.heartbeat import HeartbeatThread
+    heartbeat = HeartbeatThread(training_run_id, _make_db).start()
     try:
         try:
             model_id, architecture, model_config, hp, dataset_artifact, pd_rec = await _resolve_training_context(factory, training_run_id)
@@ -1474,6 +1480,7 @@ async def _train_model(training_run_id: int) -> dict:
             await db.commit()
         return {"error": str(e)}
     finally:
+        heartbeat.stop()
         await engine.dispose()
         _release_lock("train_model", training_run_id)
         if redis is not None:

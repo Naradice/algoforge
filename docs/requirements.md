@@ -179,43 +179,6 @@ than attempted autonomously mid-loop.
 
 ---
 
-### R-13. A training run whose worker dies stays `running` forever — nothing can end it — P1
-
-**Evidence:**
-- `stop_training_run` (`mcp_server/tools/model.py:336` → `model/service.py:236`) only sets
-  `stop_requested=True`. The flag is read by the training loop itself, so a run whose worker process
-  has died never sees it. The run stays `pending`/`running` indefinitely.
-- No code path detects a dead run and moves it to a terminal state: no heartbeat, no reaper, no
-  timeout. `training.error` / `training.completed` are dispatched only from inside the executing
-  worker (`celery_worker.py:677,773,938,1159` / `710,872,1019`), so a dead worker sends no webhook either.
-- `train_model` holds `algoforge:executing:train_model:{id}` for 12h (`celery_worker.py:1048`,
-  `ex=43200`). That is correct for its purpose (blocking duplicate execution on redelivery), but it
-  also means a redelivered message for a dead run is skipped as `duplicate_execution` until the lock
-  expires.
-
-**Found in practice:** Model A N=9 was attempted repeatedly on 2026-09-21 (Jev replication
-Phase 2). Each time the worker died under system-wide virtual-memory exhaustion. Each run was left
-permanently `running`, and the study_manager session waiting on it hung until it was paused by
-hand (study_manager sessions 15-17, still `paused`). There was no MCP (or REST) way to mark the run failed.
-
-**Impact:** an autonomous caller cannot tell "still training" from "worker is gone". Its only
-option is to wait on `get_training_status` until its own wall-clock budget runs out, and the
-queue slot it accounted for is never freed. This is the most likely long-running failure mode on a
-shared machine: OOM kills, restarts, and a human stopping a worker all cause it.
-
-**Proposed fix:**
-1. Have the executing worker write a heartbeat, e.g. `TrainingRun.last_heartbeat_at` updated
-   each epoch/step, or a short-TTL Redis key refreshed by a background thread.
-2. Add a periodic reaper (the existing `tick_scheduler` beat task, `celery_worker.py:500`, is a natural home). It marks
-   `running` runs whose heartbeat is older than a threshold as `error`, with
-   `error="worker lost (no heartbeat since …)"`, dispatches `training.error`, and releases the exec lock.
-3. Surface `last_heartbeat_at` in `get_training_status`, so a caller can see staleness before the
-   reaper acts.
-4. Optionally, let `stop_training_run(force=True)` move a run with a stale heartbeat straight to
-   a terminal state.
-
----
-
 ### R-14. `start_hyperparameter_search` has no base hyperparameters — P2
 
 **Evidence:** `start_hyperparameter_search(model_id, dataset_id, search_grid, execution_target)`
@@ -291,6 +254,64 @@ the first place.
 ---
 
 ## Resolved
+
+### R-13. A training run whose worker dies stays `running` forever — nothing can end it — P1 — resolved 2026-09-28
+
+**Evidence:**
+- `stop_training_run` (`mcp_server/tools/model.py:336` → `model/service.py:236`) only sets
+  `stop_requested=True`. The flag is read by the training loop itself, so a run whose worker process
+  has died never sees it. The run stays `pending`/`running` indefinitely.
+- No code path detects a dead run and moves it to a terminal state: no heartbeat, no reaper, no
+  timeout. `training.error` / `training.completed` are dispatched only from inside the executing
+  worker (`celery_worker.py:677,773,938,1159` / `710,872,1019`), so a dead worker sends no webhook either.
+- `train_model` holds `algoforge:executing:train_model:{id}` for 12h (`celery_worker.py:1048`,
+  `ex=43200`). That is correct for its purpose (blocking duplicate execution on redelivery), but it
+  also means a redelivered message for a dead run is skipped as `duplicate_execution` until the lock
+  expires.
+
+**Found in practice:** Model A N=9 was attempted repeatedly on 2026-09-21 (Jev replication
+Phase 2). Each time the worker died under system-wide virtual-memory exhaustion. Each run was left
+permanently `running`, and the study_manager session waiting on it hung until it was paused by
+hand (study_manager sessions 15-17, still `paused`). There was no MCP (or REST) way to mark the run failed.
+
+**Impact:** an autonomous caller cannot tell "still training" from "worker is gone". Its only
+option is to wait on `get_training_status` until its own wall-clock budget runs out, and the
+queue slot it accounted for is never freed. This is the most likely long-running failure mode on a
+shared machine: OOM kills, restarts, and a human stopping a worker all cause it.
+
+**Proposed fix:**
+1. Have the executing worker write a heartbeat, e.g. `TrainingRun.last_heartbeat_at` updated
+   each epoch/step, or a short-TTL Redis key refreshed by a background thread.
+2. Add a periodic reaper (the existing `tick_scheduler` beat task, `celery_worker.py:500`, is a natural home). It marks
+   `running` runs whose heartbeat is older than a threshold as `error`, with
+   `error="worker lost (no heartbeat since …)"`, dispatches `training.error`, and releases the exec lock.
+3. Surface `last_heartbeat_at` in `get_training_status`, so a caller can see staleness before the
+   reaper acts.
+4. Optionally, let `stop_training_run(force=True)` move a run with a stale heartbeat straight to
+   a terminal state.
+
+**Resolution (2026-09-28).** All four proposed items:
+1. Heartbeat: `training_runs.last_heartbeat_at` (migration 0017). `train_model` starts a
+   `model/heartbeat.py::HeartbeatThread` right after taking its exec lock, covering every
+   architecture path. It has its own thread, event loop and NullPool engine, so synchronous work
+   on the task's loop (dataset construction, characteristics) cannot starve it.
+2. Reaper: `reap_stale_training_runs()` runs every 2 min from the API lifespan (`main.py`), since
+   Celery Beat is not running in every deployment. `running` + heartbeat older than 10 min →
+   `error` with the new `error_message` column set, `training.error` dispatched with
+   `error_code="worker_lost"`, and both Redis locks cleared. The UPDATE is conditional on
+   `status='running'`, so concurrent reapers can't double-process a run. Runs with a NULL
+   heartbeat (older workers, legacy rows) are never reaped.
+3. `get_training_status` returns `last_heartbeat_at`, `heartbeat_stale` (`null` when there is no
+   heartbeat) and `error_message`.
+4. `stop_training_run(force=True)` (MCP and `POST /training-runs/{id}/stop?force=true`) ends a run
+   whose heartbeat is stale, or which has none and started more than the threshold ago; a live run
+   gets `409 RUN_NOT_STALE`.
+
+Recurred on 2026-09-27 before the fix: fine-tunes 1619–1621 crashed under system-wide memory
+exhaustion and stayed `running` until marked `error` by hand. Tests: `backend/tests/test_heartbeat.py`.
+Takes effect for runs started by workers restarted after this change, and the reaper only once
+the API process is restarted.
+
 
 ### R-12. `/mcp` was never actually reachable, and every write-performing MCP tool silently rolled back — P0 (blocker) — resolved 2026-09-18
 

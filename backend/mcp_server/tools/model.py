@@ -333,20 +333,27 @@ async def get_training_status(training_run_id: int) -> dict:
 
 
 @mcp.tool()
-async def stop_training_run(training_run_id: int) -> dict:
+async def stop_training_run(training_run_id: int, force: bool = False) -> dict:
     """
     Request graceful stop of a training run.
     The trainer will complete the current epoch then stop.
 
+    force=True ends a run whose worker is gone (get_training_status shows heartbeat_stale=true,
+    or no heartbeat and the run started long ago): it is moved straight to status "error" with
+    error_message set, and training.error is dispatched. Refused (409 RUN_NOT_STALE) for a run
+    that is still heartbeating. Stale runs are also reaped automatically by the API.
+
     Args:
         training_run_id: ID of the training run to stop.
+        force:           End a worker-lost run immediately instead of requesting a graceful stop.
     """
     from database import db_session
     from model.service import model_service
 
     async with db_session() as db:
-        run = await model_service.stop_training_run(db, training_run_id)
-    return {"run_id": run.id, "status": run.status, "stop_requested": run.stop_requested}
+        run = await model_service.stop_training_run(db, training_run_id, force=force)
+        return {"run_id": run.id, "status": run.status, "stop_requested": run.stop_requested,
+                "error_message": run.error_message}
 
 
 @mcp.tool()

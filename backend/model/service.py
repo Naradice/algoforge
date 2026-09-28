@@ -191,6 +191,7 @@ class ModelService:
         so this time-budget comparison is the closest available proxy.
         """
         from datetime import datetime, timezone
+        from model.heartbeat import as_utc, is_heartbeat_stale
 
         run = await self.get_training_run_by_id(db, run_id)
         hyperparams = run.hyperparams or {}
@@ -214,6 +215,11 @@ class ModelService:
             "elapsed_seconds": elapsed,
             "eta_seconds": eta,
             "stop_requested": run.stop_requested,
+            # R-13 liveness: heartbeat_stale is None when the run has no heartbeat (not started
+            # yet, or run by a worker that predates heartbeats) -- "unknown", not "fine".
+            "last_heartbeat_at": as_utc(run.last_heartbeat_at).isoformat() if run.last_heartbeat_at else None,
+            "heartbeat_stale": is_heartbeat_stale(run.last_heartbeat_at) if run.status == "running" else None,
+            "error_message": run.error_message,
         }
 
         if run.execution_target == "colab":
@@ -233,11 +239,41 @@ class ModelService:
         await self.get_training_run_by_id(db, run_id)
         return await model_repo.get_epoch_metrics(db, run_id)
 
-    async def stop_training_run(self, db: AsyncSession, run_id: int):
+    async def stop_training_run(self, db: AsyncSession, run_id: int, force: bool = False):
+        """Graceful stop: set stop_requested, which the executing training loop reads.
+
+        force=True (R-13) is for a run whose worker is gone, where nobody is left to read that
+        flag: it moves a `running` run straight to `error` -- but only when its heartbeat is
+        stale, or it has no heartbeat at all and started more than the stale threshold ago
+        (runs from workers that predate heartbeats). A run with a fresh heartbeat is alive, so
+        force is refused (409) rather than orphaning a live training loop."""
+        from datetime import datetime, timezone
+        from model.heartbeat import STALE_AFTER_SECONDS, _clear_run_locks, as_utc, is_heartbeat_stale, mark_worker_lost
+
         run = await self.get_training_run_by_id(db, run_id)
         if run.status not in ("pending", "running"):
             raise HTTPException(status_code=422, detail="Training run is not active")
-        return await model_repo.update_training_run(db, run_id, stop_requested=True)
+        if not force:
+            return await model_repo.update_training_run(db, run_id, stop_requested=True)
+
+        stale = is_heartbeat_stale(run.last_heartbeat_at)
+        if stale is None:
+            started = run.started_at or run.created_at
+            stale = (datetime.now(timezone.utc) - as_utc(started)).total_seconds() > STALE_AFTER_SECONDS
+        if run.status != "running" or not stale:
+            raise HTTPException(status_code=409, detail={
+                "code": "RUN_NOT_STALE",
+                "message": "force stop is only allowed for a running run whose worker has stopped "
+                           "heartbeating; use a graceful stop for a live run",
+                "last_heartbeat_at": as_utc(run.last_heartbeat_at).isoformat() if run.last_heartbeat_at else None,
+            })
+        since = as_utc(run.last_heartbeat_at).isoformat() if run.last_heartbeat_at else "never"
+        await model_repo.update_training_run(db, run_id, stop_requested=True)
+        await mark_worker_lost(db, run, f"force-stopped: worker lost (last heartbeat {since})")
+        _clear_run_locks(run_id)
+        await db.flush()
+        await db.refresh(run)
+        return run
 
     async def compare_training_runs(self, db: AsyncSession, run_ids: list[int]) -> list:
         result = []

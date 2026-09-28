@@ -91,6 +91,11 @@ class TrainingRun(Base):
     # phase) shows up immediately instead of requiring after-the-fact numerical detective work.
     data_provenance: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     stop_requested: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="false")
+    # Liveness (requirements.md R-13, model/heartbeat.py): refreshed ~every minute by the worker
+    # executing the run; a `running` run whose heartbeat goes stale is reaped to `error` with
+    # error_message set. NULL for runs started by workers that predate the heartbeat.
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     artifact_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
