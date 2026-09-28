@@ -1,0 +1,100 @@
+[
+  {
+    "name": "sine_p15",
+    "status": "transfers (M1)",
+    "lyapunov_per_step": 0.00924,
+    "knn_r2_next": 1.0,
+    "knn_r2_ahead": 1.0
+  },
+  {
+    "name": "sine_p50",
+    "status": "transfers (D1)",
+    "lyapunov_per_step": 0.00638,
+    "knn_r2_next": 1.0,
+    "knn_r2_ahead": 1.0
+  },
+  {
+    "name": "sine_p200",
+    "status": "transfers (M2)",
+    "lyapunov_per_step": 0.00187,
+    "knn_r2_next": 1.0,
+    "knn_r2_ahead": 1.0
+  },
+  {
+    "name": "delay_s1",
+    "status": "transfers (D2)",
+    "lyapunov_per_step": 0.00888,
+    "knn_r2_next": 0.9994,
+    "knn_r2_ahead": 0.999
+  },
+  {
+    "name": "delay_s2",
+    "status": "?",
+    "lyapunov_per_step": 0.02085,
+    "knn_r2_next": 0.9988,
+    "knn_r2_ahead": 0.9965
+  },
+  {
+    "name": "delay_s3",
+    "status": "?",
+    "lyapunov_per_step": 0.02944,
+    "knn_r2_next": 0.9977,
+    "knn_r2_ahead": 0.9889
+  },
+  {
+    "name": "lorenz_dt0.005",
+    "status": "?",
+    "lyapunov_per_step": 0.00478,
+    "knn_r2_next": 0.9986,
+    "knn_r2_ahead": 0.9966
+  },
+  {
+    "name": "lorenz_dt0.0075",
+    "status": "?",
+    "lyapunov_per_step": 0.0058,
+    "knn_r2_next": 0.999,
+    "knn_r2_ahead": 0.9981
+  },
+  {
+    "name": "lorenz_dt0.01",
+    "status": "?",
+    "lyapunov_per_step": 0.00898,
+    "knn_r2_next": 0.9984,
+    "knn_r2_ahead": 0.9964
+  },
+  {
+    "name": "lorenz_dt0.0125",
+    "status": "?",
+    "lyapunov_per_step": 0.0101,
+    "knn_r2_next": 0.998,
+    "knn_r2_ahead": 0.9876
+  },
+  {
+    "name": "lorenz_dt0.015",
+    "status": "?",
+    "lyapunov_per_step": 0.01254,
+    "knn_r2_next": 0.9974,
+    "knn_r2_ahead": 0.9857
+  },
+  {
+    "name": "lorenz_dt0.02",
+    "status": "no effect (H1)",
+    "lyapunov_per_step": 0.01693,
+    "knn_r2_next": 0.996,
+    "knn_r2_ahead": 0.9725
+  },
+  {
+    "name": "ar1",
+    "status": "no effect (G1)",
+    "lyapunov_per_step": 0.0051,
+    "knn_r2_next": -0.0244,
+    "knn_r2_ahead": -0.0831
+  },
+  {
+    "name": "lfsr",
+    "status": "no effect (D4)",
+    "lyapunov_per_step": 0.00159,
+    "knn_r2_next": 1.0,
+    "knn_r2_ahead": 1.0
+  }
+]

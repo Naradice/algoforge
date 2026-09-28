@@ -1,0 +1,162 @@
+[
+  {
+    "name": "sine_p15",
+    "status": "transfers (M1)",
+    "ret_ac1": 0.9135,
+    "turns_per_win": 8.0,
+    "zero_cross_per_win": 8.0,
+    "vol_ratio": 26.03,
+    "vol_cv": 0.023,
+    "vol_ac_obs": 1.0
+  },
+  {
+    "name": "sine_p50",
+    "status": "transfers (D1)",
+    "ret_ac1": 0.9921,
+    "turns_per_win": 1.84,
+    "zero_cross_per_win": 2.4,
+    "vol_ratio": 5.14,
+    "vol_cv": 0.321,
+    "vol_ac_obs": -0.792
+  },
+  {
+    "name": "sine_p200",
+    "status": "transfers (M2)",
+    "ret_ac1": 0.9995,
+    "turns_per_win": 0.6,
+    "zero_cross_per_win": 0.6,
+    "vol_ratio": 0.36,
+    "vol_cv": 0.463,
+    "vol_ac_obs": -0.765
+  },
+  {
+    "name": "delay_s1",
+    "status": "transfers (D2)",
+    "ret_ac1": 0.972,
+    "turns_per_win": 4.46,
+    "zero_cross_per_win": 2.79,
+    "vol_ratio": 2.21,
+    "vol_cv": 0.349,
+    "vol_ac_obs": -0.07
+  },
+  {
+    "name": "delay_s2",
+    "status": "transfers (N2)",
+    "ret_ac1": 0.8951,
+    "turns_per_win": 8.71,
+    "zero_cross_per_win": 5.58,
+    "vol_ratio": 5.94,
+    "vol_cv": 0.184,
+    "vol_ac_obs": -0.152
+  },
+  {
+    "name": "delay_s3",
+    "status": "?",
+    "ret_ac1": 0.7865,
+    "turns_per_win": 12.78,
+    "zero_cross_per_win": 8.33,
+    "vol_ratio": 9.11,
+    "vol_cv": 0.119,
+    "vol_ac_obs": 0.09
+  },
+  {
+    "name": "lorenz_dt0.005",
+    "status": "?",
+    "ret_ac1": 0.9983,
+    "turns_per_win": 0.62,
+    "zero_cross_per_win": 0.17,
+    "vol_ratio": 3.24,
+    "vol_cv": 0.944,
+    "vol_ac_obs": -0.302
+  },
+  {
+    "name": "lorenz_dt0.0075",
+    "status": "?",
+    "ret_ac1": 0.9961,
+    "turns_per_win": 0.94,
+    "zero_cross_per_win": 0.28,
+    "vol_ratio": 7.18,
+    "vol_cv": 0.889,
+    "vol_ac_obs": -0.357
+  },
+  {
+    "name": "lorenz_dt0.01",
+    "status": "transfers (N1)",
+    "ret_ac1": 0.9932,
+    "turns_per_win": 1.26,
+    "zero_cross_per_win": 0.33,
+    "vol_ratio": 13.25,
+    "vol_cv": 0.793,
+    "vol_ac_obs": -0.06
+  },
+  {
+    "name": "lorenz_dt0.0125",
+    "status": "?",
+    "ret_ac1": 0.9894,
+    "turns_per_win": 1.52,
+    "zero_cross_per_win": 0.46,
+    "vol_ratio": 21.03,
+    "vol_cv": 0.711,
+    "vol_ac_obs": 0.424
+  },
+  {
+    "name": "lorenz_dt0.015",
+    "status": "?",
+    "ret_ac1": 0.9847,
+    "turns_per_win": 1.85,
+    "zero_cross_per_win": 0.54,
+    "vol_ratio": 29.24,
+    "vol_cv": 0.649,
+    "vol_ac_obs": 0.216
+  },
+  {
+    "name": "lorenz_dt0.02",
+    "status": "no effect (H1)",
+    "ret_ac1": 0.973,
+    "turns_per_win": 2.46,
+    "zero_cross_per_win": 0.75,
+    "vol_ratio": 49.67,
+    "vol_cv": 0.514,
+    "vol_ac_obs": -0.356
+  },
+  {
+    "name": "ar1",
+    "status": "no effect (G1)",
+    "ret_ac1": -0.0056,
+    "turns_per_win": 30.14,
+    "zero_cross_per_win": 3.86,
+    "vol_ratio": 88.3,
+    "vol_cv": 0.168,
+    "vol_ac_obs": 0.027
+  },
+  {
+    "name": "lfsr",
+    "status": "no effect (D4)",
+    "ret_ac1": -0.4999,
+    "turns_per_win": 15.06,
+    "zero_cross_per_win": 30.12,
+    "vol_ratio": 128.42,
+    "vol_cv": 0.108,
+    "vol_ac_obs": -0.084
+  },
+  {
+    "name": "lorenz_dt0.0175",
+    "status": "?",
+    "ret_ac1": 0.9792,
+    "turns_per_win": 2.17,
+    "zero_cross_per_win": 0.62,
+    "vol_ratio": 39.12,
+    "vol_cv": 0.578,
+    "vol_ac_obs": -0.157
+  },
+  {
+    "name": "delay_s4",
+    "status": "?",
+    "ret_ac1": 0.6651,
+    "turns_per_win": 16.26,
+    "zero_cross_per_win": 11.03,
+    "vol_ratio": 11.95,
+    "vol_cv": 0.082,
+    "vol_ac_obs": -0.116
+  }
+]
