@@ -294,6 +294,49 @@ returns after a 60-return window.
   would pretrain on a target with no learnable signal. Testing whether "synthetic volatility
   dynamics transfer" needs a synthetic source that has them.
 
+## Phase 8c — A‴: a scratch Transformer does not beat a strong linear baseline (2026-09-28)
+
+A‴ = USDJPY from scratch on the future-only target (runs 1622–1624; `future-vol-scratch` mode:
+returns input, `future_log_vol_20`, blocked split, 20K-step budget, early stopping after 5 checks
+without improvement — stopped at 13 / 11 / 19 checks). All numbers are MSE of the z-scored log
+volatility on A‴'s own blocked validation split (166,960 windows; variance 1.042).
+
+| Model | Val MSE | R² |
+|---|---|---|
+| Persistence, linear fit | 0.386 | 0.629 |
+| Linear on the 60 log\|r\| values (ridge) | 0.380 | 0.636 |
+| HAR, std 5/20/60 (the bar used when A‴ was launched) | 0.328 | 0.685 |
+| HAR, RMS 5/20/60 | 0.321 | 0.692 |
+| HAR, RMS at 1/2/5/10/20/40/60 | 0.320 | 0.693 |
+| RMS HAR 1–60 + 60 log\|r\| + signed return sums (ridge) | 0.3175 | 0.695 |
+| A‴, best of its validation checks (selected on this set) | 0.3155 (0.312–0.318) | 0.697 |
+| A‴, final checkpoint | 0.324 (0.318–0.334) | 0.689 |
+| A‴, mean of its last 5 checks | 0.324 | 0.689 |
+
+- The first reading ("A‴ beats HAR by ~5× the seed spread") came from two biases: the HAR
+  bar used std instead of RMS (0.328 vs 0.321), and A‴'s number was a best-of-N selection on the
+  same validation set, while check-to-check noise is about ±0.01.
+- A‴ performs on par with a well-specified linear volatility-memory model. There is no evidence
+  the Transformer extracts state from the 60 bars beyond what linear volatility memory gives.
+
+## Conclusion of Phases 6–8 (2026-09-28)
+
+1. The Phase 1–5 "transfer" was recovery from an input representation problem, not transfer of
+   volatility forecasting: the price-level input hid per-bar changes (~0.2% of its range), and the
+   target (`vol_20` at the next bar) shared 19 of its 20 returns with the input window.
+2. The DDM pretrain data never taught DDM itself: cross-gap rows inflated the target normalizer
+   8.4×, and even with that fixed the level input kept DDM unlearnable. With a returns input DDM is
+   learned immediately.
+3. On a future-only target (log RV of the next 20 bars) USDJPY is predictable (R² ≈ 0.69), but
+   almost entirely through volatility persistence: a scratch Transformer matches a strong linear
+   baseline and leaves no headroom that pretraining could improve.
+4. No DDMv3 variant has volatility clustering (|r| ACF ≈ 0 from lag 5), so none can serve as a
+   pretraining source for future-volatility forecasting.
+
+Next (agreed 2026-09-28): search USDJPY for a target where nonlinear models clearly beat a strong
+linear baseline (model-free screen); only then test pretraining as sample efficiency on a small
+USDJPY fraction, and only then choose a synthetic source matched to that target.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale

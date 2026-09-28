@@ -239,6 +239,14 @@ not just for data-volume sweeps:
    - **Normalization:** compute statistics only over rows that actually enter kept windows
      (`normalize_scope="valid_windows"`), and check the input actually exposes the signal at a
      usable scale (e.g. per-bar changes vs. the input's normalized range).
+   - **Tune the baselines, too.** A baseline is a model: try its obvious variants (e.g. RMS vs.
+     std realized volatility, several look-back scales) before using it as the bar. A too-weak
+     bar made a scratch Transformer look better than HAR (0.316 vs 0.328) when a tuned HAR was at
+     0.3175.
+   - **Don't compare a best-of-N checkpoint with a single fit.** A run's best validation loss is
+     selected on that validation set; with check-to-check noise of ±0.01 that alone can create a
+     "win". Compare the final (or a fixed) checkpoint, or keep a separate test split for the
+     comparison.
 
 ### Token-level characteristics — comparing input representations, not just row counts
 

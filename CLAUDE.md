@@ -289,7 +289,9 @@ architectures, model sizes, or datasets against each other:
 6. **Check the target before training.** Rule out input/target overlap, score trivial predictors
    (mean, persistence, a hand feature, k-NN, small MLP) on the same windows, compare a purged
    chronological split against the random/`regime_controlled` split to size split leakage, and
-   make sure normalization statistics come only from rows in kept windows. A whole "transfer"
+   make sure normalization statistics come only from rows in kept windows. Tune the baselines
+   (their obvious variants) and never compare a best-of-N validation checkpoint against a single
+   baseline fit. A whole "transfer"
    investigation once ran on a target a hand feature solved at R² 0.994 (see
    `docs/model-layer.md` point 6).
 
