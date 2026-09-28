@@ -307,7 +307,8 @@ architectures, model sizes, or datasets against each other:
    (their obvious variants) and never compare a best-of-N validation checkpoint against a single
    baseline fit. A whole "transfer"
    investigation once ran on a target a hand feature solved at R² 0.994 (see
-   `docs/model-layer.md` point 6).
+   `docs/model-layer.md` point 6). `model_core.analysis.assess_target` runs this check and returns
+   a verdict (`trivial` / `unpredictable` / `no_headroom` / `tree_only_headroom` / `headroom`).
 
 ---
 

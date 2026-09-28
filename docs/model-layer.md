@@ -248,6 +248,32 @@ not just for data-volume sweeps:
      "win". Compare the final (or a fixed) checkpoint, or keep a separate test split for the
      comparison.
 
+### Assessing a target before training (`model_core.analysis`)
+
+Point 6 above as code. `assess_target(close, target, horizon, obs=60, with_time=True)` builds
+gap-aware windows of log returns from a price series, a future-only target, a blocked day split
+(purged by `obs + horizon`), and scores persistence, a deliberately strong linear baseline and
+nonlinear models (HistGradientBoosting, MLP, k-NN) once on held-out days, with a paired day-block
+bootstrap CI of each model's loss gain over linear. It returns the metrics and a verdict:
+
+| Verdict | Meaning | Train a sequence model on it? |
+|---|---|---|
+| `trivial` | a simple predictor already gets R² ≥ 0.95 (AUC ≥ 0.99) — the target very likely overlaps the input | No — fix the target first |
+| `unpredictable` | the strong linear baseline finds no signal (R² < 0.05, AUC < 0.55) | No |
+| `no_headroom` | predictable, but no nonlinear model beats linear by ≥ 2% with CI > 0 | Only to reproduce the linear result |
+| `tree_only_headroom` | only boosted trees clear the bar; the MLP does not | Weak case |
+| `headroom` | a smooth nonlinear model (MLP / k-NN) clears the bar | Yes, this is the case to study |
+
+Targets (`model_core.analysis.targets`, realized volatility always as RMS of log returns):
+`future_log_rv` (log RMS of the next `horizon` returns), `vol_change` (that minus the log RMS of the
+last `horizon` inputs), `jump` (any |r| in the next `horizon` returns > 4 × the window's RMS).
+Reference results (2026-09-28): USDJPY `future_log_rv` 20 / 60 → `tree_only_headroom` (linear
+R² 0.715 / 0.757, HistGB +6.4% / +5.0%, MLP −6% / −10%); DDM v3_shock `future_log_rv` 20 →
+`unpredictable` (linear R² 0.037). The building blocks are importable on their own:
+`build_return_windows`, `make_target`, `vol_memory_features`, `time_features`, `blocked_split`,
+`paired_block_bootstrap_ci`. Gap detection and scaling come from `finance_client.fprocess`
+(`validation.contiguous_segment_ids`, `STDPreProcess.fit(mask)`).
+
 ### Token-level characteristics — comparing input representations, not just row counts
 
 When `token_level` (see the hyperparameter table above) produces a discretized input stream —
