@@ -375,6 +375,35 @@ recent volatility profile. With time-of-day given to both sides:
 - No target clears the bar "a nonlinear model beats the strong linear baseline clearly" in a way a
   neural sequence model could plausibly exploit; the only surviving gain is small and tree-specific.
 
+## Phase 9b — learning curves: the linear model saturates on little data (2026-09-28)
+
+`backend/learning_curve_screen.py`; raw output `backend/learning_curve_screen.json`. Same windows,
+features and test sample as Phase 9a; all models get time-of-day/weekday. Training subsets are
+random whole training days (3 draws per fraction; full pool 555 days, capped at 300K windows).
+R² on the fixed test sample, mean over draws:
+
+| Training days | rv20 linear | rv20 HistGB | rv20 MLP | rv60 linear | rv60 HistGB | rv60 MLP |
+|---|---|---|---|---|---|---|
+| 1% (6) | 0.406 | 0.389 | −11.47 | 0.254 | 0.352 | −13.31 |
+| 2% (11) | 0.597 | 0.547 | −2.09 | 0.658 | 0.542 | −1.96 |
+| 5% (28) | 0.633 | 0.632 | 0.196 | 0.694 | 0.644 | 0.226 |
+| 10% (56) | 0.673 | 0.668 | 0.495 | 0.719 | 0.692 | 0.510 |
+| 25% (139) | 0.685 | 0.690 | 0.623 | 0.728 | 0.722 | 0.573 |
+| 100% (555) | 0.688 | 0.700 | 0.667 | 0.733 | 0.742 | 0.708 |
+
+- The strong linear baseline is within 0.015 of its full-data R² at 10% of the days and within
+  0.005 at 25%; at 5% (28 days) it already reaches 0.63 / 0.69.
+- The MLP is far more data-hungry: 0.2–0.5 at 5–10%, diverging (R² −2 to −13) at 1–2%, and still
+  below linear with all the data.
+- A small-data regime where a neural net trails the linear model badly does exist, so "does
+  pretraining improve a neural net's sample efficiency" is a well-posed question. But the most
+  pretraining could deliver is catching a neural net up to a linear model that needs no
+  pretraining and saturates on about two months of data — no practical gain on these targets.
+
+Decision (2026-09-28): Option 3 is not pursued for practical value on USDJPY volatility targets.
+It stays open only as a scientific question (synthetic pretraining vs. neural-net sample
+efficiency), to be prioritized separately.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
