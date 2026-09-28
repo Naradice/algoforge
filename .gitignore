@@ -10,7 +10,6 @@ __pycache__/
 .claude
 _meta.json
 tsconfig.tsbuildinfo
-backend/alembic/
 backend/artifacts/
 backend/secrets/
 /artifacts/
