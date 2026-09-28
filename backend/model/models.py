@@ -301,6 +301,36 @@ class TrainingRunMetricRead(BaseModel):
     recorded_at: datetime
 
 
+class TargetAssessment(Base):
+    """A model_core.analysis.assess_target run on a dataset (docs/model-layer.md point 6): is this
+    target worth training a sequence model on? Executed as a Celery job (train queue); `result`
+    holds the full metrics, `verdict` the headline."""
+    __tablename__ = "target_assessments"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    dataset_id: Mapped[int] = mapped_column(sa.Integer, nullable=False, index=True)  # soft FK -> datasets.id
+    params: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="pending")  # pending | running | completed | error
+    verdict: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+    started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+
+
+class TargetAssessmentCreate(BaseModel):
+    dataset_id: int
+    target: str = "future_log_rv"      # future_log_rv | vol_change | jump
+    horizon: int = 20                  # future returns in the target
+    obs: int = 60                      # input returns per window
+    with_time: bool = True             # give models time-of-day / weekday features
+    models: list[str] = ["hgb", "mlp", "knn"]
+    max_rows: int = 1_000_000          # most recent rows of the dataset to use
+    seed: int = 0
+    target_kwargs: dict | None = None  # e.g. {"k": 4.0} for jump
+
+
 class ValidationCreate(BaseModel):
     training_run_id: int
     dataset_id: int

@@ -1554,6 +1554,70 @@ def colab_train_model(training_run_id: int) -> dict:
 # Task 4 — validate_model
 # ---------------------------------------------------------------------------
 
+@celery_app.task(name="celery_worker.assess_target", bind=False)
+def assess_target(assessment_id: int) -> dict:
+    """Run model_core.analysis.assess_target for a TargetAssessment row (model/assessment_service.py)."""
+    return asyncio.run(_assess_target(assessment_id))
+
+
+async def _assess_target(assessment_id: int) -> dict:
+    import pandas as pd
+    from pathlib import Path
+    from sqlalchemy import select, update
+    from data.models import Dataset
+    from model.models import TargetAssessment
+    from model_core.analysis import assess_target as run_assessment
+
+    factory, engine = _make_db()
+    try:
+        async with factory() as db:
+            a = (await db.execute(select(TargetAssessment).where(TargetAssessment.id == assessment_id))).scalar_one_or_none()
+            if a is None:
+                return {"error": "assessment_not_found"}
+            ds = (await db.execute(select(Dataset).where(Dataset.id == a.dataset_id))).scalar_one_or_none()
+            params, dataset_id = dict(a.params or {}), a.dataset_id
+            artifact = ds.artifact_path if ds else None
+            await db.execute(update(TargetAssessment).where(TargetAssessment.id == assessment_id).values(
+                status="running", started_at=datetime.now(timezone.utc)))
+            await db.commit()
+        try:
+            if not artifact:
+                raise ValueError(f"dataset {dataset_id} has no artifact")
+            store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
+            df = pd.read_parquet(store / artifact)
+            df.columns = [c.lower() for c in df.columns]
+            if "close" not in df.columns:
+                raise ValueError(f"dataset {dataset_id} has no close column")
+            close = df["close"].sort_index().dropna().iloc[-int(params.get("max_rows", 1_000_000)):]
+            result = await asyncio.to_thread(
+                run_assessment, close,
+                target=params.get("target", "future_log_rv"), horizon=int(params.get("horizon", 20)),
+                obs=int(params.get("obs", 60)), with_time=bool(params.get("with_time", True)),
+                models=tuple(params.get("models", ("hgb", "mlp", "knn"))), seed=int(params.get("seed", 0)),
+                target_kwargs=params.get("target_kwargs"),
+            )
+        except Exception as e:  # noqa: BLE001 -- any failure is recorded on the row, never left running
+            logger.exception(f"Target assessment {assessment_id} failed")
+            async with factory() as db:
+                await db.execute(update(TargetAssessment).where(TargetAssessment.id == assessment_id).values(
+                    status="error", error_message=str(e), ended_at=datetime.now(timezone.utc)))
+                await dispatch(db, "assessment.error", {
+                    "assessment_id": assessment_id, "dataset_id": dataset_id, "error": str(e)})
+                await db.commit()
+            return {"error": str(e)}
+        async with factory() as db:
+            await db.execute(update(TargetAssessment).where(TargetAssessment.id == assessment_id).values(
+                status="completed", verdict=result["verdict"], result=result, ended_at=datetime.now(timezone.utc)))
+            await dispatch(db, "assessment.completed", {
+                "assessment_id": assessment_id, "dataset_id": dataset_id, "verdict": result["verdict"]})
+            await db.commit()
+        logger.info(f"Target assessment {assessment_id}: {result['verdict']} -- {result['reason']}")
+        return {"verdict": result["verdict"]}
+    finally:
+        await engine.dispose()
+        _release_lock("assess_target", assessment_id)
+
+
 @celery_app.task(name="celery_worker.validate_model", bind=False)
 def validate_model(validation_id: int) -> dict:
     """Validate a trained model. Takes a ModelValidation record ID."""

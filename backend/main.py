@@ -23,6 +23,7 @@ from model.training_runs_router import tr_router
 from model.preprocessed_datasets_router import pd_router
 from model.config_router import model_config_router
 from ops.router import ops_router
+from model.assessment_router import assessment_router
 from data.router import router as data_router
 from logs_router import router as logs_router
 from ws_router import ws_router
@@ -121,6 +122,7 @@ app.include_router(tr_router, prefix=API_PREFIX)
 app.include_router(pd_router, prefix=API_PREFIX)
 app.include_router(model_config_router, prefix=API_PREFIX)
 app.include_router(ops_router, prefix=API_PREFIX)
+app.include_router(assessment_router, prefix=API_PREFIX)
 
 # MCP server — accessible at /mcp (SSE transport for Claude Desktop). _mcp_asgi was built above,
 # before FastAPI(...), so its lifespan could be wired in at construction time -- see that

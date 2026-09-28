@@ -66,6 +66,7 @@ celery_app.conf.update(
         "celery_worker.train_model":           {"queue": "training"},
         "celery_worker.colab_train_model":     {"queue": "colab"},
         "celery_worker.validate_model":        {"queue": "training"},
+        "celery_worker.assess_target":         {"queue": "training"},
         "celery_worker.execute_strategy_run":  {"queue": "backtest"},
         "celery_worker.tick_scheduler":        {"queue": "collection"},
     },

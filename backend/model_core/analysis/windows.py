@@ -28,6 +28,10 @@ def build_return_windows(close: pd.Series, obs: int = 60, horizon: int = 20,
     close = close.astype(np.float64)
     seg = contiguous_segment_ids(close.index, expected_delta)
     r = np.diff(np.log(close.to_numpy()))
+    if len(r) < obs + horizon:
+        empty = pd.DatetimeIndex([])
+        return ReturnWindows(X=np.empty((0, obs)), F=np.empty((0, horizon)), anchor_ts=empty,
+                             day=np.empty(0, dtype=np.int64))
     bad = np.concatenate([[0], np.cumsum(seg[1:] != seg[:-1])])   # prefix count of gap-spanning returns
     t = np.arange(obs - 1, len(r) - horizon)
     t = t[(bad[t + horizon + 1] - bad[t - obs + 1]) == 0]

@@ -333,6 +333,73 @@ async def get_training_status(training_run_id: int) -> dict:
 
 
 @mcp.tool()
+async def assess_target_difficulty(
+    dataset_id: int,
+    target: str = "future_log_rv",
+    horizon: int = 20,
+    obs: int = 60,
+    with_time: bool = True,
+    models: list[str] | None = None,
+    max_rows: int = 1_000_000,
+) -> dict:
+    """
+    Check whether a prediction target is worth training a sequence model on -- run this BEFORE
+    designing training runs (docs/model-layer.md point 6). Queues a job (~2 min on 1M rows) that
+    builds gap-aware windows of `obs` log returns from the dataset's close prices, a future-only
+    target over the next `horizon` returns, a blocked day split, and scores persistence, a strong
+    linear baseline and nonlinear models (hgb, mlp, knn) once on held-out days. Poll
+    get_target_assessment (or wait for the assessment.completed webhook).
+
+    Verdicts: trivial (a simple predictor already reaches R2 >= 0.95 -- the target likely
+    overlaps the input; fix the target), unpredictable (no signal even for the linear baseline),
+    no_headroom (nonlinear models add nothing reliable), tree_only_headroom (only boosted trees
+    gain; a neural net did not -- weak case for a Transformer), headroom (a smooth nonlinear model
+    beats linear by >= 2% with CI > 0 -- worth studying).
+
+    Args:
+        dataset_id: OHLC dataset with a close column (1-minute or other regular bars).
+        target:     future_log_rv (log RMS of the next horizon returns), vol_change (that minus the
+                    log RMS of the last horizon inputs), or jump (any |r| in the next horizon
+                    returns > 4x the window RMS).
+        horizon:    number of future returns in the target (1..240).
+        obs:        input returns per window (5..240).
+        with_time:  give models time-of-day/weekday features.
+        models:     subset of ["hgb", "mlp", "knn"] (default all three; mlp is the slowest).
+        max_rows:   most recent rows of the dataset to use.
+    """
+    from celery_app import enqueue
+    from database import db_session
+    from model import assessment_service
+    from model.models import TargetAssessmentCreate
+
+    body = TargetAssessmentCreate(dataset_id=dataset_id, target=target, horizon=horizon, obs=obs,
+                                  with_time=with_time, models=models or ["hgb", "mlp", "knn"],
+                                  max_rows=max_rows)
+    async with db_session() as db:
+        a = await assessment_service.create_assessment(db, body)
+        out = assessment_service.to_dict(a)
+    await enqueue("assess_target", out["id"])
+    return {"assessment_id": out["id"], "status": out["status"], "params": out["params"]}
+
+
+@mcp.tool()
+async def get_target_assessment(assessment_id: int) -> dict:
+    """
+    Status and result of an assess_target_difficulty job: status (pending / running / completed /
+    error), verdict, reason, and result.metrics (per model: r2/mse or logloss/auc; for nonlinear
+    models also gain_rel and ci95 of the loss gain over the linear baseline).
+
+    Args:
+        assessment_id: ID returned by assess_target_difficulty.
+    """
+    from database import db_session
+    from model import assessment_service
+
+    async with db_session() as db:
+        return assessment_service.to_dict(await assessment_service.get_assessment(db, assessment_id))
+
+
+@mcp.tool()
 async def get_queue_status() -> dict:
     """
     Worker and queue status. Call before dispatching jobs:
