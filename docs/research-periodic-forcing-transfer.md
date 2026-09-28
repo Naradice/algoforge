@@ -337,6 +337,44 @@ Next (agreed 2026-09-28): search USDJPY for a target where nonlinear models clea
 linear baseline (model-free screen); only then test pretraining as sample efficiency on a small
 USDJPY fraction, and only then choose a synthetic source matched to that target.
 
+## Phase 9a — screen for nonlinear headroom on USDJPY (2026-09-28)
+
+`backend/nonlinear_headroom_screen.py`; raw output `backend/nonlinear_headroom_screen.json`. Input:
+the 60 returns before t. Common window set: rows t−60 … t+240 gap-free (784,571 windows); whole
+days split 80/20 with a 300-bar purge; 300K train / 90.5K test windows (139 test days). CIs: 95%,
+paired bootstrap over test days (B = 500) of the absolute loss gain vs the linear baseline.
+Linear baseline = ridge on RMS at 1/2/5/10/20/40/60, the 60 log|r| values and signed sums over
+5/20/60 (Phase 8c's strong baseline).
+
+**Screen (no time-of-day features), R²**
+
+| Target | Persistence | Linear | HistGB | MLP | k-NN | HistGB gain vs linear, MSE [95% CI abs] |
+|---|---|---|---|---|---|---|
+| rv20 = log RMS next 20 | 0.544 | 0.654 | 0.661 | 0.645 | 0.645 | +2.0% [+0.0010, +0.0029] |
+| rv60 | 0.473 | 0.651 | 0.665 | 0.640 | 0.642 | +4.0% [+0.0016, +0.0055] |
+| rv240 | −0.055 | 0.443 | 0.496 | 0.447 | 0.443 | +9.6% [+0.0049, +0.0180] |
+| dvol20 = log RMS next 20 − last 20 | −0.001 | 0.240 | 0.255 | 0.236 | 0.172 | +1.9% [+0.0010, +0.0028] |
+| jump20 = max\|r\| next 20 > 4 × RMS last 60 (8.3%); log loss / AUC | 0.287 / 0.50 | 0.275 / 0.661 | 0.273 / 0.675 | 0.279 / 0.648 | 0.281 / 0.623 | +0.6% [+0.0001, +0.0034] |
+
+**Follow-up: what the horizon trend was.** Adding time-of-day (4 harmonics) and weekday to the
+linear model lifts rv240 from R² 0.443 to 0.674 and rv60 from 0.651 to 0.721 — the growing HistGB
+gain with horizon was mostly the model reconstructing the clock (session seasonality) from the
+recent volatility profile. With time-of-day given to both sides:
+
+| Target | Linear + ToD + squares | + hour × RMS(5/20/60) | HistGB + ToD | MLP + ToD | HistGB gain vs the interaction linear [95% CI abs] |
+|---|---|---|---|---|---|
+| rv20 | 0.684 | 0.688 | 0.699 | 0.664 | +3.7% [+0.0020, +0.0048] |
+| rv60 | 0.726 | 0.733 | 0.742 | 0.711 | +3.2% [+0.0007, +0.0037] |
+| rv240 | 0.687 | 0.691 | 0.704 | 0.666 | +4.5% [+0.0005, +0.0049] |
+
+- Beyond persistence, the dominant structure is intraday seasonality — an explicit feature (the
+  clock), not something to learn from the 60 bars.
+- With the clock given, a tree model keeps a small but significant 3–4.5% MSE edge over a linear
+  model with explicit hour × volatility interactions. The MLP is ~6% *worse* than linear at every
+  horizon, and k-NN never helps, so no smooth nonlinear model shows headroom here.
+- No target clears the bar "a nonlinear model beats the strong linear baseline clearly" in a way a
+  neural sequence model could plausibly exploit; the only surviving gain is small and tree-specific.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
