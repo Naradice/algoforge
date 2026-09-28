@@ -333,6 +333,42 @@ async def get_training_status(training_run_id: int) -> dict:
 
 
 @mcp.tool()
+async def get_queue_status() -> dict:
+    """
+    Worker and queue status. Call before dispatching jobs:
+      - queues.<name>.workers == 0  -> nothing is consuming that queue; a new job would sit pending
+      - queues.<name>.pending / busy -> backlog and how many workers are occupied
+      - workers[].stale_code == true -> that worker loaded code older than the repository HEAD
+        (started before a code change); its runs may fail with unrelated-looking errors
+      - workers[].code_dirty, started_at, current_task, host_memory (available_gb, swap_free_gb)
+    A worker appears here only while alive: it refreshes its entry every 30 s (90 s TTL), from a
+    thread independent of the task it is running.
+    """
+    import asyncio
+    from ops.worker_registry import get_queue_status as _status
+    return await asyncio.to_thread(_status)
+
+
+@mcp.tool()
+async def get_training_runs_status(training_run_ids: list[int]) -> list[dict]:
+    """
+    Status of several training runs in one call -- use this to monitor a batch instead of
+    polling get_training_status per run. Each entry has status, terminal (completed / error /
+    stopped / not_found), current_epoch, best_epoch, val_loss, started_at, ended_at,
+    last_heartbeat_at, heartbeat_stale (true = worker stopped heartbeating, null = no heartbeat
+    to judge) and error_message. Unknown ids come back with status "not_found".
+
+    Args:
+        training_run_ids: IDs of the training runs to check.
+    """
+    from database import db_session
+    from model.service import model_service
+
+    async with db_session() as db:
+        return await model_service.get_training_runs_status(db, training_run_ids)
+
+
+@mcp.tool()
 async def stop_training_run(training_run_id: int, force: bool = False) -> dict:
     """
     Request graceful stop of a training run.

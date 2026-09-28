@@ -55,41 +55,6 @@ creating a new one.
 
 ---
 
-### R-5. No MCP tool to introspect queue/worker load — P2
-
-**Evidence:** none of `mcp_server/tools/{data,model,strategy,logs}.py` expose queue depth or worker
-concurrency. Concurrency (`collection`=3, `characteristics`=12, `training`=2, `backtest`=5) is only
-documented statically in `architecture.md`, not queryable at runtime.
-
-**Impact:** the Research Agent Service's concurrency self-throttling
-([research-agent-service.md §5.2](research-agent-service.md#52-同時実行数の管理web設定から変更可能))
-has to hard-code AlgoForge's queue concurrency as a manually-entered setting rather than reading it
-live. If ops changes worker concurrency, the external throttle silently drifts out of sync and either
-under-utilizes or over-saturates the real queues.
-
-**Proposed fix:** add `get_queue_status() -> {queue_name: {concurrency, active, reserved}}` backed by
-Celery's `inspect()` API.
-
-**Update 2026-09-25 (Jev replication, `docs/jev-replication.md`).** Running this investigation
-through study_manager showed two more consequences of this gap.
-
-- *Worker staleness.* A worker imports `celery_worker.py`/`model_core` at startup and never reloads
-  them. A run dispatched to a worker started before a code change fails instantly with unrelated-looking
-  errors, e.g. `Could not open Parquet input source`, and an external caller cannot tell a stale
-  worker from a real bug.
-- *Queue sharing.* The `training`/`collection` queues were shared with an unrelated concurrent
-  experiment ("Five Axes of Scaling"). The caller could see neither that the queue was busy with
-  someone else's tasks nor whether any worker was consuming it at all. On 2026-09-25 the queue had
-  zero workers after a machine restart, and a newly started run would simply have sat `pending`.
-
-Extend the proposed tool with each worker's hostname, queues, start time, and the code revision it
-loaded (e.g. `git rev-parse HEAD` read at worker startup):
-`get_queue_status() -> {queue_name: {concurrency, active, reserved, workers: [{hostname, started_at, code_revision}]}}`.
-A caller can then refuse to dispatch when no worker is present, or when every worker is older than
-the revision it expects.
-
----
-
 ### R-6. `deploy_model` has no concurrency guard — P1 (upgraded from P2)
 
 **Evidence:** `backend/model/service.py:44-51` — `deploy_model()` does a plain read-then-write on the
@@ -254,6 +219,54 @@ the first place.
 ---
 
 ## Resolved
+
+### R-5. No MCP tool to introspect queue/worker load — P2 — resolved 2026-09-28
+
+**Evidence:** none of `mcp_server/tools/{data,model,strategy,logs}.py` expose queue depth or worker
+concurrency. Concurrency (`collection`=3, `characteristics`=12, `training`=2, `backtest`=5) is only
+documented statically in `architecture.md`, not queryable at runtime.
+
+**Impact:** the Research Agent Service's concurrency self-throttling
+([research-agent-service.md §5.2](research-agent-service.md#52-同時実行数の管理web設定から変更可能))
+has to hard-code AlgoForge's queue concurrency as a manually-entered setting rather than reading it
+live. If ops changes worker concurrency, the external throttle silently drifts out of sync and either
+under-utilizes or over-saturates the real queues.
+
+**Proposed fix:** add `get_queue_status() -> {queue_name: {concurrency, active, reserved}}` backed by
+Celery's `inspect()` API.
+
+**Update 2026-09-25 (Jev replication, `docs/jev-replication.md`).** Running this investigation
+through study_manager showed two more consequences of this gap.
+
+- *Worker staleness.* A worker imports `celery_worker.py`/`model_core` at startup and never reloads
+  them. A run dispatched to a worker started before a code change fails instantly with unrelated-looking
+  errors, e.g. `Could not open Parquet input source`, and an external caller cannot tell a stale
+  worker from a real bug.
+- *Queue sharing.* The `training`/`collection` queues were shared with an unrelated concurrent
+  experiment ("Five Axes of Scaling"). The caller could see neither that the queue was busy with
+  someone else's tasks nor whether any worker was consuming it at all. On 2026-09-25 the queue had
+  zero workers after a machine restart, and a newly started run would simply have sat `pending`.
+
+Extend the proposed tool with each worker's hostname, queues, start time, and the code revision it
+loaded (e.g. `git rev-parse HEAD` read at worker startup):
+`get_queue_status() -> {queue_name: {concurrency, active, reserved, workers: [{hostname, started_at, code_revision}]}}`.
+A caller can then refuse to dispatch when no worker is present, or when every worker is older than
+the revision it expects.
+
+**Resolution (2026-09-28).** `get_queue_status()` (MCP) / `GET /api/v1/ops/queues` returns
+`{repo_revision, queues: {name: {pending, workers, busy}}, workers: [{hostname, pid, machine,
+started_at, code_revision, code_dirty, stale_code, queues, current_task, last_seen, host_memory}]}`.
+Implemented as a worker registry (`backend/ops/worker_registry.py`) instead of Celery `inspect()`:
+local workers run `--pool=solo`, where a worker busy with a task cannot answer control commands,
+so `inspect()` would miss exactly the busy workers. Each worker publishes its entry to Redis from a
+daemon thread every 30 s with a 90 s TTL (registered in `worker_ready`, updated in
+`task_prerun`/`task_postrun`, removed in `worker_shutdown`); a dead worker's entry expires.
+`stale_code` compares the worker's git HEAD at startup with the repository's current HEAD
+(`ALGOFORGE_CODE_REVISION` overrides for images without `.git`). `pending` is the length of the
+queue's Redis list. `host_memory` (available / swap free) also gives R-16 callers a pre-dispatch
+signal. Same day: `get_training_runs_status(ids)` (batch status) and `backend/ops/wait_runs.py`
+(a REST-only waiter with required timeout and outcome exit codes) for client-side monitoring.
+
 
 ### R-13. A training run whose worker dies stays `running` forever — nothing can end it — P1 — resolved 2026-09-28
 

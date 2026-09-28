@@ -45,6 +45,8 @@ The MCP server is mounted at `http://localhost:8000/mcp` using SSE transport. Ad
 | `get_preprocessed_dataset(preprocessed_dataset_id)` | Recipe config + its structure characteristics |
 | `start_training_run(model_id, hyperparams, dataset_id=None, preprocessed_dataset_id=None, execution_target="local")` | Start training — prefer `preprocessed_dataset_id` when a recipe exists. `execution_target="colab"` runs on a Google Colab CPU runtime instead of this backend's own worker (see [colab-workflow.md](colab-workflow.md)); only `architecture="lstm"` with no recipe/token_level/preprocessing and `split_mode="chronological"` is supported for it today |
 | `get_training_status(training_run_id)` | Poll status with epoch/ETA — for a Colab run, also returns `colab_timeout_seconds`/`colab_timeout_remaining_seconds`/`likely_to_finish_before_timeout` (see [colab-workflow.md](colab-workflow.md#timeout-budget-instead-of-quota)). Also `last_heartbeat_at`, `heartbeat_stale` (`true` = the executing worker stopped heartbeating — likely dead; `null` = no heartbeat to judge, e.g. a run from a worker that predates heartbeats) and `error_message` |
+| `get_training_runs_status(training_run_ids)` | Batch status for monitoring several runs in one call: status, `terminal`, epochs, `val_loss`, `last_heartbeat_at`, `heartbeat_stale`, `error_message`; unknown ids come back as `not_found` |
+| `get_queue_status()` | Workers and queues: per queue `pending` / `workers` / `busy`; per worker `started_at`, `code_revision`, `stale_code` (loaded code older than the repository HEAD), `code_dirty`, `current_task`, `host_memory`. Check before dispatching: `workers == 0` means nothing will pick the job up |
 | `stop_training_run(training_run_id, force=False)` | Gracefully stop training. `force=True` ends a worker-lost run immediately (status `error`, `error_message` set, `training.error` dispatched) — only allowed when its heartbeat is stale, or it has none and started more than the stale threshold ago; a live run gets `409 RUN_NOT_STALE`. Stale runs are also reaped automatically (see below) |
 | `get_model_training_runs(model_id)` | List training run history |
 | `get_model_validations(model_id)` | Get validation metrics |
@@ -151,6 +153,20 @@ Event types: `run.completed`, `run.error`, `training.completed`, `training.error
 
 A `training.error` caused by a dead worker carries `"error_code": "worker_lost"` and an `error`
 message naming the last heartbeat.
+
+## Waiting for runs (`ops.wait_runs`)
+
+One definition of "done" for scripts and operators, over REST only (`GET
+/api/v1/training-runs/status?run_ids=...`): terminal = completed / error / stopped / not_found; a
+stall is `heartbeat_stale`; a timeout is required.
+
+```
+python -m ops.wait_runs 1622 1623 1624 --timeout 7200 --interval 60
+```
+
+Prints a line per status change and a JSON summary; exit code 0 completed, 1 failed, 2 stale,
+3 timeout, 4 API unreachable. `from ops.wait_runs import wait_for_runs` gives the same logic as a
+function. Worker/queue state is `GET /api/v1/ops/queues` (same data as `get_queue_status`).
 
 ## Training-run liveness (heartbeat and reaper)
 

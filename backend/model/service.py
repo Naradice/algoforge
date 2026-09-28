@@ -235,6 +235,43 @@ class ModelService:
 
         return result
 
+    TERMINAL_STATUSES = ("completed", "error", "stopped")
+
+    async def get_training_runs_status(self, db: AsyncSession, run_ids: list[int]) -> list[dict]:
+        """Batch liveness/status snapshot for monitoring several runs in one call (the building
+        block for client-side waiting -- see backend/client/wait_runs.py). Unknown ids come back
+        as status "not_found" rather than failing the whole call. `heartbeat_stale` follows
+        get_training_progress: True = the executing worker stopped heartbeating, None = no
+        heartbeat to judge."""
+        from sqlalchemy import select
+        from model.heartbeat import as_utc, is_heartbeat_stale
+        from model.models import TrainingRun
+
+        rows = (await db.execute(select(TrainingRun).where(TrainingRun.id.in_(run_ids)))).scalars().all()
+        by_id = {r.id: r for r in rows}
+        iso = lambda dt: as_utc(dt).isoformat() if dt else None
+        out = []
+        for rid in run_ids:
+            r = by_id.get(rid)
+            if r is None:
+                out.append({"run_id": rid, "status": "not_found", "terminal": True})
+                continue
+            out.append({
+                "run_id": r.id,
+                "model_id": r.model_id,
+                "status": r.status,
+                "terminal": r.status in self.TERMINAL_STATUSES,
+                "current_epoch": r.current_epoch,
+                "best_epoch": r.best_epoch,
+                "val_loss": r.val_loss,
+                "started_at": iso(r.started_at),
+                "ended_at": iso(r.ended_at),
+                "last_heartbeat_at": iso(r.last_heartbeat_at),
+                "heartbeat_stale": is_heartbeat_stale(r.last_heartbeat_at) if r.status == "running" else None,
+                "error_message": r.error_message,
+            })
+        return out
+
     async def list_epoch_metrics(self, db: AsyncSession, run_id: int) -> list:
         await self.get_training_run_by_id(db, run_id)
         return await model_repo.get_epoch_metrics(db, run_id)

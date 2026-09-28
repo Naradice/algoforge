@@ -142,3 +142,20 @@ async def test_heartbeat_thread_writes_until_stopped(db_session):
     finally:
         beat.stop()
     assert not beat._thread.is_alive()
+
+
+async def test_batch_status_reports_each_run_and_unknown_ids(client, db_session):
+    runs = await _make_runs(db_session, {
+        "stale": ("running", _ago(minutes=30), None),
+        "fresh": ("running", _ago(seconds=5), None),
+        "done": ("completed", _ago(minutes=30), None),
+    })
+    ids = [runs["stale"], runs["fresh"], runs["done"], 999999]
+    r = await client.get(f"/api/v1/training-runs/status?run_ids={','.join(map(str, ids))}")
+    assert r.status_code == 200
+    by_id = {row["run_id"]: row for row in r.json()["data"]}
+    assert [row["run_id"] for row in r.json()["data"]] == ids          # request order kept
+    assert by_id[runs["stale"]]["heartbeat_stale"] is True and not by_id[runs["stale"]]["terminal"]
+    assert by_id[runs["fresh"]]["heartbeat_stale"] is False
+    assert by_id[runs["done"]]["terminal"] and by_id[runs["done"]]["heartbeat_stale"] is None
+    assert by_id[999999] == {"run_id": 999999, "status": "not_found", "terminal": True}

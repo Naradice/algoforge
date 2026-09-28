@@ -24,6 +24,13 @@ async def compare_training_runs(run_ids: str, db: AsyncSession = Depends(get_db)
     return DataResponse(data=comparison)
 
 
+@tr_router.get("/status")
+async def get_training_runs_status(run_ids: str, db: AsyncSession = Depends(get_db)):
+    """Batch status for monitoring: ?run_ids=1,2,3 -- see ModelService.get_training_runs_status."""
+    ids = [int(x.strip()) for x in run_ids.split(",") if x.strip()]
+    return DataResponse(data=await model_service.get_training_runs_status(db, ids))
+
+
 @tr_router.post("/search", status_code=202)
 async def start_hyperparameter_search(body: HyperparamSearchCreate, db: AsyncSession = Depends(get_db)):
     run_ids = await model_service.create_search_runs(db, body)

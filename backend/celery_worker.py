@@ -47,6 +47,59 @@ logger = logging.getLogger("celery_worker")
 
 
 # ---------------------------------------------------------------------------
+# Worker registry (requirements.md R-5, ops/worker_registry.py): each worker publishes hostname,
+# start time, code revision, queues, current task and host memory to Redis from a daemon thread,
+# so get_queue_status can see busy --pool=solo workers (which can't answer inspect()) and flag
+# workers still running code older than the repository's HEAD.
+# ---------------------------------------------------------------------------
+from celery.signals import task_postrun, task_prerun, worker_ready, worker_shutdown  # noqa: E402
+
+_registration = None
+
+
+def _consumed_queues(consumer) -> list[str]:
+    try:
+        return list(consumer.app.amqp.queues.consume_from.keys())
+    except Exception:  # noqa: BLE001
+        try:
+            return [q.name for q in consumer.task_consumer.queues]
+        except Exception:  # noqa: BLE001
+            return []
+
+
+@worker_ready.connect
+def _register_worker(sender=None, **_kw):
+    global _registration
+    from ops.worker_registry import WorkerRegistration
+    try:
+        _registration = WorkerRegistration(sender.hostname, _consumed_queues(sender)).start()
+        logger.info(f"worker registry: {_registration.info}")
+    except Exception as e:  # noqa: BLE001 -- never block worker startup on the registry
+        logger.warning(f"worker registry unavailable: {e}")
+
+
+@worker_shutdown.connect
+def _unregister_worker(**_kw):
+    if _registration is not None:
+        _registration.stop()
+
+
+@task_prerun.connect
+def _mark_task_started(task_id=None, task=None, args=None, **_kw):
+    if _registration is not None:
+        _registration.set_current_task({
+            "task": getattr(task, "name", None), "task_id": task_id, "args": list(args or [])[:3],
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+
+@task_postrun.connect
+def _mark_task_finished(**_kw):
+    if _registration is not None:
+        _registration.set_current_task(None)
+
+
+# ---------------------------------------------------------------------------
 # Per-task DB helper — NullPool avoids asyncio event-loop / pool conflicts
 # ---------------------------------------------------------------------------
 

@@ -184,6 +184,20 @@ Before merging a significant change:
 
 ---
 
+## Monitoring training runs
+
+Wait on runs through the API, not with ad-hoc DB polling or log-file heuristics:
+
+```bash
+cd backend
+python -m ops.wait_runs <run_id> [<run_id> ...] --timeout <seconds>   # exit 0 done, 1 failed, 2 stale, 3 timeout, 4 unreachable
+curl -s http://localhost:8000/api/v1/ops/queues | python -m json.tool  # workers, stale_code, queue backlog
+```
+
+Before dispatching, check that the target queue has `workers > 0` and no worker has
+`stale_code: true` (restart workers after backend code changes). Always put a timeout on
+backgrounded commands.
+
 ## Reviewing the running app
 
 Use the **browser-cli** skill to audit pages visually.
