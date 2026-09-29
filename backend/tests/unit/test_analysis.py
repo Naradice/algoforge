@@ -126,8 +126,13 @@ def test_verdict_distinguishes_tree_only_headroom():
     assert _verdict(tree_only, False, ("hgb", "mlp"), 0.02, 0.95, 0.99, 0.05)[0] == "tree_only_headroom"
     smooth = {**base, "hgb": g(0.05, 0.002), "mlp": g(0.03, 0.001)}
     assert _verdict(smooth, False, ("hgb", "mlp"), 0.02, 0.95, 0.99, 0.05)[0] == "headroom"
-    weak = {"linear": {"r2": 0.037}, "persistence": {"r2": -0.7}, "hgb": g(0.003, -0.001)}
+    weak = {"linear": {"r2": 0.037}, "persistence": {"r2": -0.7}, "hgb": {**g(0.003, -0.001), "r2": 0.04}}
     assert _verdict(weak, False, ("hgb",), 0.02, 0.95, 0.99, 0.05)[0] == "unpredictable"
+    # Only the nonlinear model has signal (Phase 10A trend_change before trend features): never "unpredictable".
+    nonlin = {"linear": {"r2": 0.02}, "persistence": {"r2": 0.0}, "hgb": {**g(0.48, 0.1), "r2": 0.49}}
+    assert _verdict(nonlin, False, ("hgb",), 0.02, 0.95, 0.99, 0.05)[0] == "headroom"
+    overlap = {"linear": {"r2": 0.3}, "persistence": {"r2": 0.0}, "hgb": {**g(0.9, 0.1), "r2": 0.97}}
+    assert _verdict(overlap, False, ("hgb",), 0.02, 0.95, 0.99, 0.05)[0] == "trivial"
 
 
 
@@ -176,3 +181,12 @@ def test_assess_drops_undefined_windows():
     r = assess_target(s, target="direction", horizon=1, obs=20, with_time=False, models=("hgb",), n_boot=50)
     w = build_return_windows(s, obs=20, horizon=1)
     assert r["n_windows"] < len(w) and 0.3 < r["positive_rate"] < 0.7
+
+
+def test_trend_change_baseline_sees_the_past_trend():
+    """trend_change subtracts the past efficiency ratio -- a nonlinear function of the inputs. The
+    baselines get it as a feature, so a random walk shows no nonlinear 'headroom'."""
+    s = _ar_series(phi=0.0, n_days=30, per_day=400)
+    r = assess_target(s, target="trend_change", horizon=20, obs=60, with_time=False, models=("hgb",), n_boot=100)
+    assert r["metrics"]["linear"]["r2"] > 0.3                     # the mechanical -past ER part
+    assert r["verdict"] == "no_headroom", r["reason"]

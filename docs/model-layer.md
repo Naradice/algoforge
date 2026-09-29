@@ -273,7 +273,10 @@ down; windows with no net move are dropped), `extreme` (any |r| in the horizon a
 ratio |net move| / path length of the future returns — trend vs range; reference: the ER of the last
 `horizon` inputs) and `trend_change` (future ER minus that past ER). For the sign-dependent targets
 (`future_return`, `direction`) the linear and tree baselines also get every raw lagged return (an
-AR(`obs`) term). `metrics.linear.ci95_vs_reference` is the paired day-block CI of the linear
+AR(`obs`) term); for the trend targets they get the multi-scale past efficiency ratio (5–60 returns) —
+without it, `trend_change` showed R² 0.49 for trees and the MLP vs 0.02 for linear, purely from
+computing the past ER the target subtracts. `unpredictable` requires that *no* model finds signal,
+and a nonlinear model reaching R² ≥ 0.95 also means `trivial`. `metrics.linear.ci95_vs_reference` is the paired day-block CI of the linear
 baseline's loss gain over persistence / the base rate — for return targets, whether there is any
 signal at all.
 Reference results (2026-09-28): USDJPY `future_log_rv` 20 / 60 → `tree_only_headroom` (linear

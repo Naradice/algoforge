@@ -6,7 +6,9 @@ which of four situations the target is in:
   trivial       the strong linear baseline (or persistence) already explains almost everything
                 (R^2 >= trivial_r2, or AUC >= trivial_auc) -- the target very likely overlaps the
                 input window; a model "win" on it would not measure the intended ability
-  unpredictable even the strong linear baseline finds no signal (R^2 < min_signal_r2 / AUC < 0.55)
+  unpredictable no model finds signal (best R^2 < min_signal_r2 / best AUC < 0.55) -- checked over
+                every model, not only the linear one: a target can be a nonlinear function of the
+                input that only the nonlinear models compute (Phase 10A, trend_change)
   headroom      a smooth nonlinear model (MLP or k-NN) beats the strong linear baseline by
                 >= headroom_threshold (relative loss) with the paired day-block bootstrap CI
                 excluding zero -- a target where a neural sequence model could plausibly learn more
@@ -30,9 +32,11 @@ import numpy as np
 import pandas as pd
 
 from model_core.analysis.bootstrap import paired_block_bootstrap_ci
-from model_core.analysis.features import SCALES, har_features, linear_extras, time_features, vol_memory_features
+from model_core.analysis.features import (
+    har_features, linear_extras, time_features, trend_features, vol_memory_features,
+)
 from model_core.analysis.splits import blocked_split
-from model_core.analysis.targets import CLASSIFICATION, SIGNED, make_target, persistence
+from model_core.analysis.targets import CLASSIFICATION, REGIME, SIGNED, make_target, persistence
 from model_core.analysis.windows import build_return_windows
 
 NONLINEAR = ("hgb", "mlp", "knn")
@@ -103,9 +107,10 @@ def assess_target(
     ts = w.anchor_ts if with_time else None
     clock = time_features(w.anchor_ts) if with_time else np.empty((len(w), 0))
     lags = w.X if signed else np.empty((len(w), 0))    # AR(obs) term for sign-dependent targets
-    F_lin = np.c_[base, linear_extras(w.X, ts), clock, lags]
-    F_tree = np.c_[base, clock, lags]
-    knn_cols = np.c_[har_features(w.X), base[:, -3:], clock]
+    trend = trend_features(w.X) if target in REGIME else np.empty((len(w), 0))
+    F_lin = np.c_[base, linear_extras(w.X, ts), clock, lags, trend]
+    F_tree = np.c_[base, clock, lags, trend]
+    knn_cols = np.c_[har_features(w.X), base[:, -3:], clock, trend]
     Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
     Mlp_tr, Mlp_te = _std(np.c_[F_tree[tr], w.X[tr]], np.c_[F_tree[te], w.X[te]])
     Knn_tr, Knn_te = _std(knn_cols[tr], knn_cols[te])
@@ -173,17 +178,22 @@ def assess_target(
 def _verdict(metrics, classification, models, threshold, trivial_r2, trivial_auc, min_signal_r2):
     if classification:
         lin_auc = metrics["linear"]["auc"]
+        best_auc = max(metrics[m]["auc"] for m in metrics if m != "base_rate")
         if lin_auc >= trivial_auc:
             return "trivial", f"linear AUC {lin_auc:.3f} >= {trivial_auc}: target likely computable from the input"
-        if lin_auc < 0.55:
-            return "unpredictable", f"linear AUC {lin_auc:.3f} < 0.55: no usable signal in the window"
+        if best_auc < 0.55:
+            return "unpredictable", f"best AUC {best_auc:.3f} < 0.55 (linear {lin_auc:.3f}): no usable signal in the window"
     else:
         best_simple = max(metrics["linear"]["r2"], metrics["persistence"]["r2"])
         if best_simple >= trivial_r2:
             return "trivial", (f"a simple predictor reaches R2 {best_simple:.3f} >= {trivial_r2}: the target "
                                "very likely overlaps the input window")
-        if metrics["linear"]["r2"] < min_signal_r2:
-            return "unpredictable", f"linear R2 {metrics['linear']['r2']:.3f} < {min_signal_r2}: no usable signal"
+        best_r2 = max(v["r2"] for m, v in metrics.items() if m != "persistence")
+        if best_r2 < min_signal_r2:
+            return "unpredictable", (f"best R2 {best_r2:.3f} < {min_signal_r2} (linear {metrics['linear']['r2']:.3f}): "
+                                     "no usable signal")
+        if max(v["r2"] for v in metrics.values()) >= trivial_r2:
+            return "trivial", f"a nonlinear model reaches R2 >= {trivial_r2}: the target very likely overlaps the input window"
     gains = {m: metrics[m] for m in models if m in metrics}
     passing = {m: g for m, g in gains.items() if g["gain_rel"] >= threshold and g["ci95"][0] > 0}
     if passing:

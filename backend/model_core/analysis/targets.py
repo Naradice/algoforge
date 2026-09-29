@@ -74,6 +74,9 @@ CLASSIFICATION = {"jump", "direction", "extreme"}
 # Targets that depend on the sign of returns: the baselines also get the raw lagged returns
 # (an AR(obs) term), which vol-memory features alone do not carry.
 SIGNED = {"future_return", "direction"}
+# Trend-regime targets: the baselines also get the multi-scale past efficiency ratio (the state
+# they are defined relative to -- without it a nonlinear model 'wins' just by computing it).
+REGIME = {"trend_er", "trend_change"}
 # Targets needing the last h inputs to be defined (h <= obs).
 NEEDS_INPUT_H = {"vol_change", "trend_change"}
 
