@@ -1,0 +1,1034 @@
+{
+ "future_return_h1": {
+  "target": "future_return",
+  "horizon": 1,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "regression",
+  "n_windows": 1428855,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 319,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 2.0867429207449802e-08,
+    "r2": -3.048089981572133e-05
+   },
+   "linear": {
+    "mse": 2.093091960484025e-08,
+    "r2": -0.003073133255488969,
+    "reference": "persistence",
+    "gain_vs_reference": -6.349039739044646e-11,
+    "gain_rel_vs_reference": -0.0030425596157182596,
+    "ci95_vs_reference": [
+     -1.2256990533009975e-10,
+     -1.4438483405556627e-11
+    ],
+    "exog_gain": -3.4218947708195184e-12,
+    "exog_gain_rel": -0.00016351189321468887,
+    "exog_ci95": [
+     -1.9093707836011428e-11,
+     1.2300080226663687e-11
+    ]
+   },
+   "linear_own": {
+    "mse": 2.092749771006943e-08,
+    "r2": -0.002909145682356007
+   },
+   "hgb": {
+    "mse": 2.0868709807755503e-08,
+    "r2": -9.185114944343375e-05,
+    "gain_vs_linear": 6.220979708474573e-11,
+    "gain_rel": 0.0029721482982696945,
+    "ci95": [
+     6.297171473564068e-12,
+     1.3363594145720541e-10
+    ]
+   },
+   "mlp": {
+    "mse": 2.2822798165175323e-08,
+    "r2": -0.09373769033569213,
+    "gain_vs_linear": -1.891878560335074e-09,
+    "gain_rel": -0.09038678644093494,
+    "ci95": [
+     -2.2984480388350638e-09,
+     -1.5941172253229334e-09
+    ]
+   },
+   "knn": {
+    "mse": 2.1003522602860577e-08,
+    "r2": -0.006552489064163058,
+    "gain_vs_linear": -7.260299802032773e-11,
+    "gain_rel": -0.00346869604350964,
+    "ci95": [
+     -1.334385202094349e-10,
+     -1.4091941678266692e-11
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 -0.000 < 0.05 (linear -0.003): no usable signal",
+  "elapsed_seconds": 95.7,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "future_return_h5": {
+  "target": "future_return",
+  "horizon": 5,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "regression",
+  "n_windows": 1413925,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 317,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 1.1168037456149777e-07,
+    "r2": -9.082811587290962e-07
+   },
+   "linear": {
+    "mse": 1.1214402046396287e-07,
+    "r2": -0.0041524552777227886,
+    "reference": "persistence",
+    "gain_vs_reference": -4.6364590246510543e-10,
+    "gain_rel_vs_reference": -0.004151543225795637,
+    "ci95_vs_reference": [
+     -9.5671925720987e-10,
+     -1.424604964029237e-10
+    ],
+    "exog_gain": -3.104039981927929e-11,
+    "exog_gain_rel": -0.00027686713707476184,
+    "exog_ci95": [
+     -1.6485526119788578e-10,
+     7.383683488865891e-11
+    ]
+   },
+   "linear_own": {
+    "mse": 1.121129800641436e-07,
+    "r2": -0.0038745154146575533
+   },
+   "hgb": {
+    "mse": 1.118128623740182e-07,
+    "r2": -0.001187221752767309,
+    "gain_vs_linear": 3.311580899446772e-10,
+    "gain_rel": 0.002952971443101541,
+    "ci95": [
+     4.081923967368872e-12,
+     7.24084865595229e-10
+    ]
+   },
+   "mlp": {
+    "mse": 1.1218102821752435e-07,
+    "r2": -0.004483827618836589,
+    "gain_vs_linear": -3.7007753561473034e-11,
+    "gain_rel": -0.0003300020224739968,
+    "ci95": [
+     -3.6826741994953453e-10,
+     2.6504295578624585e-10
+    ]
+   },
+   "knn": {
+    "mse": 1.1254344984105356e-07,
+    "r2": -0.007728998976230139,
+    "gain_vs_linear": -3.9942937709068736e-10,
+    "gain_rel": -0.003561753675658906,
+    "ci95": [
+     -7.650063288321516e-10,
+     1.3096763632090546e-10
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 -0.001 < 0.05 (linear -0.004): no usable signal",
+  "elapsed_seconds": 131.7,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "future_return_h20": {
+  "target": "future_return",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "regression",
+  "n_windows": 1361847,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 311,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 3.9236004454917985e-07,
+    "r2": -1.6958243624909386e-06
+   },
+   "linear": {
+    "mse": 3.952141696631234e-07,
+    "r2": -0.007275958312832342,
+    "reference": "persistence",
+    "gain_vs_reference": -2.854125113943544e-09,
+    "gain_rel_vs_reference": -0.007274250152619191,
+    "ci95_vs_reference": [
+     -4.194715178257777e-09,
+     -1.3911333382901872e-09
+    ],
+    "exog_gain": -3.426711440641209e-11,
+    "exog_gain_rel": -8.67126951178589e-05,
+    "exog_ci95": [
+     -4.213495493931344e-10,
+     3.7560094035905855e-10
+    ]
+   },
+   "linear_own": {
+    "mse": 3.95179902548717e-07,
+    "r2": -0.007188622272902956
+   },
+   "hgb": {
+    "mse": 3.926185291860739e-07,
+    "r2": -0.0006604914352550395,
+    "gain_vs_linear": 2.595640477049482e-09,
+    "gain_rel": 0.006567680706544454,
+    "ci95": [
+     1.24037545162624e-09,
+     4.199709971738186e-09
+    ]
+   },
+   "mlp": {
+    "mse": 4.0036930315451574e-07,
+    "r2": -0.020414763614775122,
+    "gain_vs_linear": -5.155133491392349e-09,
+    "gain_rel": -0.013043898440651895,
+    "ci95": [
+     -7.46814190754891e-09,
+     -3.147290453003383e-09
+    ]
+   },
+   "knn": {
+    "mse": 3.9628782586339827e-07,
+    "r2": -0.010012368495069035,
+    "gain_vs_linear": -1.0736562002748752e-09,
+    "gain_rel": -0.0027166439937870877,
+    "ci95": [
+     -2.7090189277241836e-09,
+     3.6481867192159454e-10
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 -0.001 < 0.05 (linear -0.007): no usable signal",
+  "elapsed_seconds": 91.8,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "future_return_h60": {
+  "target": "future_return",
+  "horizon": 60,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "regression",
+  "n_windows": 1245253,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 289,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 1.498283995326156e-06,
+    "r2": -0.00031415475871798826
+   },
+   "linear": {
+    "mse": 1.5089282847374207e-06,
+    "r2": -0.007420706920158171,
+    "reference": "persistence",
+    "gain_vs_reference": -1.0644289411264766e-08,
+    "gain_rel_vs_reference": -0.007104320305408889,
+    "ci95_vs_reference": [
+     -1.8032339559950576e-08,
+     -3.3037390088909857e-09
+    ],
+    "exog_gain": -1.3204343940364454e-09,
+    "exog_gain_rel": -0.0008758473854694331,
+    "exog_ci95": [
+     -6.339397948329059e-09,
+     5.127646298349214e-09
+    ]
+   },
+   "linear_own": {
+    "mse": 1.5076078503433843e-06,
+    "r2": -0.006539132252801894
+   },
+   "hgb": {
+    "mse": 1.5006598989000048e-06,
+    "r2": -0.0019004027482023567,
+    "gain_vs_linear": 8.268385837415919e-09,
+    "gain_rel": 0.0054796413594001645,
+    "ci95": [
+     -6.646267306168209e-09,
+     2.36749213187893e-08
+    ]
+   },
+   "mlp": {
+    "mse": 1.5119157006783735e-06,
+    "r2": -0.009415224956264234,
+    "gain_vs_linear": -2.987415940952803e-09,
+    "gain_rel": -0.001979826325193887,
+    "ci95": [
+     -1.2410807282448274e-08,
+     6.239097982408179e-09
+    ]
+   },
+   "knn": {
+    "mse": 1.5234566682632545e-06,
+    "r2": -0.017120435230672193,
+    "gain_vs_linear": -1.4528383525833788e-08,
+    "gain_rel": -0.009628279668945283,
+    "ci95": [
+     -2.6465723614817367e-08,
+     -3.464601446653799e-09
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 -0.002 < 0.05 (linear -0.007): no usable signal",
+  "elapsed_seconds": 130.1,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "direction_h1": {
+  "target": "direction",
+  "horizon": 1,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "classification",
+  "n_windows": 1342607,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 319,
+  "positive_rate": 0.50066,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.6931550457155093,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.692301498029941,
+    "auc": 0.530257519520702,
+    "reference": "base_rate",
+    "gain_vs_reference": 0.0008535476855683344,
+    "gain_rel_vs_reference": 0.0012313950404663934,
+    "ci95_vs_reference": [
+     0.00014649330386434035,
+     0.0013863453652427952
+    ],
+    "exog_gain": 0.0007041740406819041,
+    "exog_gain_rel": 0.0010161158401170245,
+    "exog_ci95": [
+     0.00034466101955606967,
+     0.0009972998978243703
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6930056720706229,
+    "auc": 0.5181088115527932
+   },
+   "hgb": {
+    "logloss": 0.6925247464803921,
+    "auc": 0.5205483872035099,
+    "gain_vs_linear": -0.00022324845045107455,
+    "gain_rel": -0.0003224728692431912,
+    "ci95": [
+     -0.0007899301774965018,
+     0.00042046344718090845
+    ]
+   },
+   "mlp": {
+    "logloss": 0.7017797765389012,
+    "auc": 0.512943236952296,
+    "gain_vs_linear": -0.009478278508960214,
+    "gain_rel": -0.013690969232238021,
+    "ci95": [
+     -0.01095077848150667,
+     -0.008200563251627477
+    ]
+   },
+   "knn": {
+    "logloss": 0.6978068098255948,
+    "auc": 0.5051453949653361,
+    "gain_vs_linear": -0.005505311795653833,
+    "gain_rel": -0.007952188188701184,
+    "ci95": [
+     -0.0063320040314507635,
+     -0.00468250309342954
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.530 < 0.55 (linear 0.530): no usable signal in the window",
+  "elapsed_seconds": 74.4,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "direction_h5": {
+  "target": "direction",
+  "horizon": 5,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "classification",
+  "n_windows": 1381918,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 317,
+  "positive_rate": 0.50429,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.693113252049561,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.692896069641548,
+    "auc": 0.5240356248161707,
+    "reference": "base_rate",
+    "gain_vs_reference": 0.0002171824080129392,
+    "gain_rel_vs_reference": 0.0003133433206921422,
+    "ci95_vs_reference": [
+     -0.0006902143093162677,
+     0.0009488789857743843
+    ],
+    "exog_gain": -0.000123266402365374,
+    "exog_gain_rel": -0.00017793193062576933,
+    "exog_ci95": [
+     -0.0003888252649820368,
+     0.00017342262951109338
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6927728032391827,
+    "auc": 0.5228686473074876
+   },
+   "hgb": {
+    "logloss": 0.6922618405092339,
+    "auc": 0.525044537888719,
+    "gain_vs_linear": 0.0006342291323141458,
+    "gain_rel": 0.0009153308268038639,
+    "ci95": [
+     6.577351517168264e-05,
+     0.0014260713709046702
+    ]
+   },
+   "mlp": {
+    "logloss": 0.6937540836581478,
+    "auc": 0.5178324521609313,
+    "gain_vs_linear": -0.0008580140165997951,
+    "gain_rel": -0.0012383011741481903,
+    "ci95": [
+     -0.0013289560768661255,
+     -0.0003323272049490657
+    ]
+   },
+   "knn": {
+    "logloss": 0.6979221039040948,
+    "auc": 0.5069456367127704,
+    "gain_vs_linear": -0.005026034262546775,
+    "gain_rel": -0.007253662537221295,
+    "ci95": [
+     -0.005957189647192808,
+     -0.0038259550042814717
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.525 < 0.55 (linear 0.524): no usable signal in the window",
+  "elapsed_seconds": 67.9,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "direction_h20": {
+  "target": "direction",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "classification",
+  "n_windows": 1347537,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 310,
+  "positive_rate": 0.51425,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.6929240281214792,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.6927525788645653,
+    "auc": 0.5188027667472905,
+    "reference": "base_rate",
+    "gain_vs_reference": 0.00017144925691392476,
+    "gain_rel_vs_reference": 0.00024742865012016485,
+    "ci95_vs_reference": [
+     -0.000515238973761833,
+     0.0007997556484375424
+    ],
+    "exog_gain": -0.00023431001108320526,
+    "exog_gain_rel": -0.00033834488073668256,
+    "exog_ci95": [
+     -0.0005656698319303607,
+     0.00013979280009845742
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6925182688534821,
+    "auc": 0.5187578674778588
+   },
+   "hgb": {
+    "logloss": 0.6922472557092868,
+    "auc": 0.519293711917505,
+    "gain_vs_linear": 0.0005053231552785142,
+    "gain_rel": 0.0007294424744065891,
+    "ci95": [
+     -0.00022722041920972987,
+     0.0013005819532107045
+    ]
+   },
+   "mlp": {
+    "logloss": 0.732815895252398,
+    "auc": 0.5054171879108806,
+    "gain_vs_linear": -0.04006331638783267,
+    "gain_rel": -0.0578320710887821,
+    "ci95": [
+     -0.04385928571083993,
+     -0.036835678884453125
+    ]
+   },
+   "knn": {
+    "logloss": 0.6971719213763826,
+    "auc": 0.5158844845725942,
+    "gain_vs_linear": -0.0044193425118173035,
+    "gain_rel": -0.006379395251130916,
+    "ci95": [
+     -0.005884542253075599,
+     -0.0028319628653558477
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.519 < 0.55 (linear 0.519): no usable signal in the window",
+  "elapsed_seconds": 80.8,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "direction_h60": {
+  "target": "direction",
+  "horizon": 60,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "classification",
+  "n_windows": 1238195,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 288,
+  "positive_rate": 0.51693,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.6926913928649103,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.6950739194473604,
+    "auc": 0.504295221469697,
+    "reference": "base_rate",
+    "gain_vs_reference": -0.002382526582450084,
+    "gain_rel_vs_reference": -0.0034395209858118273,
+    "ci95_vs_reference": [
+     -0.00413629494272706,
+     -0.0006522872481181955
+    ],
+    "exog_gain": -0.0007679597813441408,
+    "exog_gain_rel": -0.0011060826580165815,
+    "exog_ci95": [
+     -0.0014327906096942371,
+     -0.00015421780563803936
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6943059596660163,
+    "auc": 0.5076176906793167
+   },
+   "hgb": {
+    "logloss": 0.6948670503048194,
+    "auc": 0.5143114214389553,
+    "gain_vs_linear": 0.00020686914254097744,
+    "gain_rel": 0.00029762178777396084,
+    "ci95": [
+     -0.0012801050148436755,
+     0.001986934069312334
+    ]
+   },
+   "mlp": {
+    "logloss": 0.7046949069671082,
+    "auc": 0.5047265355711417,
+    "gain_vs_linear": -0.009620987519747826,
+    "gain_rel": -0.013841675324830606,
+    "ci95": [
+     -0.011980811403677075,
+     -0.007623689104610727
+    ]
+   },
+   "knn": {
+    "logloss": 0.6987090539061205,
+    "auc": 0.5142651614018411,
+    "gain_vs_linear": -0.00363513445876007,
+    "gain_rel": -0.00522985305167297,
+    "ci95": [
+     -0.006077827652644129,
+     -0.0009803881797080893
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.514 < 0.55 (linear 0.504): no usable signal in the window",
+  "elapsed_seconds": 86.5,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "future_log_rv_h20": {
+  "target": "future_log_rv",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "regression",
+  "n_windows": 1361847,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 311,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.14410821319116848,
+    "r2": 0.48314657163539465
+   },
+   "linear": {
+    "mse": 0.09992702930481882,
+    "r2": 0.6416052455388354,
+    "reference": "persistence",
+    "gain_vs_reference": 0.04418118388634966,
+    "gain_rel_vs_reference": 0.3065833855544415,
+    "ci95_vs_reference": [
+     0.04170026151312032,
+     0.04665981361491256
+    ],
+    "exog_gain": 0.0010531261268540426,
+    "exog_gain_rel": 0.01042904046198096,
+    "exog_ci95": [
+     0.0007225017696243688,
+     0.0013575173105693852
+    ]
+   },
+   "linear_own": {
+    "mse": 0.10098015543167287,
+    "r2": 0.6378281405625715
+   },
+   "hgb": {
+    "mse": 0.09569876855169655,
+    "r2": 0.6567701762383209,
+    "gain_vs_linear": 0.0042282607531222705,
+    "gain_rel": 0.04231348397463437,
+    "ci95": [
+     0.0030401855128566954,
+     0.005259583161982407
+    ]
+   },
+   "mlp": {
+    "mse": 0.10946805381065632,
+    "r2": 0.6073857439798844,
+    "gain_vs_linear": -0.009541024505837492,
+    "gain_rel": -0.09547991741787315,
+    "ci95": [
+     -0.010415942330292407,
+     -0.008613014756043166
+    ]
+   },
+   "knn": {
+    "mse": 0.11289987916658469,
+    "r2": 0.5950772803504925,
+    "gain_vs_linear": -0.012972849861765862,
+    "gain_rel": -0.12982323153221434,
+    "ci95": [
+     -0.01713647842489499,
+     -0.009265307817013272
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 4.2% (95% CI of loss gain +0.0030..+0.0053), but the MLP changes loss by -9.5% -- only trees find it",
+  "elapsed_seconds": 101.5,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "future_log_rv_h60": {
+  "target": "future_log_rv",
+  "horizon": 60,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "regression",
+  "n_windows": 1245253,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 289,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.13571748761746338,
+    "r2": 0.4731767951160222
+   },
+   "linear": {
+    "mse": 0.08915746504336901,
+    "r2": 0.6539117964969239,
+    "reference": "persistence",
+    "gain_vs_reference": 0.046560022574094376,
+    "gain_rel_vs_reference": 0.34306575660558636,
+    "ci95_vs_reference": [
+     0.04203677216498996,
+     0.051993567574842796
+    ],
+    "exog_gain": 0.0004824627295330203,
+    "exog_gain_rel": 0.005382230235117033,
+    "exog_ci95": [
+     8.829295996927763e-06,
+     0.0009854580138716255
+    ]
+   },
+   "linear_own": {
+    "mse": 0.08963992777290203,
+    "r2": 0.6520389902294952
+   },
+   "hgb": {
+    "mse": 0.08415211026268564,
+    "r2": 0.6733414005474607,
+    "gain_vs_linear": 0.005005354780683369,
+    "gain_rel": 0.056140613444411035,
+    "ci95": [
+     0.0029793291768450566,
+     0.00704499400016573
+    ]
+   },
+   "mlp": {
+    "mse": 0.0957624657934759,
+    "r2": 0.6282727449309218,
+    "gain_vs_linear": -0.006605000750106893,
+    "gain_rel": -0.07408241976029727,
+    "ci95": [
+     -0.008780368661266873,
+     -0.004497092211839501
+    ]
+   },
+   "knn": {
+    "mse": 0.10249615386770419,
+    "r2": 0.602134159592878,
+    "gain_vs_linear": -0.013338688824335185,
+    "gain_rel": -0.14960821079700756,
+    "ci95": [
+     -0.020471822964837117,
+     -0.007152122202797394
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 5.6% (95% CI of loss gain +0.0030..+0.0070), but the MLP changes loss by -7.4% -- only trees find it",
+  "elapsed_seconds": 97.8,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "vol_change_h20": {
+  "target": "vol_change",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "regression",
+  "n_windows": 1361847,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 311,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.14410821319116848,
+    "r2": -0.0007482235828537576
+   },
+   "linear": {
+    "mse": 0.0999271909633022,
+    "r2": 0.30606343226606747,
+    "reference": "persistence",
+    "gain_vs_reference": 0.04418102222786628,
+    "gain_rel_vs_reference": 0.30658226376908454,
+    "ci95_vs_reference": [
+     0.041700104861365356,
+     0.04665965980697046
+    ],
+    "exog_gain": 0.0010531028050146385,
+    "exog_gain_rel": 0.010428795220489402,
+    "exog_ci95": [
+     0.0007224898584554014,
+     0.0013574857671932133
+    ]
+   },
+   "linear_own": {
+    "mse": 0.10098029376831684,
+    "r2": 0.29875024214295853
+   },
+   "hgb": {
+    "mse": 0.09602737072511054,
+    "r2": 0.3331454291157927,
+    "gain_vs_linear": 0.003899820238191659,
+    "gain_rel": 0.03902661728601828,
+    "ci95": [
+     0.002722437051168595,
+     0.004940400101061239
+    ]
+   },
+   "mlp": {
+    "mse": 0.1046928999888995,
+    "r2": 0.27296833840661805,
+    "gain_vs_linear": -0.004765709025597295,
+    "gain_rel": -0.047691814206480394,
+    "ci95": [
+     -0.005517314691437829,
+     -0.0040566935173516165
+    ]
+   },
+   "knn": {
+    "mse": 0.12257607369963282,
+    "r2": 0.1487800362499666,
+    "gain_vs_linear": -0.022648882736330617,
+    "gain_rel": -0.22665385184947623,
+    "ci95": [
+     -0.024415992116446454,
+     -0.02087622842082056
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 3.9% (95% CI of loss gain +0.0027..+0.0049), but the MLP changes loss by -4.8% -- only trees find it",
+  "elapsed_seconds": 67.0,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ },
+ "extreme_h20": {
+  "target": "extreme",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "exog": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "USDCHF",
+   "EURJPY",
+   "GBPJPY",
+   "AUDJPY",
+   "CHFJPY"
+  ],
+  "task": "classification",
+  "n_windows": 1361847,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 311,
+  "positive_rate": 0.01204,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.06520097499538617,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.04928995928283348,
+    "auc": 0.8652570554122802,
+    "reference": "base_rate",
+    "gain_vs_reference": 0.01591101571255269,
+    "gain_rel_vs_reference": 0.24403033411200684,
+    "ci95_vs_reference": [
+     0.009087948940305696,
+     0.024744116050438674
+    ],
+    "exog_gain": -0.00019677415922681601,
+    "exog_gain_rel": -0.004008176669152321,
+    "exog_ci95": [
+     -0.000743267019245347,
+     0.00028769557866469974
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.049093185123606664,
+    "auc": 0.8670216146591001
+   },
+   "hgb": {
+    "logloss": 0.04873855293243689,
+    "auc": 0.876709452236825,
+    "gain_vs_linear": 0.000551406350396591,
+    "gain_rel": 0.011186991395804069,
+    "ci95": [
+     -0.0011884534406486334,
+     0.0021237365193431897
+    ]
+   },
+   "mlp": {
+    "logloss": 0.055454603699772786,
+    "auc": 0.8185247304455947,
+    "gain_vs_linear": -0.006164644416939306,
+    "gain_rel": -0.12506896955555621,
+    "ci95": [
+     -0.009915571622960032,
+     -0.0033509190128683942
+    ]
+   },
+   "knn": {
+    "logloss": 0.06497459143435133,
+    "auc": 0.8319368435162007,
+    "gain_vs_linear": -0.01568463215151785,
+    "gain_rel": -0.3182115055424774,
+    "ci95": [
+     -0.02177283102176443,
+     -0.0100802794270859
+    ]
+   }
+  },
+  "verdict": "no_headroom",
+  "reason": "best nonlinear (hgb) changes loss by +1.1% vs linear (CI -0.0012..+0.0021); threshold 2% with CI > 0",
+  "elapsed_seconds": 60.2,
+  "rows": [
+   "2017-08-14 00:00:00",
+   "2022-12-30 16:58:00"
+  ]
+ }
+}

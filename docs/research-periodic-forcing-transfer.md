@@ -444,6 +444,41 @@ screens need inputs that carry information the series' own past does not: other 
 (HistData 9 pairs M1, datasets 149–157; MT5 daily for 64 instruments, datasets 85–148) and longer
 horizons (daily bars).
 
+## Phase 10B — other currency pairs as inputs (2026-09-29)
+
+Question: do the other 8 HistData pairs (EURUSD GBPUSD AUDUSD USDCHF EURJPY GBPJPY AUDJPY CHFJPY,
+datasets 150–157; same source and clock as USDJPY dataset 149) carry information about USDJPY that
+its own past does not — and does that create room for a nonlinear model? `assess_target(..., exog=)`
+adds each pair's signed return sums (1–60 bars) and log RMS (5/20/60) up to the anchor; `linear_own`
+is the same linear baseline without them, on the same windows. Strict alignment (a minute missing
+in any pair is a gap): 1.25M windows, 2017-08..2022-12; 200k train windows. Script
+`backend/phase10b_cross_pair_screen.py`, output `backend/phase10b_cross_pair_screen.json`.
+
+| Target (h) | linear own → with pairs | pairs' gain (95 % CI) | best nonlinear vs linear | verdict |
+|---|---|---|---|---|
+| future_return 1/5/20/60 | R² ≤ 0 → ≤ 0 | ≈ 0 (CIs span 0) | — | unpredictable |
+| direction 1 | AUC 0.518 → 0.530 | +0.10 % log loss (CI > 0) | linear best | unpredictable |
+| direction 5/20/60 | 0.508–0.523 → 0.504–0.524 | ≤ 0 | HGB ≤ +0.1 % | unpredictable |
+| future_log_rv 20 | R² 0.638 → 0.642 | +1.0 % (CI > 0) | HGB +4.2 %, MLP −9.5 % | tree_only_headroom |
+| future_log_rv 60 | 0.652 → 0.654 | +0.5 % (CI barely > 0) | HGB +5.6 %, MLP −7.4 % | tree_only_headroom |
+| vol_change 20 | 0.299 → 0.306 | +1.0 % (CI > 0) | HGB +3.9 %, MLP −4.8 % | tree_only_headroom |
+| extreme 20 | AUC 0.867 → 0.865 | ≈ 0 | HGB +1.1 % (CI spans 0) | no_headroom |
+
+- The other pairs add a little, and only linearly: ~1 % on USDJPY volatility (a common FX
+  volatility factor) and AUC +0.012 on the next bar's direction. At one bar that is most likely
+  non-synchronous closing (each pair's last quote in the minute comes at a different second;
+  USDJPY ≈ EURJPY / EURUSD), not a tradeable lead; it is gone at 5 bars.
+- Returns stay unpredictable at every horizon, with or without the other pairs.
+- Nonlinear headroom stays tree-only, and the MLP remains worse than linear — the same pattern as
+  Phase 9a/10A.
+
+Conclusion: adding the other currency pairs at 1-minute resolution does not produce a target where a
+smooth nonlinear (sequence) model beats a strong linear one. Across Phases 8–10B, USDJPY M1
+offers volatility (persistence + seasonality + a small common factor) and nothing else that a
+pretrained sequence model could plausibly improve on. Remaining untested directions: daily and
+longer horizons across asset classes (MT5 daily, datasets 85–148), and liquidity / order-flow
+proxies (Dukascopy volume, tick counts — need upload-parser work first).
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
