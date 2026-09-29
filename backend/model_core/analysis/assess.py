@@ -33,11 +33,12 @@ import pandas as pd
 
 from model_core.analysis.bootstrap import paired_block_bootstrap_ci
 from model_core.analysis.features import (
-    exog_features, har_features, linear_extras, time_features, trend_features, vol_memory_features,
+    exog_features, har_features, linear_extras, market_features, time_features, trend_features,
+    vol_memory_features,
 )
-from model_core.analysis.splits import blocked_split
+from model_core.analysis.splits import blocked_split, chronological_split, holdout_split
 from model_core.analysis.targets import CLASSIFICATION, REGIME, SIGNED, make_target, persistence
-from model_core.analysis.windows import build_return_windows
+from model_core.analysis.windows import build_return_windows, concat_windows
 
 NONLINEAR = ("hgb", "mlp", "knn")
 
@@ -53,7 +54,7 @@ def _std(train: np.ndarray, *arrays: np.ndarray):
 
 
 def assess_target(
-    close: pd.Series,
+    close: pd.Series | dict[str, pd.Series],
     target: str = "future_log_rv",
     horizon: int = 20,
     obs: int = 60,
@@ -70,6 +71,11 @@ def assess_target(
     min_signal_r2: float = 0.05,
     target_kwargs: dict | None = None,
     exog: pd.DataFrame | None = None,
+    split: str = "blocked",
+    bootstrap_group: str = "day",
+    max_gap: pd.Timedelta | str | None = None,
+    market: bool = False,
+    test_period: tuple | None = None,
 ) -> dict:
     """Score persistence, the strong linear baseline and nonlinear `models` on `target` built from
     `close` (a DatetimeIndex-ed price series), and return metrics plus a verdict (module docstring).
@@ -78,7 +84,17 @@ def assess_target(
     also gets their multi-scale signed sums and log RMS up to the anchor (features.exog_features);
     `linear_own` -- the same linear baseline without them -- is scored too, and
     metrics.linear.exog_gain_rel / exog_ci95 say whether the other instruments add anything linearly.
-    The verdict's headroom is measured over the linear baseline *with* the other instruments."""
+    The verdict's headroom is measured over the linear baseline *with* the other instruments.
+
+    Panel / long horizons: `close` may be {name: series} -- windows and targets are built per
+    instrument (a target's thresholds, e.g. extreme's quantile, are per instrument) and pooled into
+    one model. `split="chronological"` tests on the last test_frac of dates after an
+    obs + horizon-day purge (splits.chronological_split) instead of random days; `bootstrap_group=
+    "month"` resamples months (use it when overlapping targets span days); `max_gap` lets weekends /
+    holidays inside daily bars count as contiguous; `market=True` (panel only) adds cross-instrument
+    means of past returns / volatility per day (features.market_features), scored like `exog`.
+    `test_period=(start, end)` holds out that date block instead (splits.holdout_split; purged on
+    both sides, the rest trains) -- to check a chronological result on other periods."""
     from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
     from sklearn.linear_model import LogisticRegression, RidgeCV
     from sklearn.metrics import roc_auc_score
@@ -89,23 +105,47 @@ def assess_target(
     if unknown:
         raise ValueError(f"unknown models {sorted(unknown)}; choose from {NONLINEAR}")
     t0 = time.time()
-    w = build_return_windows(close, obs=obs, horizon=horizon, exog=exog)
+    if split not in ("blocked", "chronological") or bootstrap_group not in ("day", "month"):
+        raise ValueError("split must be blocked|chronological and bootstrap_group day|month")
+    panel = isinstance(close, dict)
+    if panel and exog is not None:
+        raise ValueError("exog is for a single series; a panel can use market=True")
+    if market and not panel:
+        raise ValueError("market=True needs a panel ({name: close})")
+    series = close if panel else {"": close}
+    parts, ys, names = [], [], []
+    for name, s in series.items():
+        wi = build_return_windows(s, obs=obs, horizon=horizon, exog=exog, max_gap=max_gap)
+        if len(wi):
+            parts.append(wi)
+            ys.append(make_target(target, wi.X, wi.F, horizon, **(target_kwargs or {})))
+            names.append(name)
+    if not parts:
+        raise ValueError("only 0 gap-free windows -- not enough to assess")
+    w = parts[0] if len(parts) == 1 else concat_windows(parts)
+    y = np.concatenate(ys)
     if len(w) < 1000:
         raise ValueError(f"only {len(w)} gap-free windows -- not enough to assess")
-    y = make_target(target, w.X, w.F, horizon, **(target_kwargs or {}))
     defined = np.isfinite(y)
     if not defined.all():                     # e.g. direction over a flat future
         w, y = w.take(np.flatnonzero(defined)), y[defined]
     classification = target in CLASSIFICATION
     signed = target in SIGNED
+    M = market_features(w) if market else None     # per-day cross-section: needs all windows
 
     rng = np.random.default_rng(seed)
-    tr, te = blocked_split(w.day, test_frac=test_frac, purge=obs + horizon, seed=seed)
+    if test_period is not None:
+        tr, te = holdout_split(w.day, *test_period, purge_days=obs + horizon)
+    elif split == "chronological":
+        tr, te = chronological_split(w.day, test_frac=test_frac, purge_days=obs + horizon)
+    else:
+        tr, te = blocked_split(w.day, test_frac=test_frac, purge=obs + horizon, seed=seed)
     tr, te = _subsample(tr, n_train, rng), _subsample(te, n_test, rng)
     # Features only for the sampled windows: on ~2M windows the full feature matrix is several GB.
     n_windows = len(w)
     sel = np.r_[tr, te]
     w, y = w.take(sel), y[sel]
+    M = M[sel] if M is not None else None
     tr, te = np.arange(len(tr)), np.arange(len(tr), len(sel))
     if classification and len(np.unique(y[tr])) < 2:
         raise ValueError("the training split contains a single class -- nothing to assess")
@@ -115,7 +155,7 @@ def assess_target(
     clock = time_features(w.anchor_ts) if with_time else np.empty((len(w), 0))
     lags = w.X if signed else np.empty((len(w), 0))    # AR(obs) term for sign-dependent targets
     trend = trend_features(w.X) if target in REGIME else np.empty((len(w), 0))
-    E = exog_features(w)                                # other instruments, up to the anchor
+    E = M if M is not None else exog_features(w)       # other instruments / market, up to the anchor
     F_own = np.c_[base, linear_extras(w.X, ts), clock, lags, trend]
     F_lin = np.c_[F_own, E]
     F_tree = np.c_[base, clock, lags, trend, E]
@@ -126,7 +166,11 @@ def assess_target(
     Mlp_tr, Mlp_te = _std(np.c_[F_tree[tr], w.X[tr]], np.c_[F_tree[te], w.X[te]])
     Knn_tr, Knn_te = _std(knn_cols[tr], knn_cols[te])
     knn_sub = _subsample(np.arange(len(tr)), 100_000, rng)
-    ytr, yte, groups = y[tr], y[te], w.day[te]
+    ytr, yte = y[tr], y[te]
+    if bootstrap_group == "month":
+        groups = np.asarray(w.anchor_ts[te].year * 12 + w.anchor_ts[te].month)
+    else:
+        groups = w.day[te]
 
     preds: dict[str, np.ndarray] = {}
     if classification:
@@ -187,10 +231,12 @@ def assess_target(
                                trivial_auc, min_signal_r2)
     return {
         "target": target, "horizon": horizon, "obs": obs, "with_time": with_time,
-        "exog": list(w.exog_names),
+        "exog": list(w.exog_names) or (["market"] if market else []),
+        "instruments": names if panel else None, "split": split, "bootstrap_group": bootstrap_group,
+        "test_period": [str(w.anchor_ts[te].min()), str(w.anchor_ts[te].max())],
         "task": "classification" if classification else "regression",
         "n_windows": int(n_windows), "n_train": int(len(tr)), "n_test": int(len(te)),
-        "n_test_days": int(len(np.unique(groups))),
+        "n_test_days": int(len(np.unique(w.day[te]))), "n_bootstrap_groups": int(len(np.unique(groups))),
         "positive_rate": float(yte.mean()) if classification else None,
         "metrics": metrics, "verdict": verdict, "reason": reason,
         "elapsed_seconds": round(time.time() - t0, 1),

@@ -239,3 +239,48 @@ def test_assess_detects_signal_from_another_instrument():
     lin = r["metrics"]["linear"]
     assert r["exog"] == ["A"] and r["metrics"]["linear_own"]["r2"] < 0.02
     assert lin["r2"] > 0.15 and lin["exog_ci95"][0] > 0
+
+
+def test_chronological_split_purges_before_test():
+    from model_core.analysis import chronological_split
+    day = np.tile(np.arange(100), 3)                      # a 3-instrument panel, 100 days each
+    tr, te = chronological_split(day, test_frac=0.2, purge_days=10)
+    assert set(day[te]) == set(range(80, 100)) and day[tr].max() == 69
+    with pytest.raises(ValueError):
+        chronological_split(np.arange(20), test_frac=0.5, purge_days=15)
+
+
+def _daily(n=900, seed=0, vol_regimes=True):
+    """Business-day bars (weekends are 3-day steps) with slowly switching volatility."""
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2015-01-01", periods=n)
+    sig = 0.01 * np.where((np.arange(n) // 60) % 2 == 0, 1.0, 3.0) if vol_regimes else np.full(n, 0.01)
+    return pd.Series(100 * np.exp(np.cumsum(rng.normal(0, 1, n) * sig)), index=idx)
+
+
+def test_daily_windows_need_max_gap():
+    s = _daily(200)
+    assert len(build_return_windows(s, obs=20, horizon=5)) < 20            # every weekend is a gap
+    assert len(build_return_windows(s, obs=20, horizon=5, max_gap="5D")) == 199 - 25 + 1
+
+
+def test_panel_assessment_with_market_features():
+    closes = {f"A{i}": _daily(900, seed=i) for i in range(4)}
+    r = assess_target(closes, target="future_log_rv", horizon=5, obs=20, with_time=False, models=("hgb",),
+                      split="chronological", bootstrap_group="month", max_gap="5D", market=True, n_boot=100)
+    assert r["instruments"] == ["A0", "A1", "A2", "A3"] and r["exog"] == ["market"]
+    assert r["metrics"]["linear"]["r2"] > 0.3 and "exog_ci95" in r["metrics"]["linear"]
+    assert r["test_period"][0] > "2017-06"                                # the last 20% of dates
+    with pytest.raises(ValueError):
+        assess_target(closes["A0"], market=True)
+
+
+def test_holdout_split_purges_both_sides():
+    from model_core.analysis.splits import holdout_split
+    days = pd.bdate_range("2020-01-01", periods=100)
+    days = days.as_unit("ns")
+    day = np.tile(np.asarray(days.asi8), 2)
+    tr, te = holdout_split(day, days[40], days[60], purge_days=5)
+    test_days = set(day[te])
+    assert test_days == set(days[40:60].asi8)
+    assert set(day[tr]) == set(days[:35].asi8) | set(days[65:].asi8)

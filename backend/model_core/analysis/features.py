@@ -65,3 +65,18 @@ def exog_features(w, sum_scales=EXOG_SUM_SCALES, rms_scales=EXOG_RMS_SCALES) -> 
     cols = [c1[end] - c1[end - s] for s in sum_scales if s <= w.X.shape[1]]
     cols += [np.log(np.sqrt(np.maximum(c2[end] - c2[end - s], 0) / s) + EPS) for s in rms_scales if s <= w.X.shape[1]]
     return np.concatenate(cols, axis=1)
+
+
+def market_features(w) -> np.ndarray:
+    """For a panel: per anchor day, the cross-instrument mean of the 5/20/60-return signed sums and of
+    the 20-return log RMS, plus the cross-sectional std of the 20-return sum. Every instrument's
+    window ends on that day, so only past bars are used."""
+    obs = w.X.shape[1]
+    own = np.column_stack([w.X[:, -s:].sum(1) for s in (5, 20, 60) if s <= obs] +
+                          [np.log(rms(w.X[:, -min(20, obs):]) + EPS)])
+    df = pd.DataFrame(own)
+    df["day"] = w.day
+    g = df.groupby("day")
+    mean = g.transform("mean").to_numpy()
+    disp = g[1 if own.shape[1] > 2 else 0].transform("std").fillna(0.0).to_numpy()
+    return np.c_[mean, disp]

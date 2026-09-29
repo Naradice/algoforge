@@ -1,0 +1,1271 @@
+{
+ "future_return_h5": {
+  "target": "future_return",
+  "horizon": 5,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-08-01 00:00:00",
+   "2025-04-25 00:00:00"
+  ],
+  "task": "regression",
+  "n_windows": 127374,
+  "n_train": 98125,
+  "n_test": 25549,
+  "n_test_days": 450,
+  "n_bootstrap_groups": 21,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.0004793640054343968,
+    "r2": -0.000696942246612986
+   },
+   "linear": {
+    "mse": 0.0004885046335172972,
+    "r2": -0.019778472084221344,
+    "reference": "persistence",
+    "gain_vs_reference": -9.140628082900397e-06,
+    "gain_rel_vs_reference": -0.01906824037532233,
+    "ci95_vs_reference": [
+     -2.0405629221469655e-05,
+     -2.082934882901375e-06
+    ],
+    "exog_gain": -4.42651581301955e-08,
+    "exog_gain_rel": -9.062180065680813e-05,
+    "exog_ci95": [
+     -1.1585856049894373e-06,
+     1.2860365317441747e-06
+    ]
+   },
+   "linear_own": {
+    "mse": 0.000488460368359167,
+    "r2": -0.019686066296788818
+   },
+   "hgb": {
+    "mse": 0.0005634208622313459,
+    "r2": -0.17616994109087014,
+    "gain_vs_linear": -7.491622871404874e-05,
+    "gain_rel": -0.15335827661375925,
+    "ci95": [
+     -0.000223952740120285,
+     3.04462237682166e-07
+    ]
+   },
+   "mlp": {
+    "mse": 0.0006203727738035372,
+    "r2": -0.2950599768868325,
+    "gain_vs_linear": -0.00013186814028624003,
+    "gain_rel": -0.26994245548250423,
+    "ci95": [
+     -0.00022584009086026532,
+     -7.635354004765093e-05
+    ]
+   },
+   "knn": {
+    "mse": 0.00048575422046917837,
+    "r2": -0.01403684381016368,
+    "gain_vs_linear": 2.7504130481188055e-06,
+    "gain_rel": 0.0056302701333976555,
+    "ci95": [
+     -5.831414826416864e-06,
+     1.3382132062005081e-05
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 -0.014 < 0.05 (linear -0.020): no usable signal",
+  "elapsed_seconds": 61.0
+ },
+ "future_return_h20": {
+  "target": "future_return",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-07-14 00:00:00",
+   "2025-04-04 00:00:00"
+  ],
+  "task": "regression",
+  "n_windows": 126519,
+  "n_train": 96615,
+  "n_test": 25377,
+  "n_test_days": 447,
+  "n_bootstrap_groups": 22,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.0016616619656920396,
+    "r2": -0.0021825943057682817
+   },
+   "linear": {
+    "mse": 0.001648917450519193,
+    "r2": 0.005503885581717771,
+    "reference": "persistence",
+    "gain_vs_reference": 1.274451517284652e-05,
+    "gain_rel_vs_reference": 0.007669739956729861,
+    "ci95_vs_reference": [
+     -2.780542197242776e-05,
+     4.950394549361085e-05
+    ],
+    "exog_gain": -6.352461745620956e-06,
+    "exog_gain_rel": -0.0038674035968367057,
+    "exog_ci95": [
+     -2.435150518149076e-05,
+     1.2834112259701648e-05
+    ]
+   },
+   "linear_own": {
+    "mse": 0.0016425649887735721,
+    "r2": 0.00933518624569074
+   },
+   "hgb": {
+    "mse": 0.0018446580894096367,
+    "r2": -0.11255132982582405,
+    "gain_vs_linear": -0.0001957406388904436,
+    "gain_rel": -0.11870857381539078,
+    "ci95": [
+     -0.00035417549461371845,
+     -5.260803521923424e-05
+    ]
+   },
+   "mlp": {
+    "mse": 0.0019241684043257827,
+    "r2": -0.16050564022225045,
+    "gain_vs_linear": -0.0002752509538065896,
+    "gain_rel": -0.1669282799572056,
+    "ci95": [
+     -0.0003374300420714457,
+     -0.00021845595208097007
+    ]
+   },
+   "knn": {
+    "mse": 0.0016873200106587675,
+    "r2": -0.017657490283699673,
+    "gain_vs_linear": -3.840256013957436e-05,
+    "gain_rel": -0.02328955893303366,
+    "ci95": [
+     -8.774033484112207e-05,
+     1.313546065298855e-05
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 0.009 < 0.05 (linear 0.006): no usable signal",
+  "elapsed_seconds": 43.7
+ },
+ "future_return_h60": {
+  "target": "future_return",
+  "horizon": 60,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-05-31 00:00:00",
+   "2025-02-07 00:00:00"
+  ],
+  "task": "regression",
+  "n_windows": 124239,
+  "n_train": 92533,
+  "n_test": 24920,
+  "n_test_days": 439,
+  "n_bootstrap_groups": 22,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.004402062259459991,
+    "r2": -0.02069640872209133
+   },
+   "linear": {
+    "mse": 0.004262099728265713,
+    "r2": 0.011756392834417873,
+    "reference": "persistence",
+    "gain_vs_reference": 0.00013996253119427822,
+    "gain_rel_vs_reference": 0.031794764122997136,
+    "ci95_vs_reference": [
+     -3.3644841570153244e-05,
+     0.00030297876110864933
+    ],
+    "exog_gain": -8.89485594644324e-05,
+    "exog_gain_rel": -0.02131448295700788,
+    "exog_ci95": [
+     -0.0002126077383285127,
+     1.905409581550513e-05
+    ]
+   },
+   "linear_own": {
+    "mse": 0.00417315116880128,
+    "r2": 0.03238069795669185
+   },
+   "hgb": {
+    "mse": 0.006227890357860276,
+    "r2": -0.44404711871629066,
+    "gain_vs_linear": -0.0019657906295945634,
+    "gain_rel": -0.46122586399320636,
+    "ci95": [
+     -0.0036334569556317298,
+     -0.0005973661509687657
+    ]
+   },
+   "mlp": {
+    "mse": 0.005643670887784509,
+    "r2": -0.3085854464670188,
+    "gain_vs_linear": -0.0013815711595187965,
+    "gain_rel": -0.32415270584974565,
+    "ci95": [
+     -0.0017407250050932828,
+     -0.0011007724945142408
+    ]
+   },
+   "knn": {
+    "mse": 0.0042847438848894245,
+    "r2": 0.006505942481360272,
+    "gain_vs_linear": -2.264415662371188e-05,
+    "gain_rel": -0.005312911022128052,
+    "ci95": [
+     -0.0001679830779705487,
+     0.0001220777548039577
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 0.032 < 0.05 (linear 0.012): no usable signal",
+  "elapsed_seconds": 42.4
+ },
+ "direction_h5": {
+  "target": "direction",
+  "horizon": 5,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-08-01 00:00:00",
+   "2025-04-25 00:00:00"
+  ],
+  "task": "classification",
+  "n_windows": 127312,
+  "n_train": 98076,
+  "n_test": 25537,
+  "n_test_days": 450,
+  "n_bootstrap_groups": 21,
+  "positive_rate": 0.5274307867016486,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.691687626567275,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.694797403772321,
+    "auc": 0.5002569951997949,
+    "reference": "base_rate",
+    "gain_vs_reference": -0.003109777205046016,
+    "gain_rel_vs_reference": -0.004495927186784153,
+    "ci95_vs_reference": [
+     -0.005660264982170709,
+     -0.0007566776527666107
+    ],
+    "exog_gain": -6.384053776387066e-05,
+    "exog_gain_rel": -9.189211683777067e-05,
+    "exog_ci95": [
+     -0.0011043558565678037,
+     0.0009423504525430008
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6947335632345571,
+    "auc": 0.49918555536986897
+   },
+   "hgb": {
+    "logloss": 0.697055572094736,
+    "auc": 0.5127102899689395,
+    "gain_vs_linear": -0.0022581683224149884,
+    "gain_rel": -0.003250110478471175,
+    "ci95": [
+     -0.007047007883254777,
+     0.002750488510092632
+    ]
+   },
+   "mlp": {
+    "logloss": 1.0557147634545674,
+    "auc": 0.5035906240020387,
+    "gain_vs_linear": -0.36091735968224636,
+    "gain_rel": -0.5194569779948628,
+    "ci95": [
+     -0.39438007046901746,
+     -0.33168163798606737
+    ]
+   },
+   "knn": {
+    "logloss": 0.6973969685619864,
+    "auc": 0.5119313157580845,
+    "gain_vs_linear": -0.0025995647896653873,
+    "gain_rel": -0.0037414716513783086,
+    "ci95": [
+     -0.006380448399925235,
+     0.0015467706547429804
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.513 < 0.55 (linear 0.500): no usable signal in the window",
+  "elapsed_seconds": 52.0
+ },
+ "direction_h20": {
+  "target": "direction",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-07-14 00:00:00",
+   "2025-04-04 00:00:00"
+  ],
+  "task": "classification",
+  "n_windows": 126491,
+  "n_train": 96590,
+  "n_test": 25375,
+  "n_test_days": 447,
+  "n_bootstrap_groups": 22,
+  "positive_rate": 0.5424630541871921,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.6901108976325045,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.6935347508042085,
+    "auc": 0.5127355921799193,
+    "reference": "base_rate",
+    "gain_vs_reference": -0.0034238531717039056,
+    "gain_rel_vs_reference": -0.004961308658434146,
+    "ci95_vs_reference": [
+     -0.011757093678290368,
+     0.003341570056437958
+    ],
+    "exog_gain": -0.0021441030324117483,
+    "exog_gain_rel": -0.0031011455525493887,
+    "exog_ci95": [
+     -0.006792883345018237,
+     0.0015902269860825777
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6913906477717967,
+    "auc": 0.5207146850683289
+   },
+   "hgb": {
+    "logloss": 0.7025845751043895,
+    "auc": 0.5090785308830739,
+    "gain_vs_linear": -0.009049824300181086,
+    "gain_rel": -0.013048840436167183,
+    "ci95": [
+     -0.015957565552353073,
+     -0.0014935882532456331
+    ]
+   },
+   "mlp": {
+    "logloss": 0.9329767758229276,
+    "auc": 0.5123237386010344,
+    "gain_vs_linear": -0.23944202501871914,
+    "gain_rel": -0.34524877771599355,
+    "ci95": [
+     -0.2617708998312178,
+     -0.21851756669089198
+    ]
+   },
+   "knn": {
+    "logloss": 0.7021949785741931,
+    "auc": 0.5068032524537479,
+    "gain_vs_linear": -0.008660227769984652,
+    "gain_rel": -0.012487085556913236,
+    "ci95": [
+     -0.014882890079129327,
+     -0.0035048733932640792
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.521 < 0.55 (linear 0.513): no usable signal in the window",
+  "elapsed_seconds": 49.9
+ },
+ "direction_h60": {
+  "target": "direction",
+  "horizon": 60,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-05-31 00:00:00",
+   "2025-02-07 00:00:00"
+  ],
+  "task": "classification",
+  "n_windows": 124222,
+  "n_train": 92519,
+  "n_test": 24917,
+  "n_test_days": 439,
+  "n_bootstrap_groups": 22,
+  "positive_rate": 0.5725809688164707,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.6854607047269428,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.6908827052836902,
+    "auc": 0.5178855502586323,
+    "reference": "base_rate",
+    "gain_vs_reference": -0.005422000556747464,
+    "gain_rel_vs_reference": -0.007910009311047742,
+    "ci95_vs_reference": [
+     -0.01858362627845616,
+     0.006212345471960575
+    ],
+    "exog_gain": -0.0049272260513895105,
+    "exog_gain_rel": -0.007183011435237609,
+    "exog_ci95": [
+     -0.012305254928859824,
+     0.0012477528463462123
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6859554792323007,
+    "auc": 0.5348495411618328
+   },
+   "hgb": {
+    "logloss": 0.7214782977400958,
+    "auc": 0.5089291450673622,
+    "gain_vs_linear": -0.03059559245640553,
+    "gain_rel": -0.044284785568401756,
+    "ci95": [
+     -0.051975706412665384,
+     -0.012759061017012924
+    ]
+   },
+   "mlp": {
+    "logloss": 0.906283405765867,
+    "auc": 0.509834915664403,
+    "gain_vs_linear": -0.21540070048217674,
+    "gain_rel": -0.31177607839195937,
+    "ci95": [
+     -0.24864617743130826,
+     -0.1869798768967339
+    ]
+   },
+   "knn": {
+    "logloss": 0.6990920135725697,
+    "auc": 0.5219462162099016,
+    "gain_vs_linear": -0.008209308288879447,
+    "gain_rel": -0.01188234735953991,
+    "ci95": [
+     -0.014578655530443274,
+     -0.0015213965941542084
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.535 < 0.55 (linear 0.518): no usable signal in the window",
+  "elapsed_seconds": 42.2
+ },
+ "future_log_rv_h5": {
+  "target": "future_log_rv",
+  "horizon": 5,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-08-01 00:00:00",
+   "2025-04-25 00:00:00"
+  ],
+  "task": "regression",
+  "n_windows": 127374,
+  "n_train": 98125,
+  "n_test": 25549,
+  "n_test_days": 450,
+  "n_bootstrap_groups": 21,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.33364391930151216,
+    "r2": 0.36685641353061393
+   },
+   "linear": {
+    "mse": 0.20451126921762544,
+    "r2": 0.6119066136828388,
+    "reference": "persistence",
+    "gain_vs_reference": 0.12913265008388672,
+    "gain_rel_vs_reference": 0.3870373251645874,
+    "ci95_vs_reference": [
+     0.11501151097161079,
+     0.14584861572928084
+    ],
+    "exog_gain": 0.007691789034257046,
+    "exog_gain_rel": 0.03624730528212739,
+    "exog_ci95": [
+     0.0022689179670631818,
+     0.015790844150371963
+    ]
+   },
+   "linear_own": {
+    "mse": 0.2122030582518825,
+    "r2": 0.5973101933263376
+   },
+   "hgb": {
+    "mse": 0.21582352649296563,
+    "r2": 0.5904397661605832,
+    "gain_vs_linear": -0.011312257275340187,
+    "gain_rel": -0.055313613370139215,
+    "ci95": [
+     -0.01884056368149303,
+     -0.004459463981425575
+    ]
+   },
+   "mlp": {
+    "mse": 0.22934999239312148,
+    "r2": 0.5647710977484336,
+    "gain_vs_linear": -0.02483872317549604,
+    "gain_rel": -0.1214540561530844,
+    "ci95": [
+     -0.02961552491622784,
+     -0.01984621221549559
+    ]
+   },
+   "knn": {
+    "mse": 0.21465201967634634,
+    "r2": 0.5926628908289437,
+    "gain_vs_linear": -0.010140750458720899,
+    "gain_rel": -0.04958528934623098,
+    "ci95": [
+     -0.017570276391592116,
+     -0.004152902343909614
+    ]
+   }
+  },
+  "verdict": "no_headroom",
+  "reason": "best nonlinear (knn) changes loss by -5.0% vs linear (CI -0.0176..-0.0042); threshold 2% with CI > 0",
+  "elapsed_seconds": 32.5
+ },
+ "future_log_rv_h20": {
+  "target": "future_log_rv",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-07-14 00:00:00",
+   "2025-04-04 00:00:00"
+  ],
+  "task": "regression",
+  "n_windows": 126519,
+  "n_train": 96615,
+  "n_test": 25377,
+  "n_test_days": 447,
+  "n_bootstrap_groups": 22,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.1321218864541916,
+    "r2": 0.6700749452330567
+   },
+   "linear": {
+    "mse": 0.10706537320890766,
+    "r2": 0.7326442267243949,
+    "reference": "persistence",
+    "gain_vs_reference": 0.025056513245283935,
+    "gain_rel_vs_reference": 0.1896469534135161,
+    "ci95_vs_reference": [
+     0.01137740440495307,
+     0.038401695616447545
+    ],
+    "exog_gain": 0.002132948779905469,
+    "exog_gain_rel": 0.019532798133326444,
+    "exog_ci95": [
+     -0.0016861338032707165,
+     0.006524494595322617
+    ]
+   },
+   "linear_own": {
+    "mse": 0.10919832198881313,
+    "r2": 0.7273179839503078
+   },
+   "hgb": {
+    "mse": 0.11854828948560285,
+    "r2": 0.70396993298589,
+    "gain_vs_linear": -0.01148291627669519,
+    "gain_rel": -0.10725144771400125,
+    "ci95": [
+     -0.028491468049931204,
+     0.0033586068051833793
+    ]
+   },
+   "mlp": {
+    "mse": 0.12753510696370357,
+    "r2": 0.6815287135315273,
+    "gain_vs_linear": -0.02046973375479591,
+    "gain_rel": -0.1911891131678497,
+    "ci95": [
+     -0.025627341798136867,
+     -0.014395144555458797
+    ]
+   },
+   "knn": {
+    "mse": 0.11373305756929136,
+    "r2": 0.7159941758750907,
+    "gain_vs_linear": -0.006667684360383702,
+    "gain_rel": -0.062276758213634674,
+    "ci95": [
+     -0.011145660600057498,
+     -0.0017882363117980636
+    ]
+   }
+  },
+  "verdict": "no_headroom",
+  "reason": "best nonlinear (knn) changes loss by -6.2% vs linear (CI -0.0111..-0.0018); threshold 2% with CI > 0",
+  "elapsed_seconds": 41.6
+ },
+ "extreme_h20": {
+  "target": "extreme",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": false,
+  "exog": [
+   "market"
+  ],
+  "instruments": [
+   "AUDCAD",
+   "AUDCHF",
+   "AUDJPY",
+   "AUDNZD",
+   "AUDUSD",
+   "AUS200",
+   "CADCHF",
+   "CADJPY",
+   "CHFJPY",
+   "CHINA50",
+   "COPPER",
+   "EU50",
+   "EURAUD",
+   "EURCAD",
+   "EURCHF",
+   "EURGBP",
+   "EURJPY",
+   "EURNZD",
+   "EURUSD",
+   "FRA40",
+   "GBPAUD",
+   "GBPCAD",
+   "GBPCHF",
+   "GBPJPY",
+   "GBPNZD",
+   "GBPUSD",
+   "GER30",
+   "HK50",
+   "JP225",
+   "NATGAS",
+   "NL25",
+   "NZDCAD",
+   "NZDCHF",
+   "NZDJPY",
+   "NZDUSD",
+   "SING30",
+   "TRYJPY",
+   "UK100",
+   "UKOIL",
+   "US100",
+   "US2000",
+   "US30",
+   "US500",
+   "USDCAD",
+   "USDCHF",
+   "USDCNH",
+   "USDJPY",
+   "USDMXN",
+   "USDNOK",
+   "USDSEK",
+   "USDSGD",
+   "USDTRY",
+   "USDZAR",
+   "USOIL",
+   "XAGUSD",
+   "XAUUSD",
+   "ZARJPY"
+  ],
+  "split": "chronological",
+  "bootstrap_group": "month",
+  "test_period": [
+   "2023-07-14 00:00:00",
+   "2025-04-04 00:00:00"
+  ],
+  "task": "classification",
+  "n_windows": 126519,
+  "n_train": 96615,
+  "n_test": 25377,
+  "n_test_days": 447,
+  "n_bootstrap_groups": 22,
+  "positive_rate": 0.10667139535800134,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.3455640285230502,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.3295024318047594,
+    "auc": 0.6425468516087212,
+    "reference": "base_rate",
+    "gain_vs_reference": 0.01606159671829077,
+    "gain_rel_vs_reference": 0.04647936530586954,
+    "ci95_vs_reference": [
+     0.005027543460619157,
+     0.029594772449729967
+    ],
+    "exog_gain": 0.005359172845157134,
+    "exog_gain_rel": 0.016004142519593787,
+    "exog_ci95": [
+     -0.005378592485153146,
+     0.016705734832748433
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.33486160464991654,
+    "auc": 0.6230980178657533
+   },
+   "hgb": {
+    "logloss": 0.3356299672631056,
+    "auc": 0.6416058841387056,
+    "gain_vs_linear": -0.006127535458346212,
+    "gain_rel": -0.018596328484692247,
+    "ci95": [
+     -0.022356337113194593,
+     0.016514290394232543
+    ]
+   },
+   "mlp": {
+    "logloss": 0.3576801661222571,
+    "auc": 0.5573558170431379,
+    "gain_vs_linear": -0.028177734317497705,
+    "gain_rel": -0.08551601322989295,
+    "ci95": [
+     -0.04331734724189372,
+     -0.01623203618768516
+    ]
+   },
+   "knn": {
+    "logloss": 0.34619948474159673,
+    "auc": 0.5634784444387593,
+    "gain_vs_linear": -0.01669705293683732,
+    "gain_rel": -0.050673534776006904,
+    "ci95": [
+     -0.025880486895912345,
+     -0.007630714446399824
+    ]
+   }
+  },
+  "verdict": "no_headroom",
+  "reason": "best nonlinear (hgb) changes loss by -1.9% vs linear (CI -0.0224..+0.0165); threshold 2% with CI > 0",
+  "elapsed_seconds": 38.5
+ }
+}
