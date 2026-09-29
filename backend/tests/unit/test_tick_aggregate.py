@@ -42,3 +42,9 @@ def test_collect_streams_files_in_date_order(tmp_path, monkeypatch):
     assert df.loc["2020-01-03 00:00", "ofi"] != pytest.approx(2.0)
     with pytest.raises(ValueError):
         ta.collect(7, {"path": str(src), "format": "oanda"})
+
+
+def test_iso_timestamps_are_accepted(tmp_path):
+    p = tmp_path / "USDJPY_Ticks_02.01.2020-02.01.2020.csv"
+    p.write_text(CSV.replace("02.01.2020 ", "2020-01-02 "))
+    assert ta.read_dukascopy_ticks(p).index[0] == pd.Timestamp("2020-01-02 00:00:05")

@@ -67,7 +67,10 @@ def _dukascopy_files(path: Path, from_ts, to_ts) -> list[tuple[pd.Timestamp, Pat
 def read_dukascopy_ticks(p: Path) -> pd.DataFrame:
     df = pd.read_csv(p)
     df.columns = [c.strip().lower() for c in df.columns]
-    df.index = pd.to_datetime(df.pop("gmt time"), format="%d.%m.%Y %H:%M:%S.%f")
+    ts = df.pop("gmt time").astype(str)
+    # Dukascopy exports are day-first (dd.mm.yyyy); some tools re-save them as ISO yyyy-mm-dd.
+    fmt = "%d.%m.%Y %H:%M:%S.%f" if len(ts) and ts.iloc[0][2:3] == "." else "ISO8601"
+    df.index = pd.to_datetime(ts, format=fmt)
     return df.rename(columns={"askvolume": "ask_size", "bidvolume": "bid_size"})[["bid", "ask", "bid_size", "ask_size"]]
 
 
