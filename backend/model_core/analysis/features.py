@@ -106,3 +106,14 @@ def future_aux_mean(w, h: int, col: int = 0) -> np.ndarray:
 
 def past_aux_mean(w, h: int, col: int = 0) -> np.ndarray:
     return _window_means(w.aux_v[:, [col]], w.t, [h])[0][:, 0]
+
+
+def aux_hour_interactions(w) -> np.ndarray:
+    """Hour-of-day dummies x each aux series' 20-bar mean: session-dependent persistence of e.g.
+    volume, the aux analogue of linear_extras' hour x RMS terms. Without them a linear baseline
+    cannot express 'volume persists differently at 8:00 than at 22:00' and trees win on that alone."""
+    if w.aux_v is None:
+        return np.empty((len(w), 0))
+    hour = np.eye(24)[w.anchor_ts.hour.to_numpy()]
+    m = _window_means(w.aux_v, w.t, [min(20, w.X.shape[1])])[0]
+    return np.column_stack([hour[:, a] * m[:, c] for c in range(m.shape[1]) for a in range(24)])

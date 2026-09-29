@@ -327,3 +327,11 @@ def test_assess_uses_aux_inputs_and_forecasts_aux():
     assert r["metrics"]["linear"]["r2"] > 0.5 and r["metrics"]["persistence"]["r2"] > 0.3
     with pytest.raises(ValueError):
         assess_target(close, target="future_aux")
+
+
+def test_aux_hour_interactions_shape():
+    from model_core.analysis.features import aux_hour_interactions
+    close, aux = _volume_driven(n_days=2, per_day=200)
+    w = build_return_windows(close, obs=20, horizon=5, aux=aux)
+    H = aux_hour_interactions(w)
+    assert H.shape == (len(w), 24) and np.count_nonzero(H[0]) <= 1

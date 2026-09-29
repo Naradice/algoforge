@@ -33,7 +33,7 @@ import pandas as pd
 
 from model_core.analysis.bootstrap import paired_block_bootstrap_ci
 from model_core.analysis.features import (
-    aux_features, exog_features, future_aux_mean, har_features, past_aux_mean, linear_extras, market_features, time_features, trend_features,
+    aux_features, aux_hour_interactions, exog_features, future_aux_mean, har_features, past_aux_mean, linear_extras, market_features, time_features, trend_features,
     vol_memory_features,
 )
 from model_core.analysis.splits import blocked_split, chronological_split, holdout_split
@@ -168,14 +168,17 @@ def assess_target(
     trend = trend_features(w.X) if target in REGIME else np.empty((len(w), 0))
     E = np.c_[M if M is not None else exog_features(w), aux_features(w)]   # other instruments / market / aux
     F_own = np.c_[base, linear_extras(w.X, ts), clock, lags, trend]
-    F_lin = np.c_[F_own, E]
+    # Linear-only: hour x aux terms (the aux analogue of linear_extras' hour x RMS) -- part of the
+    # aux block, so linear_own does not get them either.
+    F_lin = np.c_[F_own, E, aux_hour_interactions(w) if with_time else np.empty((len(w), 0))]
     F_tree = np.c_[base, clock, lags, trend, E]
     knn_cols = np.c_[har_features(w.X), base[:, -3:], clock, trend]
     Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
     Own_tr, Own_te = _std(F_own[tr], F_own[te]) if E.shape[1] else (None, None)
     del F_lin, F_own                                    # standardized copies are all that is used below
-    Mlp_tr, Mlp_te = _std(np.c_[F_tree[tr], w.X[tr]], np.c_[F_tree[te], w.X[te]])
-    Knn_tr, Knn_te = _std(knn_cols[tr], knn_cols[te])
+    # float32 for the MLP / k-NN inputs (their precision needs are modest; halves the largest copies).
+    Mlp_tr, Mlp_te = [a.astype(np.float32) for a in _std(np.c_[F_tree[tr], w.X[tr]], np.c_[F_tree[te], w.X[te]])]
+    Knn_tr, Knn_te = [a.astype(np.float32) for a in _std(knn_cols[tr], knn_cols[te])]
     knn_sub = _subsample(np.arange(len(tr)), 100_000, rng)
     ytr, yte = y[tr], y[te]
     if bootstrap_group == "month":
