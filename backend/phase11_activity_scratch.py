@@ -34,6 +34,7 @@ Models:
 Usage:
   python phase11_activity_scratch.py split      # writes phase11_split_days.json
   python phase11_activity_scratch.py submit     # creates the MLModel, submits 3 Transformer runs
+  python phase11_activity_scratch.py baselines  # fits linear / HistGB / MLP, writes phase11_baseline_preds.npz
   python phase11_activity_scratch.py evaluate <run_id> <run_id> <run_id>   # writes phase11_activity_scratch.json
 """
 from __future__ import annotations
@@ -223,11 +224,13 @@ def transformer_test_predictions(run_ids: list[int], hp_seed0: dict):
     return pd.DatetimeIndex(anchor), y, preds
 
 
-def evaluate(run_ids: list[int]) -> None:
+BASELINE_PATH = Path("phase11_baseline_preds.npz")
+
+
+def baselines() -> None:
     from sklearn.ensemble import HistGradientBoostingRegressor
     from sklearn.linear_model import Ridge
     from sklearn.neural_network import MLPRegressor
-    from model_core.analysis import paired_block_bootstrap_ci
 
     t0 = time.time()
     split = json.loads(SPLIT_PATH.read_text())
@@ -279,17 +282,32 @@ def evaluate(run_ids: list[int]) -> None:
         preds[f"mlp_s{s}"] = MLPRegressor(hidden_layer_sizes=hidden, alpha=alpha, learning_rate_init=1e-3,
                                           batch_size=512, early_stopping=True, max_iter=100, random_state=s) \
             .fit(M_tr, y[tr]).predict(M_te)
+        print(f"mlp seed {s} done", flush=True)
+    np.savez(BASELINE_PATH, anchor=np.asarray(w.anchor_ts[te], dtype="datetime64[ns]"), y=y[te],
+             names=np.array(list(preds)), preds=np.stack([preds[k] for k in preds]),
+             choices=json.dumps(choice), rows=json.dumps([str(df.index[0]), str(df.index[-1])]))
+    print(f"baselines saved ({time.time() - t0:.0f}s)", flush=True)
+
+
+def evaluate(run_ids: list[int]) -> None:
+    from model_core.analysis import paired_block_bootstrap_ci
+
+    t0 = time.time()
+    b = np.load(BASELINE_PATH, allow_pickle=False)
+    base_anchor = pd.DatetimeIndex(b["anchor"])
+    y_te = b["y"]
+    preds = dict(zip(b["names"].tolist(), b["preds"]))
+    choice = json.loads(str(b["choices"]))
 
     # Transformer test predictions, aligned to the baseline test windows by anchor timestamp
     anchor_t, y_t, tpreds = transformer_test_predictions(run_ids, transformer_hp(SEEDS[0]))
-    base_anchor = pd.DatetimeIndex(w.anchor_ts[te])
     tz = anchor_t.tz
     if tz is not None and base_anchor.tz is None:
         anchor_t = anchor_t.tz_convert("UTC").tz_localize(None)
     common = base_anchor.intersection(anchor_t)
     bi = base_anchor.get_indexer(common)
     ti = anchor_t.get_indexer(common)
-    yb = y[te][bi]
+    yb = y_te[bi]
     gap = float(np.max(np.abs(yb - y_t[ti])))
     print(f"test windows: baselines {len(te)}, transformer {len(anchor_t)}, common {len(common)}; "
           f"max target mismatch {gap:.2e}", flush=True)
@@ -308,7 +326,7 @@ def evaluate(run_ids: list[int]) -> None:
                 lo, hi = paired_block_bootstrap_ci(loss[ref], l, groups, n_boot=500, seed=1)
                 metrics[k][f"gain_vs_{ref}"] = float((loss[ref].mean() - l.mean()) / loss[ref].mean())
                 metrics[k][f"ci95_vs_{ref}"] = [lo, hi]
-    out = {"dataset_id": DATASET_ID, "rows": [str(df.index[0]), str(df.index[-1])], "n_test_common": int(len(common)),
+    out = {"dataset_id": DATASET_ID, "rows": json.loads(str(b["rows"])), "n_test_common": int(len(common)),
            "target_mismatch_max": gap, "choices": choice, "transformer_runs": run_ids, "metrics": metrics,
            "elapsed_seconds": round(time.time() - t0)}
     OUT_PATH.write_text(json.dumps(out, indent=1))
@@ -323,6 +341,8 @@ if __name__ == "__main__":
         split_days()
     elif mode == "submit":
         asyncio.run(_submit_all())
+    elif mode == "baselines":
+        baselines()
     elif mode == "evaluate":
         evaluate([int(x) for x in sys.argv[2:]])
     else:
