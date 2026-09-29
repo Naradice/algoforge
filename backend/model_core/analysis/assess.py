@@ -91,6 +91,11 @@ def assess_target(
     rng = np.random.default_rng(seed)
     tr, te = blocked_split(w.day, test_frac=test_frac, purge=obs + horizon, seed=seed)
     tr, te = _subsample(tr, n_train, rng), _subsample(te, n_test, rng)
+    # Features only for the sampled windows: on ~2M windows the full feature matrix is several GB.
+    n_windows = len(w)
+    sel = np.r_[tr, te]
+    w, y = w.take(sel), y[sel]
+    tr, te = np.arange(len(tr)), np.arange(len(tr), len(sel))
     if classification and len(np.unique(y[tr])) < 2:
         raise ValueError("the training split contains a single class -- nothing to assess")
 
@@ -157,7 +162,7 @@ def assess_target(
     return {
         "target": target, "horizon": horizon, "obs": obs, "with_time": with_time,
         "task": "classification" if classification else "regression",
-        "n_windows": int(len(w)), "n_train": int(len(tr)), "n_test": int(len(te)),
+        "n_windows": int(n_windows), "n_train": int(len(tr)), "n_test": int(len(te)),
         "n_test_days": int(len(np.unique(groups))),
         "positive_rate": float(yte.mean()) if classification else None,
         "metrics": metrics, "verdict": verdict, "reason": reason,

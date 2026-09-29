@@ -54,7 +54,7 @@ async def test_assessment_runs_and_reports_a_verdict(client, db_session, tmp_pat
 async def test_invalid_parameters_are_rejected(client, db_session, tmp_path, monkeypatch):
     dataset_id = await _dataset(db_session, tmp_path, monkeypatch, n_days=2)
     r = await client.post("/api/v1/target-assessments", json={
-        "dataset_id": dataset_id, "target": "direction", "horizon": 999, "models": ["xgboost"]})
+        "dataset_id": dataset_id, "target": "sharpe", "horizon": 999, "models": ["xgboost"]})
     assert r.status_code == 422
     assert "target must be one of" in r.text and "horizon" in r.text and "models" in r.text
 
