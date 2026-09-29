@@ -306,6 +306,8 @@ async def upload_dataset(
     volume_col: str | None = Form(None),
     spread_col: str | None = Form(None),
     datetime_col: str | None = Form(None),
+    datetime_format: str | None = Form(None, description="strptime format of the datetime column, e.g. %d.%m.%Y %H:%M:%S.%f. "
+                                                          "Default: auto (day-first dd.mm.yyyy is detected)."),
     append_to: int | None = Form(None, description="Append into this existing dataset ID instead of creating a new one."),
     merge: bool = Form(True, description="Merge all files/CSVs into one dataset (True) or create one dataset per file (False)."),
     db: AsyncSession = Depends(get_db),
@@ -326,7 +328,7 @@ async def upload_dataset(
     datasets = await data_service.create_dataset_from_upload(
         db, files,
         datasource_id=datasource_id, symbol=symbol, timeframe=timeframe,
-        col_map=col_map or None, append_to=append_to, merge=merge,
+        col_map=col_map or None, append_to=append_to, merge=merge, datetime_format=datetime_format,
     )
     data: dict = {"dataset_id": datasets[0].id, "status": datasets[0].status}
     if len(datasets) > 1:

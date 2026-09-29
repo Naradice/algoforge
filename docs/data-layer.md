@@ -142,6 +142,12 @@ value, not a simulated market.
 ### `manual_upload`
 Upload a CSV or Parquet file directly via `POST /datasets/upload`.
 
+The datetime column is found by name (`datetime`, `date`, `time`, `timestamp`, `gmt time`, `utc time`,
+`local time`, or `datetime_col`). Day-first `dd.mm.yyyy[ HH:MM[:SS[.fff]]]` values (Dukascopy
+exports) are detected and parsed day-first; a trailing `GMT+hhmm` offset is applied, giving naive UTC.
+`datetime_format` (strptime) overrides detection. Times without an offset are stored as given (naive):
+HistData is fixed EST, MT5 exports are broker server time, Dukascopy `Gmt time` is UTC.
+
 ### `web_report`
 Downloads financial reports (PDFs, HTML, audio) from institution websites using Playwright.
 Config schema mirrors `cyclic_downloader/source.json`.

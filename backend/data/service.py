@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,14 +38,47 @@ _ALIASES: dict[str, list[str]] = {
     "low":      ["low"],
     "volume":   ["volume", "vol"],
     "spread":   ["spread"],
-    "datetime": ["datetime", "date", "time", "timestamp"],
+    "datetime": ["datetime", "date", "time", "timestamp", "gmt time", "utc time", "local time"],
 }
+
+# dd.mm.yyyy[ HH:MM[:SS[.fff]]][ GMT+hhmm] -- Dukascopy exports. pandas would read it month-first
+# (and fail from the 13th of a month), so day-first formats are tried explicitly.
+_DAYFIRST = re.compile(r"^\s*\d{2}\.\d{2}\.\d{4}")
+_GMT_SUFFIX = re.compile(r"\s*GMT([+-]\d{2}):?(\d{2})\s*$")
+_DAYFIRST_FORMATS = ("%d.%m.%Y %H:%M:%S.%f", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y")
+
+
+def _parse_datetimes(values, datetime_format: str | None = None) -> "pd.DatetimeIndex":
+    """Parse a datetime column. An explicit `datetime_format` wins; day-first dd.mm.yyyy values
+    are parsed with explicit day-first formats; anything else goes to pd.to_datetime. A trailing
+    "GMT+hhmm" offset (Dukascopy local-time exports) is applied, giving naive UTC times."""
+    s = pd.Series(values).astype(str)
+    if datetime_format:
+        return pd.DatetimeIndex(pd.to_datetime(s, format=datetime_format))
+    if len(s) == 0 or not _DAYFIRST.match(s.iloc[0]):
+        return pd.DatetimeIndex(pd.to_datetime(s))
+    offset = s.str.extract(_GMT_SUFFIX)
+    s = s.str.replace(_GMT_SUFFIX, "", regex=True)
+    for fmt in _DAYFIRST_FORMATS:
+        try:
+            idx = pd.to_datetime(s, format=fmt)
+            break
+        except (ValueError, TypeError):
+            continue
+    else:
+        idx = pd.to_datetime(s, dayfirst=True, format="mixed")
+    if offset[0].notna().any():
+        sign = offset[0].str[0].map({"+": 1, "-": -1}).fillna(1)
+        minutes = sign * (offset[0].str[1:].astype(float).abs() * 60 + offset[1].astype(float))
+        idx = idx - pd.to_timedelta(minutes.fillna(0), unit="min")
+    return pd.DatetimeIndex(idx)
 
 # Column names recognised as a single tick price (used when no OHLC close is found)
 _TICK_ALIASES = ["price", "bid", "ask", "last", "mid", "tick"]
 
 
-def _parse_csv_bytes(contents: bytes, col_map: dict | None, filename: str) -> "pd.DataFrame":
+def _parse_csv_bytes(contents: bytes, col_map: dict | None, filename: str,
+                     datetime_format: str | None = None) -> "pd.DataFrame":
     """Parse raw CSV bytes into a normalised DataFrame with a datetime index.
 
     Supports two modes:
@@ -75,7 +110,7 @@ def _parse_csv_bytes(contents: bytes, col_map: dict | None, filename: str) -> "p
         df = df.rename(columns={datetime_src: "datetime"})
     if "datetime" in df.columns:
         df = df.set_index("datetime")
-        df.index = pd.to_datetime(df.index)
+        df.index = _parse_datetimes(df.index, datetime_format)
         df.index.name = "datetime"
 
     # ── OHLC mode ────────────────────────────────────────────────────────────
@@ -105,7 +140,8 @@ def _parse_csv_bytes(contents: bytes, col_map: dict | None, filename: str) -> "p
     })
 
 
-def _extract_csvs_from_zip(contents: bytes, col_map: dict | None) -> "dict[str, pd.DataFrame]":
+def _extract_csvs_from_zip(contents: bytes, col_map: dict | None,
+                           datetime_format: str | None = None) -> "dict[str, pd.DataFrame]":
     """Extract and parse all CSV files from a ZIP archive.
 
     Returns a dict of {filename: DataFrame}, skipping files that fail to parse.
@@ -119,7 +155,7 @@ def _extract_csvs_from_zip(contents: bytes, col_map: dict | None) -> "dict[str, 
         for name in csv_names:
             try:
                 csv_bytes = zf.read(name)
-                df = _parse_csv_bytes(csv_bytes, col_map, name)
+                df = _parse_csv_bytes(csv_bytes, col_map, name, datetime_format)
                 result[name] = df
             except Exception:
                 pass  # skip unparseable entries; caller raises if result is empty
@@ -341,6 +377,7 @@ class DataService:
         symbol=None,
         timeframe=None,
         col_map: dict | None = None,
+        datetime_format: str | None = None,
         append_to: int | None = None,
         merge: bool = True,
     ) -> list["Dataset"]:
@@ -376,7 +413,7 @@ class DataService:
             contents = await file.read()
             filename = file.filename or "upload"
             if filename.lower().endswith(".zip"):
-                dfs = _extract_csvs_from_zip(contents, col_map)
+                dfs = _extract_csvs_from_zip(contents, col_map, datetime_format)
                 if not dfs:
                     raise HTTPException(status_code=422, detail={
                         "code": "INVALID_ZIP",
@@ -385,7 +422,7 @@ class DataService:
                 for csv_name, df in dfs.items():
                     file_dfs.append((csv_name.removesuffix(".csv"), df))
             else:
-                df = _parse_csv_bytes(contents, col_map, filename)
+                df = _parse_csv_bytes(contents, col_map, filename, datetime_format)
                 file_dfs.append((filename.removesuffix(".csv"), df))
 
         if not file_dfs:
