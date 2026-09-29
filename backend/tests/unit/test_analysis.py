@@ -190,3 +190,52 @@ def test_trend_change_baseline_sees_the_past_trend():
     r = assess_target(s, target="trend_change", horizon=20, obs=60, with_time=False, models=("hgb",), n_boot=100)
     assert r["metrics"]["linear"]["r2"] > 0.3                     # the mechanical -past ER part
     assert r["verdict"] == "no_headroom", r["reason"]
+
+
+def _lead_lag(n_days=30, per_day=400, beta=0.5, seed=0):
+    """Instrument B follows A with a one-bar lag: b_t = beta * a_{t-1} + noise."""
+    rng = np.random.default_rng(seed)
+    idx, pa, pb, la, lb = [], [], [], 100.0, 50.0
+    for d in range(n_days):
+        a = rng.normal(0, 1e-3, per_day)
+        b = beta * np.r_[0.0, a[:-1]] + rng.normal(0, 1e-3, per_day)
+        pa.append(la * np.exp(np.cumsum(a))); pb.append(lb * np.exp(np.cumsum(b)))
+        la, lb = pa[-1][-1], pb[-1][-1]
+        idx.append(pd.date_range(pd.Timestamp("2024-01-01") + pd.Timedelta(days=d), periods=per_day, freq="1min"))
+    ix = idx[0].append(idx[1:])
+    return pd.Series(np.concatenate(pa), index=ix), pd.Series(np.concatenate(pb), index=ix)
+
+
+def test_exog_features_read_only_the_past():
+    from model_core.analysis import align_closes
+    from model_core.analysis.features import exog_features
+    a, b = _lead_lag(n_days=3, per_day=200)
+    close, ex = align_closes(b, {"A": a})
+    w = build_return_windows(close, obs=20, horizon=5, exog=ex)
+    E = exog_features(w)
+    ra = np.diff(np.log(ex["A"].to_numpy()))
+    k = 17
+    t = w.t[k]
+    assert E[k, 0] == pytest.approx(ra[t])                       # 1-return sum = r_t itself
+    assert E[k, 2] == pytest.approx(ra[t - 4:t + 1].sum())       # 5-return sum ends at r_t
+    np.testing.assert_allclose(w.X[k], np.diff(np.log(close.to_numpy()))[t - 19:t + 1])
+
+
+def test_align_closes_fills_only_forward_and_drops_rest():
+    from model_core.analysis import align_closes
+    ix = pd.date_range("2024-01-01", periods=6, freq="1min")
+    main = pd.Series(np.arange(1.0, 7.0), index=ix)
+    other = pd.Series([10.0, np.nan, np.nan, 13.0, np.nan, 15.0], index=ix).dropna()
+    c, ex = align_closes(main, {"o": other}, ffill_limit=1)
+    assert list(ex["o"]) == [10.0, 10.0, 13.0, 13.0, 15.0] and len(c) == 5    # row 2 (2 bars stale) dropped
+
+
+def test_assess_detects_signal_from_another_instrument():
+    from model_core.analysis import align_closes
+    a, b = _lead_lag()
+    close, ex = align_closes(b, {"A": a})
+    r = assess_target(close, target="future_return", horizon=1, obs=20, with_time=False, models=("hgb",),
+                      n_boot=100, exog=ex)
+    lin = r["metrics"]["linear"]
+    assert r["exog"] == ["A"] and r["metrics"]["linear_own"]["r2"] < 0.02
+    assert lin["r2"] > 0.15 and lin["exog_ci95"][0] > 0

@@ -1577,6 +1577,9 @@ async def _assess_target(assessment_id: int) -> dict:
             ds = (await db.execute(select(Dataset).where(Dataset.id == a.dataset_id))).scalar_one_or_none()
             params, dataset_id = dict(a.params or {}), a.dataset_id
             artifact = ds.artifact_path if ds else None
+            exog_ids = [int(i) for i in params.get("exog_dataset_ids") or []]
+            exog_rows = (await db.execute(select(Dataset).where(Dataset.id.in_(exog_ids)))).scalars().all() if exog_ids else []
+            exog_artifacts = {d.id: (d.symbol or f"ds{d.id}", d.artifact_path) for d in exog_rows}
             await db.execute(update(TargetAssessment).where(TargetAssessment.id == assessment_id).values(
                 status="running", started_at=datetime.now(timezone.utc)))
             await db.commit()
@@ -1584,17 +1587,32 @@ async def _assess_target(assessment_id: int) -> dict:
             if not artifact:
                 raise ValueError(f"dataset {dataset_id} has no artifact")
             store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
-            df = pd.read_parquet(store / artifact)
-            df.columns = [c.lower() for c in df.columns]
-            if "close" not in df.columns:
-                raise ValueError(f"dataset {dataset_id} has no close column")
-            close = df["close"].sort_index().dropna().iloc[-int(params.get("max_rows", 1_000_000)):]
+
+            def _close(path, ds_id):
+                df = pd.read_parquet(store / path)
+                df.columns = [c.lower() for c in df.columns]
+                if "close" not in df.columns:
+                    raise ValueError(f"dataset {ds_id} has no close column")
+                return df["close"].sort_index().dropna()
+
+            close = _close(artifact, dataset_id).iloc[-int(params.get("max_rows", 1_000_000)):]
+            exog = None
+            if exog_ids:
+                from model_core.analysis import align_closes
+                missing = [i for i in exog_ids if not (exog_artifacts.get(i) or (None, None))[1]]
+                if missing:
+                    raise ValueError(f"exog datasets {missing} not found or have no artifact")
+                others = {}
+                for i in exog_ids:
+                    name, path = exog_artifacts[i]
+                    others[name if name not in others else f"{name}_{i}"] = _close(path, i)
+                close, exog = align_closes(close, others, ffill_limit=int(params.get("exog_ffill_limit", 0)))
             result = await asyncio.to_thread(
                 run_assessment, close,
                 target=params.get("target", "future_log_rv"), horizon=int(params.get("horizon", 20)),
                 obs=int(params.get("obs", 60)), with_time=bool(params.get("with_time", True)),
                 models=tuple(params.get("models", ("hgb", "mlp", "knn"))), seed=int(params.get("seed", 0)),
-                target_kwargs=params.get("target_kwargs"),
+                target_kwargs=params.get("target_kwargs"), exog=exog,
             )
         except Exception as e:  # noqa: BLE001 -- any failure is recorded on the row, never left running
             logger.exception(f"Target assessment {assessment_id} failed")

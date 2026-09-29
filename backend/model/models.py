@@ -321,7 +321,7 @@ class TargetAssessment(Base):
 
 class TargetAssessmentCreate(BaseModel):
     dataset_id: int
-    target: str = "future_log_rv"      # future_log_rv | vol_change | jump
+    target: str = "future_log_rv"      # see model_core.analysis.targets.TARGETS
     horizon: int = 20                  # future returns in the target
     obs: int = 60                      # input returns per window
     with_time: bool = True             # give models time-of-day / weekday features
@@ -329,6 +329,8 @@ class TargetAssessmentCreate(BaseModel):
     max_rows: int = 1_000_000          # most recent rows of the dataset to use
     seed: int = 0
     target_kwargs: dict | None = None  # e.g. {"k": 4.0} for jump
+    exog_dataset_ids: list[int] = []   # other instruments' datasets as extra inputs (same clock)
+    exog_ffill_limit: int = 0          # carry an exog close forward over at most this many missing bars
 
 
 class ValidationCreate(BaseModel):

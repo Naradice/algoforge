@@ -286,6 +286,15 @@ R² 0.715 / 0.757, HistGB +6.4% / +5.0%, MLP −6% / −10%); DDM v3_shock `futu
 `paired_block_bootstrap_ci`. Gap detection and scaling come from `finance_client.fprocess`
 (`validation.contiguous_segment_ids`, `STDPreProcess.fit(mask)`).
 
+Other instruments as inputs: `assess_target(close, ..., exog=df)` with `df` from
+`align_closes(close, {name: close_series}, ffill_limit=0)` (REST/MCP: `exog_dataset_ids`,
+`exog_ffill_limit`). Every model also gets each instrument's signed return sums (1–60 bars) and log RMS
+(5/20/60) up to the anchor, read off prefix sums of the full return array (`features.exog_features`),
+never windowed per sample. `linear_own` — the same linear baseline without them — is scored on the same
+windows, and `metrics.linear.exog_gain_rel` / `exog_ci95` say whether the instruments add signal;
+headroom is then measured over the linear baseline *with* them. Align strictly (`ffill_limit=0`): a
+forward-filled stale quote can masquerade as lead-lag.
+
 ### Token-level characteristics — comparing input representations, not just row counts
 
 When `token_level` (see the hyperparameter table above) produces a discretized input stream —

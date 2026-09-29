@@ -6,11 +6,11 @@ import numpy as np
 import pandas as pd
 
 
-async def _dataset(db_session, tmp_path, monkeypatch, n_days=30, per_day=300):
+async def _dataset(db_session, tmp_path, monkeypatch, n_days=30, per_day=300, name="ds", seed=0):
     from data.models import Dataset
 
     monkeypatch.setenv("ARTIFACT_STORE_PATH", str(tmp_path))
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(seed)
     idx, vals, price = [], [], 100.0
     for d in range(n_days):
         sig = 1e-3 * 3.0 ** (d % 4)            # volatility constant within a day, varying by day
@@ -21,9 +21,9 @@ async def _dataset(db_session, tmp_path, monkeypatch, n_days=30, per_day=300):
     close = np.concatenate(vals)
     df = pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close, "Volume": 1.0},
                       index=idx[0].append(idx[1:]))
-    df.to_parquet(tmp_path / "ds.parquet")
+    df.to_parquet(tmp_path / f"{name}.parquet")
     async with db_session() as db:
-        ds = Dataset(name="assessment test", artifact_path="ds.parquet", status="ready", row_count=len(df))
+        ds = Dataset(name="assessment test", symbol=name, artifact_path=f"{name}.parquet", status="ready", row_count=len(df))
         db.add(ds)
         await db.commit()
         return ds.id
@@ -74,3 +74,22 @@ async def test_failure_is_recorded_not_left_running(client, db_session, tmp_path
     await _run_worker(aid)
     body = (await client.get(f"/api/v1/target-assessments/{aid}")).json()["data"]
     assert body["status"] == "error" and "not enough" in body["error_message"]
+
+
+async def test_assessment_with_other_instruments(client, db_session, tmp_path, monkeypatch):
+    main_id = await _dataset(db_session, tmp_path, monkeypatch, name="MAIN")
+    other_id = await _dataset(db_session, tmp_path, monkeypatch, name="OTHER", seed=1)
+    r = await client.post("/api/v1/target-assessments", json={
+        "dataset_id": main_id, "target": "future_return", "horizon": 5, "with_time": False,
+        "models": ["hgb"], "exog_dataset_ids": [other_id]})
+    assert r.status_code == 202, r.text
+    aid = r.json()["data"]["id"]
+    await _run_worker(aid)
+    body = (await client.get(f"/api/v1/target-assessments/{aid}")).json()["data"]
+    assert body["status"] == "completed", body
+    assert body["result"]["exog"] == ["OTHER"] and "exog_ci95" in body["result"]["metrics"]["linear"]
+
+    r = await client.post("/api/v1/target-assessments", json={"dataset_id": main_id, "exog_dataset_ids": [main_id]})
+    assert r.status_code == 422 and "exog_dataset_ids" in r.text
+    r = await client.post("/api/v1/target-assessments", json={"dataset_id": main_id, "exog_dataset_ids": [987654]})
+    assert r.status_code == 404

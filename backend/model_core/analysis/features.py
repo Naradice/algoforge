@@ -47,3 +47,21 @@ def trend_features(X: np.ndarray, scales=(5, 10, 20, 40, 60)) -> np.ndarray:
     the past trend-vs-range state, which trend targets are defined relative to."""
     return np.column_stack([np.nan_to_num(efficiency_ratio(X[:, -s:]), nan=0.0)
                             for s in scales if s <= X.shape[1]])
+
+
+EXOG_SUM_SCALES = (1, 2, 5, 10, 20, 60)
+EXOG_RMS_SCALES = (5, 20, 60)
+
+
+def exog_features(w, sum_scales=EXOG_SUM_SCALES, rms_scales=EXOG_RMS_SCALES) -> np.ndarray:
+    """Per other instrument: signed return sums and log RMS over the last s returns ending at each
+    window's r_t (never later). Read off prefix sums, so it costs O(n * k) for any window length."""
+    if w.exog_r is None:
+        return np.empty((len(w), 0))
+    r = w.exog_r
+    c1 = np.vstack([np.zeros((1, r.shape[1])), np.cumsum(r, axis=0)])
+    c2 = np.vstack([np.zeros((1, r.shape[1])), np.cumsum(r ** 2, axis=0)])
+    end = w.t + 1
+    cols = [c1[end] - c1[end - s] for s in sum_scales if s <= w.X.shape[1]]
+    cols += [np.log(np.sqrt(np.maximum(c2[end] - c2[end - s], 0) / s) + EPS) for s in rms_scales if s <= w.X.shape[1]]
+    return np.concatenate(cols, axis=1)

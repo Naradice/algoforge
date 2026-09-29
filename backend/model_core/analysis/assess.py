@@ -33,7 +33,7 @@ import pandas as pd
 
 from model_core.analysis.bootstrap import paired_block_bootstrap_ci
 from model_core.analysis.features import (
-    har_features, linear_extras, time_features, trend_features, vol_memory_features,
+    exog_features, har_features, linear_extras, time_features, trend_features, vol_memory_features,
 )
 from model_core.analysis.splits import blocked_split
 from model_core.analysis.targets import CLASSIFICATION, REGIME, SIGNED, make_target, persistence
@@ -69,9 +69,16 @@ def assess_target(
     trivial_auc: float = 0.99,
     min_signal_r2: float = 0.05,
     target_kwargs: dict | None = None,
+    exog: pd.DataFrame | None = None,
 ) -> dict:
     """Score persistence, the strong linear baseline and nonlinear `models` on `target` built from
-    `close` (a DatetimeIndex-ed price series), and return metrics plus a verdict (module docstring)."""
+    `close` (a DatetimeIndex-ed price series), and return metrics plus a verdict (module docstring).
+
+    `exog`: closes of other instruments on `close`'s index (windows.align_closes). Every model then
+    also gets their multi-scale signed sums and log RMS up to the anchor (features.exog_features);
+    `linear_own` -- the same linear baseline without them -- is scored too, and
+    metrics.linear.exog_gain_rel / exog_ci95 say whether the other instruments add anything linearly.
+    The verdict's headroom is measured over the linear baseline *with* the other instruments."""
     from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
     from sklearn.linear_model import LogisticRegression, RidgeCV
     from sklearn.metrics import roc_auc_score
@@ -82,7 +89,7 @@ def assess_target(
     if unknown:
         raise ValueError(f"unknown models {sorted(unknown)}; choose from {NONLINEAR}")
     t0 = time.time()
-    w = build_return_windows(close, obs=obs, horizon=horizon)
+    w = build_return_windows(close, obs=obs, horizon=horizon, exog=exog)
     if len(w) < 1000:
         raise ValueError(f"only {len(w)} gap-free windows -- not enough to assess")
     y = make_target(target, w.X, w.F, horizon, **(target_kwargs or {}))
@@ -108,10 +115,14 @@ def assess_target(
     clock = time_features(w.anchor_ts) if with_time else np.empty((len(w), 0))
     lags = w.X if signed else np.empty((len(w), 0))    # AR(obs) term for sign-dependent targets
     trend = trend_features(w.X) if target in REGIME else np.empty((len(w), 0))
-    F_lin = np.c_[base, linear_extras(w.X, ts), clock, lags, trend]
-    F_tree = np.c_[base, clock, lags, trend]
+    E = exog_features(w)                                # other instruments, up to the anchor
+    F_own = np.c_[base, linear_extras(w.X, ts), clock, lags, trend]
+    F_lin = np.c_[F_own, E]
+    F_tree = np.c_[base, clock, lags, trend, E]
     knn_cols = np.c_[har_features(w.X), base[:, -3:], clock, trend]
     Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
+    Own_tr, Own_te = _std(F_own[tr], F_own[te]) if E.shape[1] else (None, None)
+    del F_lin, F_own                                    # standardized copies are all that is used below
     Mlp_tr, Mlp_te = _std(np.c_[F_tree[tr], w.X[tr]], np.c_[F_tree[te], w.X[te]])
     Knn_tr, Knn_te = _std(knn_cols[tr], knn_cols[te])
     knn_sub = _subsample(np.arange(len(tr)), 100_000, rng)
@@ -121,6 +132,8 @@ def assess_target(
     if classification:
         preds["base_rate"] = np.full(len(te), ytr.mean())
         preds["linear"] = LogisticRegression(C=1.0, max_iter=1000).fit(Lin_tr, ytr).predict_proba(Lin_te)[:, 1]
+        if Own_tr is not None:
+            preds["linear_own"] = LogisticRegression(C=1.0, max_iter=1000).fit(Own_tr, ytr).predict_proba(Own_te)[:, 1]
         if "hgb" in models:
             preds["hgb"] = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, random_state=seed) \
                 .fit(F_tree[tr], ytr).predict_proba(F_tree[te])[:, 1]
@@ -137,6 +150,8 @@ def assess_target(
     else:
         preds["persistence"] = persistence(target, w.X[te], horizon)
         preds["linear"] = RidgeCV(alphas=[0.1, 1, 10, 100, 1000]).fit(Lin_tr, ytr).predict(Lin_te)
+        if Own_tr is not None:
+            preds["linear_own"] = RidgeCV(alphas=[0.1, 1, 10, 100, 1000]).fit(Own_tr, ytr).predict(Own_te)
         if "hgb" in models:
             preds["hgb"] = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05, random_state=seed) \
                 .fit(F_tree[tr], ytr).predict(F_tree[te])
@@ -155,6 +170,12 @@ def assess_target(
     metrics["linear"].update({"reference": ref, "gain_vs_reference": gain,
                               "gain_rel_vs_reference": gain / float(loss[ref].mean()), "ci95_vs_reference": [lo, hi]})
 
+    if "linear_own" in loss:
+        lo, hi = paired_block_bootstrap_ci(loss["linear_own"], loss["linear"], groups, n_boot=n_boot, seed=seed + 3)
+        gain = float(loss["linear_own"].mean() - loss["linear"].mean())
+        metrics["linear"].update({"exog_gain": gain, "exog_gain_rel": gain / float(loss["linear_own"].mean()),
+                                  "exog_ci95": [lo, hi]})
+
     for m in models:
         if m in loss:
             lo, hi = paired_block_bootstrap_ci(loss["linear"], loss[m], groups, n_boot=n_boot, seed=seed + 1)
@@ -166,6 +187,7 @@ def assess_target(
                                trivial_auc, min_signal_r2)
     return {
         "target": target, "horizon": horizon, "obs": obs, "with_time": with_time,
+        "exog": list(w.exog_names),
         "task": "classification" if classification else "regression",
         "n_windows": int(n_windows), "n_train": int(len(tr)), "n_test": int(len(te)),
         "n_test_days": int(len(np.unique(groups))),

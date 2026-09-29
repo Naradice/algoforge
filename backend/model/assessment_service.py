@@ -16,6 +16,7 @@ MAX_HORIZON = 240
 MAX_OBS = 240
 MAX_ROWS = 2_000_000
 ALLOWED_MODELS = ("hgb", "mlp", "knn")
+MAX_EXOG = 16
 
 
 def _validate(body: TargetAssessmentCreate) -> None:
@@ -30,6 +31,10 @@ def _validate(body: TargetAssessmentCreate) -> None:
         problems.append(f"obs must be in 5..{MAX_OBS}")
     if not 1_000 <= body.max_rows <= MAX_ROWS:
         problems.append(f"max_rows must be in 1000..{MAX_ROWS}")
+    if len(body.exog_dataset_ids) > MAX_EXOG or body.dataset_id in body.exog_dataset_ids             or len(set(body.exog_dataset_ids)) != len(body.exog_dataset_ids):
+        problems.append(f"exog_dataset_ids must be up to {MAX_EXOG} distinct datasets other than dataset_id")
+    if not 0 <= body.exog_ffill_limit <= 10:
+        problems.append("exog_ffill_limit must be in 0..10")
     bad = set(body.models) - set(ALLOWED_MODELS)
     if bad or not body.models:
         problems.append(f"models must be a non-empty subset of {list(ALLOWED_MODELS)}")
@@ -52,10 +57,11 @@ async def create_assessment(db: AsyncSession, body: TargetAssessmentCreate) -> T
     from data.models import Dataset
 
     _validate(body)
-    ds = (await db.execute(select(Dataset).where(Dataset.id == body.dataset_id))).scalar_one_or_none()
-    if ds is None or not ds.artifact_path:
-        raise HTTPException(status_code=404, detail={"code": "DATASET_NOT_FOUND",
-                                                     "message": f"dataset {body.dataset_id} not found or has no artifact"})
+    for dataset_id in [body.dataset_id, *body.exog_dataset_ids]:
+        ds = (await db.execute(select(Dataset).where(Dataset.id == dataset_id))).scalar_one_or_none()
+        if ds is None or not ds.artifact_path:
+            raise HTTPException(status_code=404, detail={"code": "DATASET_NOT_FOUND",
+                                                         "message": f"dataset {dataset_id} not found or has no artifact"})
     a = TargetAssessment(dataset_id=body.dataset_id, params=body.model_dump(exclude={"dataset_id"}))
     db.add(a)
     await db.flush()

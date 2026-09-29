@@ -341,6 +341,8 @@ async def assess_target_difficulty(
     with_time: bool = True,
     models: list[str] | None = None,
     max_rows: int = 1_000_000,
+    exog_dataset_ids: list[int] | None = None,
+    exog_ffill_limit: int = 0,
 ) -> dict:
     """
     Check whether a prediction target is worth training a sequence model on -- run this BEFORE
@@ -373,6 +375,13 @@ async def assess_target_difficulty(
         with_time:  give models time-of-day/weekday features.
         models:     subset of ["hgb", "mlp", "knn"] (default all three; mlp is the slowest).
         max_rows:   most recent rows of the dataset to use.
+        exog_dataset_ids: other instruments' datasets (same clock/source, e.g. other HistData pairs)
+                    added as inputs: their signed return sums and log RMS up to the anchor. The
+                    result then also scores linear_own (linear without them);
+                    metrics.linear.exog_ci95 > 0 means the other instruments add signal. Rows
+                    missing in any instrument become gaps.
+        exog_ffill_limit: carry another instrument's last close over at most this many missing
+                    bars (0 = strict alignment; >0 admits stale quotes, which can fake lead-lag).
     """
     from celery_app import enqueue
     from database import db_session
@@ -381,7 +390,8 @@ async def assess_target_difficulty(
 
     body = TargetAssessmentCreate(dataset_id=dataset_id, target=target, horizon=horizon, obs=obs,
                                   with_time=with_time, models=models or ["hgb", "mlp", "knn"],
-                                  max_rows=max_rows)
+                                  max_rows=max_rows, exog_dataset_ids=exog_dataset_ids or [],
+                                  exog_ffill_limit=exog_ffill_limit)
     async with db_session() as db:
         a = await assessment_service.create_assessment(db, body)
         out = assessment_service.to_dict(a)
