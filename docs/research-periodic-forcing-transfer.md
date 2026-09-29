@@ -404,6 +404,46 @@ Decision (2026-09-28): Option 3 is not pursued for practical value on USDJPY vol
 It stays open only as a scientific question (synthetic pretraining vs. neural-net sample
 efficiency), to be prioritized separately.
 
+## Phase 10A — beyond volatility: return, direction, extremes, trend regime (2026-09-29)
+
+Question: is there a non-volatility USDJPY M1 target where a sequence model could learn something a
+strong linear model cannot — the prerequisite for asking whether pretraining transfers anything?
+Screened model-free with `model_core.analysis.assess_target` (the code behind the
+`assess_target_difficulty` MCP job): last 60 log returns + time of day/weekday, blocked day split
+with purge, persistence / linear / HGB / MLP / k-NN, paired day-block bootstrap. Two independent
+sources over the same years: dataset 29 (2M rows, 2017-04..2022-08) and HistData dataset 149
+(2M rows, 2017-08..2022-12). Script `backend/phase10a_target_screen.py`, outputs
+`backend/phase10a_target_screen_{29,149}.json`.
+
+| Target (h) | 29: verdict, linear → best | 149: verdict, linear → best |
+|---|---|---|
+| future_return (1/5/20/60) | unpredictable, R² ≤ 0 at every h | unpredictable, R² ≤ 0 at every h |
+| direction (1/5/20/60) | unpredictable, AUC 0.513–0.523 → ≤ 0.529 | unpredictable, AUC 0.518–0.522 → ≤ 0.527 |
+| extreme h20 (|r| > 99.9 % quantile) | tree_only_headroom, AUC 0.856 → 0.876 (HGB +4.7 %, MLP −6.0 %) | tree_only_headroom, 0.849 → 0.861 (HGB +2.5 %, MLP −9.6 %) |
+| extreme h60 | tree_only_headroom, 0.823 → 0.831 (HGB +2.0 %, MLP −2.7 %) | tree_only_headroom, 0.820 → 0.837 (HGB +3.5 %, MLP −3.8 %) |
+| trend_er (20/60) | unpredictable, R² ≤ 0.003 | unpredictable, R² ≤ 0.002 |
+| trend_change (20/60) | no_headroom, linear R² 0.50 = best | no_headroom, linear R² 0.50–0.51 = best |
+
+- Returns: no model beats the random-walk forecast at any horizon on either source.
+- Direction: AUC ≈ 0.52 on both sources, sometimes with a CI above the base rate — a tiny,
+  mostly linear effect (short-term mean reversion / drift); nonlinear models add ≤ 0.2 %.
+- Extremes: well predicted (AUC 0.82–0.86) because an absolute threshold is mostly a volatility
+  question; the extra gain is trees-only and the MLP is worse than linear — the same pattern as
+  volatility itself (Phase 9a).
+- Trend regime: the future efficiency ratio is unpredictable; `trend_change` is ~50 % explained,
+  but only by the past ER that it subtracts, and a linear model given that ER is best.
+- Toolkit fix found on the way: `trend_change` first came out "unpredictable" (linear R² 0.02) while
+  trees and the MLP reached R² 0.49 — just by computing the past ER that is part of the target
+  (point 6 overlap, in nonlinear form). `assess_target` now gives trend targets the past ER as a
+  baseline feature and calls a target unpredictable only when *no* model finds signal (commit 5dd003b).
+
+Conclusion: on a single FX series' own past returns at 1-minute resolution, none of these targets
+leaves room for a smooth nonlinear model over a strong linear one, on either data source. What a
+pretrained sequence model could transfer is not visible in univariate USDJPY M1 targets. The next
+screens need inputs that carry information the series' own past does not: other instruments
+(HistData 9 pairs M1, datasets 149–157; MT5 daily for 64 instruments, datasets 85–148) and longer
+horizons (daily bars).
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale
