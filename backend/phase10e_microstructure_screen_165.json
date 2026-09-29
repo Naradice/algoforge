@@ -1,0 +1,959 @@
+{
+ "future_return_h1": {
+  "target": "future_return",
+  "horizon": 1,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:06:00",
+   "2023-03-07 22:57:00"
+  ],
+  "task": "regression",
+  "n_windows": 1790691,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 288,
+  "n_bootstrap_groups": 288,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 1.820847017768237e-08,
+    "r2": -7.008116990947499e-06
+   },
+   "linear": {
+    "mse": 1.8299058635712722e-08,
+    "r2": -0.004982115416004795,
+    "reference": "persistence",
+    "gain_vs_reference": -9.05884580303514e-11,
+    "gain_rel_vs_reference": -0.0049750724331241855,
+    "ci95_vs_reference": [
+     -1.263565165037953e-10,
+     -5.930738118138385e-11
+    ],
+    "exog_gain": -3.006992054313479e-11,
+    "exog_gain_rel": -0.001645954300588425,
+    "exog_ci95": [
+     -4.198024271073683e-11,
+     -2.008756979065023e-11
+    ]
+   },
+   "linear_own": {
+    "mse": 1.8268988715169587e-08,
+    "r2": -0.0033306789700418005
+   },
+   "hgb": {
+    "mse": 1.82241392965427e-08,
+    "r2": -0.0008675542539504644,
+    "gain_vs_linear": 7.491933917002098e-11,
+    "gain_rel": 0.004094163566633272,
+    "ci95": [
+     2.7965168594922673e-11,
+     1.1907754399698523e-10
+    ]
+   },
+   "mlp": {
+    "mse": 1.879547583389003e-08,
+    "r2": -0.03224528866905252,
+    "gain_vs_linear": -4.964171981773081e-10,
+    "gain_rel": -0.027128018334696885,
+    "ci95": [
+     -7.548790326586811e-10,
+     -3.186819733936014e-10
+    ]
+   },
+   "knn": {
+    "mse": 1.8365808331607313e-08,
+    "r2": -0.008648000744805318,
+    "gain_vs_linear": -6.674969589459127e-11,
+    "gain_rel": -0.003647712006579483,
+    "ci95": [
+     -1.3660616522622352e-10,
+     1.494250376087221e-11
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 -0.001 < 0.05 (linear -0.005): no usable signal",
+  "elapsed_seconds": 138.1
+ },
+ "future_return_h5": {
+  "target": "future_return",
+  "horizon": 5,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:10:00",
+   "2023-03-08 21:38:00"
+  ],
+  "task": "regression",
+  "n_windows": 1781612,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 286,
+  "n_bootstrap_groups": 286,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 1.1556533186870867e-07,
+    "r2": -1.2155860835472154e-05
+   },
+   "linear": {
+    "mse": 1.1581650733731673e-07,
+    "r2": -0.0021856322641868875,
+    "reference": "persistence",
+    "gain_vs_reference": -2.5117546860806703e-10,
+    "gain_rel_vs_reference": -0.0021734499831958442,
+    "ci95_vs_reference": [
+     -5.66177116305458e-10,
+     -3.2518514989989315e-11
+    ],
+    "exog_gain": -5.997810383610287e-11,
+    "exog_gain_rel": -0.000518140136312546,
+    "exog_ci95": [
+     -1.6799122823070004e-10,
+     4.424306686430658e-11
+    ]
+   },
+   "linear_own": {
+    "mse": 1.1575652923348063e-07,
+    "r2": -0.0016666285807143133
+   },
+   "hgb": {
+    "mse": 1.1553634603877723e-07,
+    "r2": 0.00023866488108115202,
+    "gain_vs_linear": 2.8016129853950343e-10,
+    "gain_rel": 0.002419010078792403,
+    "ci95": [
+     -1.5086171791424273e-11,
+     5.918656621318187e-10
+    ]
+   },
+   "mlp": {
+    "mse": 1.1582890996651151e-07,
+    "r2": -0.002292954934046909,
+    "gain_vs_linear": -1.2402629194776907e-11,
+    "gain_rel": -0.00010708861353117933,
+    "ci95": [
+     -3.022540517951927e-10,
+     3.353724021143045e-10
+    ]
+   },
+   "knn": {
+    "mse": 1.1622448109870534e-07,
+    "r2": -0.005715918675031739,
+    "gain_vs_linear": -4.079737613886063e-10,
+    "gain_rel": -0.003522587330322254,
+    "ci95": [
+     -8.462535091482035e-10,
+     1.3576615314897249e-11
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 0.000 < 0.05 (linear -0.002): no usable signal",
+  "elapsed_seconds": 140.7
+ },
+ "future_return_h20": {
+  "target": "future_return",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:25:00",
+   "2023-03-08 21:15:00"
+  ],
+  "task": "regression",
+  "n_windows": 1749089,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 290,
+  "n_bootstrap_groups": 290,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 3.821453620907282e-07,
+    "r2": -0.00011760571908592254
+   },
+   "linear": {
+    "mse": 3.8437274946360904e-07,
+    "r2": -0.005946930231064629,
+    "reference": "persistence",
+    "gain_vs_reference": -2.227387372880829e-09,
+    "gain_rel_vs_reference": -0.005828639030694313,
+    "ci95_vs_reference": [
+     -3.0222350484101863e-09,
+     -1.4308571438708444e-09
+    ],
+    "exog_gain": -6.464039632294273e-10,
+    "exog_gain_rel": -0.00168454413101742,
+    "exog_ci95": [
+     -1.0724833811869905e-09,
+     -2.3122919707333102e-10
+    ]
+   },
+   "linear_own": {
+    "mse": 3.837263455003796e-07,
+    "r2": -0.004255217997543248
+   },
+   "hgb": {
+    "mse": 3.830375856930988e-07,
+    "r2": -0.002452655732742892,
+    "gain_vs_linear": 1.3351637705102577e-09,
+    "gain_rel": 0.003473617139543515,
+    "ci95": [
+     2.823103668669264e-10,
+     2.3177330129255004e-09
+    ]
+   },
+   "mlp": {
+    "mse": 3.8221486361532025e-07,
+    "r2": -0.0002994990645617257,
+    "gain_vs_linear": 2.1578858482887976e-09,
+    "gain_rel": 0.005614044833563567,
+    "ci95": [
+     1.4187375337158477e-09,
+     3.056655709258411e-09
+    ]
+   },
+   "knn": {
+    "mse": 3.8600376848292953e-07,
+    "r2": -0.0102154913554513,
+    "gain_vs_linear": -1.63101901932049e-09,
+    "gain_rel": -0.0042433263585843995,
+    "ci95": [
+     -2.8956067332228336e-09,
+     -4.0817499922658276e-10
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 -0.000 < 0.05 (linear -0.006): no usable signal",
+  "elapsed_seconds": 212.7
+ },
+ "direction_h1": {
+  "target": "direction",
+  "horizon": 1,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:05:00",
+   "2023-03-07 22:48:00"
+  ],
+  "task": "classification",
+  "n_windows": 1720132,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 284,
+  "n_bootstrap_groups": 284,
+  "positive_rate": 0.49888,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.6931485082100762,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.6929874971143933,
+    "auc": 0.5168378820857571,
+    "reference": "base_rate",
+    "gain_vs_reference": 0.00016101109568289473,
+    "gain_rel_vs_reference": 0.00023228946434390398,
+    "ci95_vs_reference": [
+     -0.0002073695749212171,
+     0.000500729168306079
+    ],
+    "exog_gain": -7.131947463345778e-05,
+    "exog_gain_rel": -0.00010292655437254931,
+    "exog_ci95": [
+     -0.00022763682880388994,
+     7.482481979545083e-05
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6929161776397599,
+    "auc": 0.516850240147765
+   },
+   "hgb": {
+    "logloss": 0.6924672622703525,
+    "auc": 0.5209570347540176,
+    "gain_vs_linear": 0.0005202348440408455,
+    "gain_rel": 0.0007507131747789223,
+    "ci95": [
+     0.00023821153888179005,
+     0.0008037140564781972
+    ]
+   },
+   "mlp": {
+    "logloss": 0.7209282364042889,
+    "auc": 0.5060587660004643,
+    "gain_vs_linear": -0.0279407392898956,
+    "gain_rel": -0.040319254541014246,
+    "ci95": [
+     -0.031681286968379456,
+     -0.024676515305114312
+    ]
+   },
+   "knn": {
+    "logloss": 0.6979449645591629,
+    "auc": 0.5023157172193427,
+    "gain_vs_linear": -0.004957467444769548,
+    "gain_rel": -0.007153761742329393,
+    "ci95": [
+     -0.0055876031617990716,
+     -0.004404507419818738
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.521 < 0.55 (linear 0.517): no usable signal in the window",
+  "elapsed_seconds": 67.4
+ },
+ "direction_h5": {
+  "target": "direction",
+  "horizon": 5,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:11:00",
+   "2023-03-08 21:44:00"
+  ],
+  "task": "classification",
+  "n_windows": 1757422,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 286,
+  "n_bootstrap_groups": 286,
+  "positive_rate": 0.50308,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.693139019830066,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.6927740055701681,
+    "auc": 0.5245265798757893,
+    "reference": "base_rate",
+    "gain_vs_reference": 0.00036501425989787784,
+    "gain_rel_vs_reference": 0.0005266104626274926,
+    "ci95_vs_reference": [
+     -0.00027645060650691275,
+     0.000888624377136819
+    ],
+    "exog_gain": 1.1228030602383754e-05,
+    "exog_gain_rel": 1.620708707087441e-05,
+    "exog_ci95": [
+     -0.0002453614220481968,
+     0.00026766356264547087
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6927852336007705,
+    "auc": 0.5232651228090441
+   },
+   "hgb": {
+    "logloss": 0.6917836130127663,
+    "auc": 0.5292022868982977,
+    "gain_vs_linear": 0.0009903925574018535,
+    "gain_rel": 0.001429604098073424,
+    "ci95": [
+     0.0005464939393847151,
+     0.0015156765813774526
+    ]
+   },
+   "mlp": {
+    "logloss": 0.6941635084439814,
+    "auc": 0.5167589721292529,
+    "gain_vs_linear": -0.001389502873813342,
+    "gain_rel": -0.0020057087342209828,
+    "ci95": [
+     -0.002040343669656855,
+     -0.0007544457404925199
+    ]
+   },
+   "knn": {
+    "logloss": 0.6972191820159733,
+    "auc": 0.5092015881597836,
+    "gain_vs_linear": -0.004445176445805221,
+    "gain_rel": -0.006416488508610747,
+    "ci95": [
+     -0.005386375296568454,
+     -0.0036301082782081817
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.529 < 0.55 (linear 0.525): no usable signal in the window",
+  "elapsed_seconds": 63.8
+ },
+ "direction_h20": {
+  "target": "direction",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:24:00",
+   "2023-03-08 21:17:00"
+  ],
+  "task": "classification",
+  "n_windows": 1738562,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 291,
+  "n_bootstrap_groups": 291,
+  "positive_rate": 0.50446,
+  "metrics": {
+   "base_rate": {
+    "logloss": 0.6931503732867671,
+    "auc": 0.5
+   },
+   "linear": {
+    "logloss": 0.6934471703900316,
+    "auc": 0.5178492706022044,
+    "reference": "base_rate",
+    "gain_vs_reference": -0.00029679710326446784,
+    "gain_rel_vs_reference": -0.00042818573675019615,
+    "ci95_vs_reference": [
+     -0.0011529721880668713,
+     0.00046295816345151396
+    ],
+    "exog_gain": -0.0007388781847511572,
+    "exog_gain_rel": -0.0010666512774069616,
+    "exog_ci95": [
+     -0.0012484409171413101,
+     -0.00023507292396379682
+    ]
+   },
+   "linear_own": {
+    "logloss": 0.6927082922052804,
+    "auc": 0.5206596806164119
+   },
+   "hgb": {
+    "logloss": 0.6922151712606516,
+    "auc": 0.5247108885564433,
+    "gain_vs_linear": 0.0012319991293799903,
+    "gain_rel": 0.0017766301197639158,
+    "ci95": [
+     0.0005321844629007939,
+     0.0018696016890499213
+    ]
+   },
+   "mlp": {
+    "logloss": 0.6941819247409329,
+    "auc": 0.5099511181746491,
+    "gain_vs_linear": -0.0007347543509013121,
+    "gain_rel": -0.001059567883863521,
+    "ci95": [
+     -0.0014586139622592446,
+     2.1417068510662806e-05
+    ]
+   },
+   "knn": {
+    "logloss": 0.698491654011604,
+    "auc": 0.5098363572435349,
+    "gain_vs_linear": -0.005044483621572393,
+    "gain_rel": -0.007274503144536746,
+    "ci95": [
+     -0.006456616496786548,
+     -0.0037351448559530065
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best AUC 0.525 < 0.55 (linear 0.518): no usable signal in the window",
+  "elapsed_seconds": 66.9
+ },
+ "future_log_rv_h20": {
+  "target": "future_log_rv",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:25:00",
+   "2023-03-08 21:15:00"
+  ],
+  "task": "regression",
+  "n_windows": 1749089,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 290,
+  "n_bootstrap_groups": 290,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.14470544231478386,
+    "r2": 0.5499731902555257
+   },
+   "linear": {
+    "mse": 0.10249666810523364,
+    "r2": 0.6812404024411457,
+    "reference": "persistence",
+    "gain_vs_reference": 0.042208774209550215,
+    "gain_rel_vs_reference": 0.291687538038353,
+    "ci95_vs_reference": [
+     0.039592033765552426,
+     0.044726648444542334
+    ],
+    "exog_gain": 0.002423945901662977,
+    "exog_gain_rel": 0.02310266599758601,
+    "exog_ci95": [
+     0.0013898985767556993,
+     0.0033921342288969233
+    ]
+   },
+   "linear_own": {
+    "mse": 0.10492061400689662,
+    "r2": 0.6737020498839168
+   },
+   "hgb": {
+    "mse": 0.0979019481094745,
+    "r2": 0.6955297556837319,
+    "gain_vs_linear": 0.004594719995759139,
+    "gain_rel": 0.04482799373577418,
+    "ci95": [
+     0.0036592877993689476,
+     0.005848073945237926
+    ]
+   },
+   "mlp": {
+    "mse": 0.11604546258542323,
+    "r2": 0.6391043178663893,
+    "gain_vs_linear": -0.013548794480189585,
+    "gain_rel": -0.13218765771272678,
+    "ci95": [
+     -0.01620475715070291,
+     -0.011315137179346854
+    ]
+   },
+   "knn": {
+    "mse": 0.12124087775410912,
+    "r2": 0.6229468321750382,
+    "gain_vs_linear": -0.01874420964887548,
+    "gain_rel": -0.18287628266736186,
+    "ci95": [
+     -0.023640248832132255,
+     -0.014863245972413602
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 4.5% (95% CI of loss gain +0.0037..+0.0058), but the MLP changes loss by -13.2% -- only trees find it",
+  "elapsed_seconds": 103.1
+ },
+ "future_log_rv_h60": {
+  "target": "future_log_rv",
+  "horizon": 60,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 02:04:00",
+   "2023-03-07 21:57:00"
+  ],
+  "task": "regression",
+  "n_windows": 1670799,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 289,
+  "n_bootstrap_groups": 289,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.12955469016861393,
+    "r2": 0.552792897438197
+   },
+   "linear": {
+    "mse": 0.08662845685201477,
+    "r2": 0.7009690568688103,
+    "reference": "persistence",
+    "gain_vs_reference": 0.04292623331659916,
+    "gain_rel_vs_reference": 0.3313367756947368,
+    "ci95_vs_reference": [
+     0.03890439181184232,
+     0.04663982507242828
+    ],
+    "exog_gain": 0.0038233331387797914,
+    "exog_gain_rel": 0.042269292173973544,
+    "exog_ci95": [
+     0.0026701814166982807,
+     0.0048731900727660826
+    ]
+   },
+   "linear_own": {
+    "mse": 0.09045178999079456,
+    "r2": 0.6877713738447768
+   },
+   "hgb": {
+    "mse": 0.0845248668764536,
+    "r2": 0.708230394738743,
+    "gain_vs_linear": 0.0021035899755611764,
+    "gain_rel": 0.024282897929887942,
+    "ci95": [
+     0.0011379826979966217,
+     0.00312967843757273
+    ]
+   },
+   "mlp": {
+    "mse": 0.09552518184681139,
+    "r2": 0.6702586394996362,
+    "gain_vs_linear": -0.008896724994796615,
+    "gain_rel": -0.10269979771190739,
+    "ci95": [
+     -0.011200568349383275,
+     -0.007099834895668179
+    ]
+   },
+   "knn": {
+    "mse": 0.11021825049969515,
+    "r2": 0.6195399457074939,
+    "gain_vs_linear": -0.02358979364768038,
+    "gain_rel": -0.272309983403932,
+    "ci95": [
+     -0.029766106001509272,
+     -0.017299170437259696
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 2.4% (95% CI of loss gain +0.0011..+0.0031), but the MLP changes loss by -10.3% -- only trees find it",
+  "elapsed_seconds": 89.1
+ },
+ "future_aux_h20_log_ticks": {
+  "target": "future_aux",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks",
+   "log_spread",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:25:00",
+   "2023-03-08 21:15:00"
+  ],
+  "task": "regression",
+  "n_windows": 1749089,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 290,
+  "n_bootstrap_groups": 290,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.11999574672739549,
+    "r2": 0.7829458830890248
+   },
+   "linear": {
+    "mse": 0.08404147561111128,
+    "r2": 0.8479817096008754,
+    "reference": "persistence",
+    "gain_vs_reference": 0.035954271116284214,
+    "gain_rel_vs_reference": 0.29962954602019837,
+    "ci95_vs_reference": [
+     0.03344996491903224,
+     0.03860915141406032
+    ],
+    "exog_gain": 0.1115502579746395,
+    "exog_gain_rel": 0.5703219452561064,
+    "exog_ci95": [
+     0.09736713680025555,
+     0.12744438288681098
+    ]
+   },
+   "linear_own": {
+    "mse": 0.19559173358575077,
+    "r2": 0.6462042016790129
+   },
+   "hgb": {
+    "mse": 0.0761463787504978,
+    "r2": 0.8622627430853383,
+    "gain_vs_linear": 0.007895096860613474,
+    "gain_rel": 0.0939428633684015,
+    "ci95": [
+     0.0069680669324046485,
+     0.008868394755438304
+    ]
+   },
+   "mlp": {
+    "mse": 0.08845600869776195,
+    "r2": 0.8399964884007103,
+    "gain_vs_linear": -0.004414533086650671,
+    "gain_rel": -0.05252802922069371,
+    "ci95": [
+     -0.005687399452442095,
+     -0.0031819983217642647
+    ]
+   },
+   "knn": {
+    "mse": 0.21313068167890445,
+    "r2": 0.6144789031269288,
+    "gain_vs_linear": -0.12908920606779317,
+    "gain_rel": -1.5360178427272408,
+    "ci95": [
+     -0.1505901829086237,
+     -0.11158449909915068
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 9.4% (95% CI of loss gain +0.0070..+0.0089), but the MLP changes loss by -5.3% -- only trees find it",
+  "elapsed_seconds": 74.7
+ },
+ "future_aux_h20_log_spread": {
+  "target": "future_aux",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_spread",
+   "log_ticks",
+   "imbalance",
+   "ofi"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:25:00",
+   "2023-03-08 21:15:00"
+  ],
+  "task": "regression",
+  "n_windows": 1749089,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 290,
+  "n_bootstrap_groups": 290,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.016584618939359592,
+    "r2": 0.9312613384294257
+   },
+   "linear": {
+    "mse": 0.011342440198851377,
+    "r2": 0.9529887203882039,
+    "reference": "persistence",
+    "gain_vs_reference": 0.005242178740508216,
+    "gain_rel_vs_reference": 0.3160867765292556,
+    "ci95_vs_reference": [
+     0.004079061848248563,
+     0.006434691606562133
+    ],
+    "exog_gain": 0.14139174462992027,
+    "exog_gain_rel": 0.9257373834707191,
+    "exog_ci95": [
+     0.12013951581926562,
+     0.16303052443285557
+    ]
+   },
+   "linear_own": {
+    "mse": 0.15273418482877166,
+    "r2": 0.3669590191013524
+   },
+   "hgb": {
+    "mse": 0.008474047433863227,
+    "r2": 0.9648774155849364,
+    "gain_vs_linear": 0.00286839276498815,
+    "gain_rel": 0.25289027005658143,
+    "ci95": [
+     0.0023519248673504987,
+     0.0034686373733831288
+    ]
+   },
+   "mlp": {
+    "mse": 0.011781681607518902,
+    "r2": 0.9511681861541297,
+    "gain_vs_linear": -0.0004392414086675251,
+    "gain_rel": -0.03872547714309361,
+    "ci95": [
+     -0.0008634151592032491,
+     -4.860078280318245e-05
+    ]
+   },
+   "knn": {
+    "mse": 0.16226966956195268,
+    "r2": 0.3274370704583274,
+    "gain_vs_linear": -0.1509272293631013,
+    "gain_rel": -13.306416143008217,
+    "ci95": [
+     -0.17699103333609012,
+     -0.12773249455547525
+    ]
+   }
+  },
+  "verdict": "trivial",
+  "reason": "a simple predictor reaches R2 0.953 >= 0.95: the target very likely overlaps the input window",
+  "elapsed_seconds": 87.8
+ },
+ "future_aux_h20_ofi": {
+  "target": "future_aux",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "ofi",
+   "log_ticks",
+   "log_spread",
+   "imbalance"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:25:00",
+   "2023-03-08 21:15:00"
+  ],
+  "task": "regression",
+  "n_windows": 1749089,
+  "n_train": 200000,
+  "n_test": 100000,
+  "n_test_days": 290,
+  "n_bootstrap_groups": 290,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.9096638826655671,
+    "r2": -0.8585661068496104
+   },
+   "linear": {
+    "mse": 0.47398282807292913,
+    "r2": 0.031589099807163956,
+    "reference": "persistence",
+    "gain_vs_reference": 0.43568105459263795,
+    "gain_rel_vs_reference": 0.4789472934947926,
+    "ci95_vs_reference": [
+     0.4170097163469321,
+     0.45463252863516584
+    ],
+    "exog_gain": 0.012266721135388792,
+    "exog_gain_rel": 0.02522721338325295,
+    "exog_ci95": [
+     0.00884943419310817,
+     0.01591659210767903
+    ]
+   },
+   "linear_own": {
+    "mse": 0.4862495492083179,
+    "r2": 0.0065265326558735515
+   },
+   "hgb": {
+    "mse": 0.46724394782017015,
+    "r2": 0.04535754183785701,
+    "gain_vs_linear": 0.006738880252758983,
+    "gain_rel": 0.014217562016238505,
+    "ci95": [
+     0.004381622916473138,
+     0.0093495804978305
+    ]
+   },
+   "mlp": {
+    "mse": 0.47578019138182526,
+    "r2": 0.027916843942920155,
+    "gain_vs_linear": -0.0017973633088961272,
+    "gain_rel": -0.0037920430919484212,
+    "ci95": [
+     -0.004222153749517561,
+     0.0004611744795954548
+    ]
+   },
+   "knn": {
+    "mse": 0.49058041757472143,
+    "r2": -0.002322016036021557,
+    "gain_vs_linear": -0.016597589501792298,
+    "gain_rel": -0.03501728020247712,
+    "ci95": [
+     -0.02087247699197376,
+     -0.012434972760601815
+    ]
+   }
+  },
+  "verdict": "unpredictable",
+  "reason": "best R2 0.045 < 0.05 (linear 0.032): no usable signal",
+  "elapsed_seconds": 55.4
+ }
+}

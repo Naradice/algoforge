@@ -527,6 +527,56 @@ transfers anything. Untested: liquidity / order-flow proxies (Dukascopy volume, 
 upload-parser support), and settings where the input is richer than price returns (events,
 fundamentals, text).
 
+## Phase 10D/10E — volume and top-of-book order flow (2026-09-29)
+
+Question: do liquidity / order-flow series (not available in the price-only data of 10A–C) carry
+information, or form a target with room for a nonlinear model? Two new USDJPY 1-minute sources:
+
+- 10D: Dukascopy bid candles with ECN traded volume (dataset 158, 2017-08..2022-12). Aux inputs
+  log volume, close-location value, CLV × log volume.
+- 10E: Dukascopy top-of-book ticks aggregated by the new `tick_aggregate` datasource (dataset 165,
+  2017-10..2023-03): log tick count, log spread, order-book imbalance, order-flow imbalance (OFI).
+
+Each aux series enters as its mean over the last 1/5/20/60 bars; the linear baseline also gets hour ×
+20-bar-mean terms; `linear_own` (no aux) is scored on the same windows. 200k train windows.
+Scripts `backend/phase10d_volume_screen.py`, `backend/phase10e_microstructure_screen.py`,
+`backend/phase10_weekly_check.py`; outputs `backend/phase10d_volume_screen_158.json`,
+`backend/phase10e_microstructure_screen_165.json`, `backend/phase10_weekly_check.json`.
+
+| Target | 10D volume: linear own → + aux; nonlinear | 10E ticks/OFI: linear own → + aux; nonlinear |
+|---|---|---|
+| future_return h1/5/20 | R² ≤ 0 → ≤ 0; unpredictable | R² ≤ 0 → ≤ 0 (aux −0.05…−0.17 %); unpredictable |
+| direction h1/5/20 | AUC 0.517–0.521 → 0.518–0.524; unpredictable | 0.517–0.523 → 0.517–0.525; unpredictable |
+| future_log_rv h20 | 0.648 → 0.653 (+1.4 %, CI > 0); HGB +3.8 %, MLP −11 % | 0.674 → 0.681 (+2.3 %); HGB +4.5 %, MLP −13 % |
+| future_log_rv h60 | 0.657 → 0.663 (+1.7 %); HGB +2.2 %, MLP −9 % | 0.688 → 0.701 (+4.2 %); HGB +2.4 %, MLP −10 % |
+| extreme h20 | AUC 0.868 → 0.870 (n.s.); no_headroom | — |
+| activity: future mean log volume / log tick count h20 | R² 0.596 → **0.835**; **HGB +9.1 %**, MLP −6.6 % | 0.646 → **0.848**; **HGB +9.4 %**, MLP −5.3 % |
+| future mean log volume h60 | 0.593 → 0.816; HGB +7.4 %, MLP −2.4 % | — |
+| future mean log spread h20 | — | 0.367 → 0.953: trivial (spread persistence) |
+| future mean OFI h20 | — | 0.007 → 0.032; unpredictable |
+
+Weekly-profile check (100k train windows): giving the linear baseline weekday × hour dummies and their
+products with the 20-bar activity mean changes nothing — volume: linear 0.833 → 0.833, HGB gain
++7.7 % → +7.9 %; tick count: 0.843 → 0.842, +9.2 % → +9.6 % (CIs > 0). The trees' gain on activity
+is not a seasonal profile the linear model lacked.
+
+- Order flow (OFI, book imbalance) and volume add nothing to return or direction prediction at 1–20
+  minutes, and OFI itself is unpredictable.
+- They add a little, linearly, to volatility (+1.4–4.2 %).
+- Activity forecasting (volume / tick count over the next 20 minutes) is the first target with a
+  large, robust nonlinear gain: gradient-boosted trees +8–10 % over a strong linear baseline, on
+  two independent activity measures, surviving hour and weekday × hour interactions. The MLP is
+  still worse than linear (−5 … −16 %) and k-NN far worse, so the verdict stays tree_only_headroom.
+  Whether a neural sequence model can reach the trees' level (or the MLP just is under-tuned here)
+  is open.
+
+Conclusion of Phase 10 (A–E): across prices (own, other pairs, daily cross-asset), volume and
+top-of-book order flow, no return / direction / regime / extreme target leaves room for a nonlinear
+model. Volatility and trading activity are predictable; only activity shows a sizeable nonlinear
+(tree-only) gain. The one candidate downstream task for a pretraining-transfer study is therefore
+activity forecasting — conditional on first showing that a neural sequence model, trained from
+scratch, can match the trees there.
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale

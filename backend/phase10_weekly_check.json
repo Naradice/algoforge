@@ -1,0 +1,338 @@
+{
+ "volume_158_weekly0": {
+  "target": "future_aux",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_volume"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-08-21 01:20:00",
+   "2022-12-27 20:51:00"
+  ],
+  "task": "regression",
+  "n_windows": 1750890,
+  "n_train": 100000,
+  "n_test": 100000,
+  "n_test_days": 276,
+  "n_bootstrap_groups": 276,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.13909760849434094,
+    "r2": 0.7675682207509805
+   },
+   "linear": {
+    "mse": 0.09970164896328586,
+    "r2": 0.8333987772080172,
+    "reference": "persistence",
+    "gain_vs_reference": 0.03939595953105508,
+    "gain_rel_vs_reference": 0.28322528300447286,
+    "ci95_vs_reference": [
+     0.0365913402969713,
+     0.042657448924710614
+    ],
+    "exog_gain": 0.14355464499010412,
+    "exog_gain_rel": 0.5901374334742205,
+    "exog_ci95": [
+     0.12100179877825504,
+     0.16851023424382358
+    ]
+   },
+   "linear_own": {
+    "mse": 0.24325629395339,
+    "r2": 0.5935193003738146
+   },
+   "hgb": {
+    "mse": 0.09204605453583767,
+    "r2": 0.8461912576341135,
+    "gain_vs_linear": 0.00765559442744819,
+    "gain_rel": 0.07678503321712649,
+    "ci95": [
+     0.006543803254941322,
+     0.008711608444192147
+    ]
+   },
+   "mlp": {
+    "mse": 0.11601991702285126,
+    "r2": 0.8061309893545578,
+    "gain_vs_linear": -0.016318268059565405,
+    "gain_rel": -0.16367099470515722,
+    "ci95": [
+     -0.02371969050569273,
+     -0.012411807837531102
+    ]
+   },
+   "knn": {
+    "mse": 0.2551820533595598,
+    "r2": 0.5735913842314997,
+    "gain_vs_linear": -0.15548040439627392,
+    "gain_rel": -1.5594566991918863,
+    "ci95": [
+     -0.19053810246439187,
+     -0.12534178854538752
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 7.7% (95% CI of loss gain +0.0065..+0.0087), but the MLP changes loss by -16.4% -- only trees find it",
+  "elapsed_seconds": 40.2
+ },
+ "volume_158_weekly1": {
+  "target": "future_aux",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": true,
+  "exog": [
+   "log_volume"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-08-21 01:20:00",
+   "2022-12-27 20:51:00"
+  ],
+  "task": "regression",
+  "n_windows": 1750890,
+  "n_train": 100000,
+  "n_test": 100000,
+  "n_test_days": 276,
+  "n_bootstrap_groups": 276,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.13909760849434094,
+    "r2": 0.7675682207509805
+   },
+   "linear": {
+    "mse": 0.09991651850878992,
+    "r2": 0.8330397306988174,
+    "reference": "persistence",
+    "gain_vs_reference": 0.03918108998555102,
+    "gain_rel_vs_reference": 0.2816805436819934,
+    "ci95_vs_reference": [
+     0.03633367977436492,
+     0.042475572189194635
+    ],
+    "exog_gain": 0.1434598426171118,
+    "exog_gain_rel": 0.5894567654534788,
+    "exog_ci95": [
+     0.12083068883462365,
+     0.1686354358079831
+    ]
+   },
+   "linear_own": {
+    "mse": 0.24337636112590175,
+    "r2": 0.5933186684086903
+   },
+   "hgb": {
+    "mse": 0.09204605453583767,
+    "r2": 0.8461912576341135,
+    "gain_vs_linear": 0.007870463972952255,
+    "gain_rel": 0.07877039843276634,
+    "ci95": [
+     0.006744145608880922,
+     0.008947161725214647
+    ]
+   },
+   "mlp": {
+    "mse": 0.11601991702285126,
+    "r2": 0.8061309893545578,
+    "gain_vs_linear": -0.01610339851406134,
+    "gain_rel": -0.1611685310336817,
+    "ci95": [
+     -0.023454998653423247,
+     -0.012209385147544537
+    ]
+   },
+   "knn": {
+    "mse": 0.2551820533595598,
+    "r2": 0.5735913842314997,
+    "gain_vs_linear": -0.15526553485076988,
+    "gain_rel": -1.553952611320327,
+    "ci95": [
+     -0.19036728321429872,
+     -0.1250193005454746
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 7.9% (95% CI of loss gain +0.0067..+0.0089), but the MLP changes loss by -16.1% -- only trees find it",
+  "elapsed_seconds": 47.4
+ },
+ "ticks_165_weekly0": {
+  "target": "future_aux",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": false,
+  "exog": [
+   "log_ticks"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:20:00",
+   "2023-03-08 21:18:00"
+  ],
+  "task": "regression",
+  "n_windows": 1749089,
+  "n_train": 100000,
+  "n_test": 100000,
+  "n_test_days": 291,
+  "n_bootstrap_groups": 291,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.11948324178132087,
+    "r2": 0.7836118718998759
+   },
+   "linear": {
+    "mse": 0.08692637459078398,
+    "r2": 0.8425734421011455,
+    "reference": "persistence",
+    "gain_vs_reference": 0.032556867190536895,
+    "gain_rel_vs_reference": 0.27248061489763326,
+    "ci95_vs_reference": [
+     0.030066153023181424,
+     0.03525809054820437
+    ],
+    "exog_gain": 0.10930069582986796,
+    "exog_gain_rel": 0.5570113012213864,
+    "exog_ci95": [
+     0.09335159285542567,
+     0.1273902605658154
+    ]
+   },
+   "linear_own": {
+    "mse": 0.19622707042065193,
+    "r2": 0.6446262436651248
+   },
+   "hgb": {
+    "mse": 0.0789329605249222,
+    "r2": 0.857049781050893,
+    "gain_vs_linear": 0.007993414065861779,
+    "gain_rel": 0.09195614223521578,
+    "ci95": [
+     0.007087776443287896,
+     0.009138798893240976
+    ]
+   },
+   "mlp": {
+    "mse": 0.09882008002042028,
+    "r2": 0.8210335456627512,
+    "gain_vs_linear": -0.011893705429636303,
+    "gain_rel": -0.13682504861875702,
+    "ci95": [
+     -0.01661263897303568,
+     -0.008420488128283022
+    ]
+   },
+   "knn": {
+    "mse": 0.21250349049230133,
+    "r2": 0.6151491051227882,
+    "gain_vs_linear": -0.12557711590151735,
+    "gain_rel": -1.4446376774907068,
+    "ci95": [
+     -0.14673453508514034,
+     -0.10716757269471217
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 9.2% (95% CI of loss gain +0.0071..+0.0091), but the MLP changes loss by -13.7% -- only trees find it",
+  "elapsed_seconds": 41.5
+ },
+ "ticks_165_weekly1": {
+  "target": "future_aux",
+  "horizon": 20,
+  "obs": 60,
+  "with_time": true,
+  "weekly": true,
+  "exog": [
+   "log_ticks"
+  ],
+  "instruments": null,
+  "split": "blocked",
+  "bootstrap_group": "day",
+  "test_period": [
+   "2017-10-30 01:20:00",
+   "2023-03-08 21:18:00"
+  ],
+  "task": "regression",
+  "n_windows": 1749089,
+  "n_train": 100000,
+  "n_test": 100000,
+  "n_test_days": 291,
+  "n_bootstrap_groups": 291,
+  "positive_rate": null,
+  "metrics": {
+   "persistence": {
+    "mse": 0.11948324178132087,
+    "r2": 0.7836118718998759
+   },
+   "linear": {
+    "mse": 0.08734496634632229,
+    "r2": 0.8418153584982178,
+    "reference": "persistence",
+    "gain_vs_reference": 0.03213827543499859,
+    "gain_rel_vs_reference": 0.26897726372220715,
+    "ci95_vs_reference": [
+     0.029648290430008314,
+     0.03491356788883256
+    ],
+    "exog_gain": 0.11009452974126617,
+    "exog_gain_rel": 0.5576114805946721,
+    "exog_ci95": [
+     0.09416317484998968,
+     0.1280876344775661
+    ]
+   },
+   "linear_own": {
+    "mse": 0.19743949608758846,
+    "r2": 0.6424305004243354
+   },
+   "hgb": {
+    "mse": 0.0789329605249222,
+    "r2": 0.857049781050893,
+    "gain_vs_linear": 0.008412005821400087,
+    "gain_rel": 0.09630784890392576,
+    "ci95": [
+     0.007431928704605198,
+     0.009577366573666096
+    ]
+   },
+   "mlp": {
+    "mse": 0.09882008002042028,
+    "r2": 0.8210335456627512,
+    "gain_vs_linear": -0.011475113674097995,
+    "gain_rel": -0.1313769316551023,
+    "ci95": [
+     -0.016247012080765448,
+     -0.007954053079740103
+    ]
+   },
+   "knn": {
+    "mse": 0.21250349049230133,
+    "r2": 0.6151491051227882,
+    "gain_vs_linear": -0.12515852414597906,
+    "gain_rel": -1.432922003195081,
+    "ci95": [
+     -0.14637790897967273,
+     -0.10655793079898093
+    ]
+   }
+  },
+  "verdict": "tree_only_headroom",
+  "reason": "hgb beats the strong linear baseline by 9.6% (95% CI of loss gain +0.0074..+0.0096), but the MLP changes loss by -13.1% -- only trees find it",
+  "elapsed_seconds": 48.9
+ }
+}
