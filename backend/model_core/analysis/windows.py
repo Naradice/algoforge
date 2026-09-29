@@ -19,6 +19,10 @@ class ReturnWindows:
     # [n, obs, k] would be GBs); features are read off it by `t` (features.exog_features).
     exog_r: np.ndarray | None = None
     exog_names: tuple[str, ...] = ()
+    # Row-level non-price series (e.g. log volume) on the same rows, [len(r), m]: aux_v[k] belongs to
+    # the bar that closes return r_k (row k+1). Read by `t` like exog_r (features.aux_features).
+    aux_v: np.ndarray | None = None
+    aux_names: tuple[str, ...] = ()
 
     def __len__(self) -> int:
         return len(self.X)
@@ -26,13 +30,14 @@ class ReturnWindows:
     def take(self, idx: np.ndarray) -> "ReturnWindows":
         return ReturnWindows(X=self.X[idx], F=self.F[idx], anchor_ts=self.anchor_ts[idx], day=self.day[idx],
                              t=self.t[idx] if len(self.t) else self.t, exog_r=self.exog_r,
-                             exog_names=self.exog_names)
+                             exog_names=self.exog_names, aux_v=self.aux_v, aux_names=self.aux_names)
 
 
 def build_return_windows(close: pd.Series, obs: int = 60, horizon: int = 20,
                          expected_delta: pd.Timedelta | None = None,
                          exog: pd.DataFrame | None = None,
-                         max_gap: pd.Timedelta | None = None) -> ReturnWindows:
+                         max_gap: pd.Timedelta | None = None,
+                         aux: pd.DataFrame | None = None) -> ReturnWindows:
     """All windows whose `obs` input returns and `horizon` future returns lie inside one gap-free
     run. r_k = log(close_{k+1} / close_k) is only defined when rows k and k+1 are in the same
     contiguous segment (finance_client.fprocess validation.contiguous_segment_ids); a window is
@@ -43,7 +48,10 @@ def build_return_windows(close: pd.Series, obs: int = 60, horizon: int = 20,
     the anchor is read from them.
 
     `max_gap`: consecutive rows up to this far apart count as contiguous (daily bars: weekends and
-    holidays are not gaps, e.g. max_gap=5 days); default: exactly the expected sampling interval."""
+    holidays are not gaps, e.g. max_gap=5 days); default: exactly the expected sampling interval.
+
+    `aux`: row-level non-price series on exactly `close`'s index with no NaN (already transformed,
+    e.g. log volume). The value on the bar that closes each return is kept as `aux_v`."""
     close = close.astype(np.float64)
     names: tuple[str, ...] = ()
     exog_r = None
@@ -52,6 +60,11 @@ def build_return_windows(close: pd.Series, obs: int = 60, horizon: int = 20,
             raise ValueError("exog must be on exactly close's index with no missing values")
         names = tuple(str(c) for c in exog.columns)
         exog_r = np.diff(np.log(exog.to_numpy(np.float64)), axis=0)
+    aux_v, aux_names = None, ()
+    if aux is not None:
+        if not aux.index.equals(close.index) or aux.isna().any().any():
+            raise ValueError("aux must be on exactly close's index with no missing values")
+        aux_v, aux_names = aux.to_numpy(np.float64)[1:], tuple(str(c) for c in aux.columns)
     if max_gap is not None:
         seg = np.concatenate([[0], np.cumsum(np.diff(close.index.asi8) > pd.Timedelta(max_gap).value)])
     else:
@@ -60,7 +73,8 @@ def build_return_windows(close: pd.Series, obs: int = 60, horizon: int = 20,
     if len(r) < obs + horizon:
         empty = pd.DatetimeIndex([])
         return ReturnWindows(X=np.empty((0, obs)), F=np.empty((0, horizon)), anchor_ts=empty,
-                             day=np.empty(0, dtype=np.int64), exog_r=exog_r, exog_names=names)
+                             day=np.empty(0, dtype=np.int64), exog_r=exog_r, exog_names=names,
+                             aux_v=aux_v, aux_names=aux_names)
     bad = np.concatenate([[0], np.cumsum(seg[1:] != seg[:-1])])   # prefix count of gap-spanning returns
     t = np.arange(obs - 1, len(r) - horizon)
     t = t[(bad[t + horizon + 1] - bad[t - obs + 1]) == 0]
@@ -68,7 +82,8 @@ def build_return_windows(close: pd.Series, obs: int = 60, horizon: int = 20,
     fut = np.lib.stride_tricks.sliding_window_view(r, horizon)
     anchor = close.index[t + 1]
     return ReturnWindows(X=win[t - obs + 1], F=fut[t + 1], anchor_ts=anchor,
-                         day=np.asarray(anchor.normalize().as_unit("ns").asi8), t=t, exog_r=exog_r, exog_names=names)
+                         day=np.asarray(anchor.normalize().as_unit("ns").asi8), t=t, exog_r=exog_r, exog_names=names,
+                         aux_v=aux_v, aux_names=aux_names)
 
 
 def align_closes(close: pd.Series, others: dict[str, pd.Series], ffill_limit: int = 0) -> tuple[pd.Series, pd.DataFrame]:
@@ -89,8 +104,8 @@ def align_closes(close: pd.Series, others: dict[str, pd.Series], ffill_limit: in
 
 def concat_windows(parts: list[ReturnWindows]) -> ReturnWindows:
     """Stack windows of several instruments (a panel). Exogenous inputs are not supported here."""
-    if any(p.exog_r is not None for p in parts):
-        raise ValueError("concat_windows does not carry exog inputs")
+    if any(p.exog_r is not None or p.aux_v is not None for p in parts):
+        raise ValueError("concat_windows does not carry exog / aux inputs")
     return ReturnWindows(X=np.concatenate([p.X for p in parts]), F=np.concatenate([p.F for p in parts]),
                          anchor_ts=parts[0].anchor_ts.append([p.anchor_ts for p in parts[1:]]),
                          day=np.concatenate([p.day for p in parts]), t=np.concatenate([p.t for p in parts]))

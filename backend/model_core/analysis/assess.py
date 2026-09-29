@@ -33,7 +33,7 @@ import pandas as pd
 
 from model_core.analysis.bootstrap import paired_block_bootstrap_ci
 from model_core.analysis.features import (
-    exog_features, har_features, linear_extras, market_features, time_features, trend_features,
+    aux_features, exog_features, future_aux_mean, har_features, past_aux_mean, linear_extras, market_features, time_features, trend_features,
     vol_memory_features,
 )
 from model_core.analysis.splits import blocked_split, chronological_split, holdout_split
@@ -76,6 +76,7 @@ def assess_target(
     max_gap: pd.Timedelta | str | None = None,
     market: bool = False,
     test_period: tuple | None = None,
+    aux: pd.DataFrame | None = None,
 ) -> dict:
     """Score persistence, the strong linear baseline and nonlinear `models` on `target` built from
     `close` (a DatetimeIndex-ed price series), and return metrics plus a verdict (module docstring).
@@ -94,7 +95,12 @@ def assess_target(
     holidays inside daily bars count as contiguous; `market=True` (panel only) adds cross-instrument
     means of past returns / volatility per day (features.market_features), scored like `exog`.
     `test_period=(start, end)` holds out that date block instead (splits.holdout_split; purged on
-    both sides, the rest trains) -- to check a chronological result on other periods."""
+    both sides, the rest trains) -- to check a chronological result on other periods.
+
+    `aux`: row-level non-price series on `close`'s index (e.g. log volume, a signed-flow proxy),
+    already transformed. Models get each one's mean over the last 1/5/20/60 bars, scored like
+    `exog` (`linear_own` without them). target="future_aux" forecasts aux column 0's mean over the
+    next `horizon` bars (persistence: its mean over the last `horizon` bars)."""
     from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
     from sklearn.linear_model import LogisticRegression, RidgeCV
     from sklearn.metrics import roc_auc_score
@@ -110,15 +116,20 @@ def assess_target(
     panel = isinstance(close, dict)
     if panel and exog is not None:
         raise ValueError("exog is for a single series; a panel can use market=True")
+    if aux is not None and panel:
+        raise ValueError("aux is for a single series")
+    if target == "future_aux" and aux is None:
+        raise ValueError("target future_aux needs aux")
     if market and not panel:
         raise ValueError("market=True needs a panel ({name: close})")
     series = close if panel else {"": close}
     parts, ys, names = [], [], []
     for name, s in series.items():
-        wi = build_return_windows(s, obs=obs, horizon=horizon, exog=exog, max_gap=max_gap)
+        wi = build_return_windows(s, obs=obs, horizon=horizon, exog=exog, max_gap=max_gap, aux=aux)
         if len(wi):
             parts.append(wi)
-            ys.append(make_target(target, wi.X, wi.F, horizon, **(target_kwargs or {})))
+            ys.append(future_aux_mean(wi, horizon) if target == "future_aux"
+                      else make_target(target, wi.X, wi.F, horizon, **(target_kwargs or {})))
             names.append(name)
     if not parts:
         raise ValueError("only 0 gap-free windows -- not enough to assess")
@@ -155,7 +166,7 @@ def assess_target(
     clock = time_features(w.anchor_ts) if with_time else np.empty((len(w), 0))
     lags = w.X if signed else np.empty((len(w), 0))    # AR(obs) term for sign-dependent targets
     trend = trend_features(w.X) if target in REGIME else np.empty((len(w), 0))
-    E = M if M is not None else exog_features(w)       # other instruments / market, up to the anchor
+    E = np.c_[M if M is not None else exog_features(w), aux_features(w)]   # other instruments / market / aux
     F_own = np.c_[base, linear_extras(w.X, ts), clock, lags, trend]
     F_lin = np.c_[F_own, E]
     F_tree = np.c_[base, clock, lags, trend, E]
@@ -192,7 +203,8 @@ def assess_target(
                        "auc": float(roc_auc_score(yte, p)) if m != "base_rate" else 0.5}
                    for m, p in preds.items()}
     else:
-        preds["persistence"] = persistence(target, w.X[te], horizon)
+        preds["persistence"] = (past_aux_mean(w.take(te), horizon) if target == "future_aux"
+                                else persistence(target, w.X[te], horizon))
         preds["linear"] = RidgeCV(alphas=[0.1, 1, 10, 100, 1000]).fit(Lin_tr, ytr).predict(Lin_te)
         if Own_tr is not None:
             preds["linear_own"] = RidgeCV(alphas=[0.1, 1, 10, 100, 1000]).fit(Own_tr, ytr).predict(Own_te)
@@ -231,7 +243,7 @@ def assess_target(
                                trivial_auc, min_signal_r2)
     return {
         "target": target, "horizon": horizon, "obs": obs, "with_time": with_time,
-        "exog": list(w.exog_names) or (["market"] if market else []),
+        "exog": list(w.exog_names) + list(w.aux_names) + (["market"] if market else []),
         "instruments": names if panel else None, "split": split, "bootstrap_group": bootstrap_group,
         "test_period": [str(w.anchor_ts[te].min()), str(w.anchor_ts[te].max())],
         "task": "classification" if classification else "regression",

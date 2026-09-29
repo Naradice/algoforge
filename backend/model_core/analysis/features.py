@@ -80,3 +80,29 @@ def market_features(w) -> np.ndarray:
     mean = g.transform("mean").to_numpy()
     disp = g[1 if own.shape[1] > 2 else 0].transform("std").fillna(0.0).to_numpy()
     return np.c_[mean, disp]
+
+
+AUX_SCALES = (1, 5, 20, 60)
+
+
+def _window_means(v: np.ndarray, t: np.ndarray, scales) -> list[np.ndarray]:
+    c = np.vstack([np.zeros((1, v.shape[1])), np.cumsum(v, axis=0)])
+    return [(c[t + 1] - c[t + 1 - s]) / s for s in scales]
+
+
+def aux_features(w, scales=AUX_SCALES) -> np.ndarray:
+    """Per aux series (e.g. log volume): its mean over the last s bars ending at the anchor bar."""
+    if w.aux_v is None:
+        return np.empty((len(w), 0))
+    return np.concatenate(_window_means(w.aux_v, w.t, [s for s in scales if s <= w.X.shape[1]]), axis=1)
+
+
+def future_aux_mean(w, h: int, col: int = 0) -> np.ndarray:
+    """Target: mean of aux column `col` over the next h bars (after the anchor)."""
+    v = w.aux_v[:, [col]]
+    c = np.vstack([np.zeros((1, 1)), np.cumsum(v, axis=0)])
+    return ((c[w.t + 1 + h] - c[w.t + 1]) / h)[:, 0]
+
+
+def past_aux_mean(w, h: int, col: int = 0) -> np.ndarray:
+    return _window_means(w.aux_v[:, [col]], w.t, [h])[0][:, 0]

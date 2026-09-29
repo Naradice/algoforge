@@ -284,3 +284,46 @@ def test_holdout_split_purges_both_sides():
     test_days = set(day[te])
     assert test_days == set(days[40:60].asi8)
     assert set(day[tr]) == set(days[:35].asi8) | set(days[65:].asi8)
+
+
+def _volume_driven(n_days=30, per_day=400, seed=0):
+    """Volatility follows an observed AR(1) 'log volume' v: r_k ~ N(0, 1e-3 * exp(v_k))."""
+    rng = np.random.default_rng(seed)
+    idx, px, vol, price = [], [], [], 100.0
+    for d in range(n_days):
+        v = np.empty(per_day)
+        v[0] = rng.normal()
+        for k in range(1, per_day):
+            v[k] = 0.97 * v[k - 1] + 0.25 * rng.normal()
+        r = rng.normal(0, 1, per_day) * 1e-3 * np.exp(0.8 * v)
+        p = price * np.exp(np.cumsum(r))
+        price = p[-1]
+        idx.append(pd.date_range(pd.Timestamp("2024-01-01") + pd.Timedelta(days=d), periods=per_day, freq="1min"))
+        px.append(p)
+        vol.append(v)
+    ix = idx[0].append(idx[1:])
+    return pd.Series(np.concatenate(px), index=ix), pd.DataFrame({"log_volume": np.concatenate(vol)}, index=ix)
+
+
+def test_aux_features_and_target_align_with_the_anchor():
+    from model_core.analysis.features import aux_features, future_aux_mean, past_aux_mean
+    close, aux = _volume_driven(n_days=2, per_day=200)
+    w = build_return_windows(close, obs=20, horizon=5, aux=aux)
+    v = aux["log_volume"].to_numpy()
+    k = 11
+    row = close.index.get_loc(w.anchor_ts[k])                     # the anchor bar
+    assert aux_features(w)[k, 0] == pytest.approx(v[row])            # 1-bar mean = the anchor bar
+    assert past_aux_mean(w, 5)[k] == pytest.approx(v[row - 4:row + 1].mean())
+    assert future_aux_mean(w, 5)[k] == pytest.approx(v[row + 1:row + 6].mean())
+
+
+def test_assess_uses_aux_inputs_and_forecasts_aux():
+    close, aux = _volume_driven()
+    r = assess_target(close, target="future_log_rv", horizon=20, obs=20, with_time=False, models=("hgb",),
+                      n_boot=100, aux=aux)
+    assert r["exog"] == ["log_volume"] and r["metrics"]["linear"]["exog_ci95"][0] > 0
+    r = assess_target(close, target="future_aux", horizon=20, obs=20, with_time=False, models=("hgb",),
+                      n_boot=100, aux=aux)
+    assert r["metrics"]["linear"]["r2"] > 0.5 and r["metrics"]["persistence"]["r2"] > 0.3
+    with pytest.raises(ValueError):
+        assess_target(close, target="future_aux")
