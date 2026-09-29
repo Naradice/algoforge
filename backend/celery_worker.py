@@ -1180,6 +1180,8 @@ async def _train_model(training_run_id: int) -> dict:
                 require_contiguous=hp.get("require_contiguous", False),
                 normalize_scope=hp.get("normalize_scope", "all_rows"),
                 target_lookahead=hp.get("target_lookahead", 0),
+                src_lookback=hp.get("src_lookback", 0),
+                split_days=hp.get("split_days"),
             )
             # Persisted (not just logged) immediately after construction, before any training
             # happens, so it's visible even if the run later fails or gets orphaned -- exactly
@@ -1197,7 +1199,7 @@ async def _train_model(training_run_id: int) -> dict:
             effective_config = {
                 **model_config,
                 "input_dim": dataset.n_features,
-                "output_dim": dataset.n_features,
+                "output_dim": getattr(dataset, "n_tgt_features", dataset.n_features),
                 "obs_len": hp.get("obs_len", 60),
                 "pred_len": hp.get("pred_len", 10),
             }

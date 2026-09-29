@@ -972,3 +972,61 @@ class TestFutureLogVolTarget:
         va_min = (va - idx[0]) // pd.Timedelta(minutes=1)
         gap_min = np.abs(np.asarray(tr_min)[:, None] - np.asarray(va_min)[None, :]).min()
         assert gap_min > span
+
+
+def _make_activity_parquet(path, n_days=6, per_day=200, seed=0):
+    """Minute bars with a tick_count column; one block per day (a gap between days)."""
+    rng = np.random.default_rng(seed)
+    idx, frames = [], []
+    for d in range(n_days):
+        t = pd.date_range(pd.Timestamp("2024-01-01", tz="UTC") + pd.Timedelta(days=d), periods=per_day, freq="1min")
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 1e-3, per_day)))
+        frames.append(pd.DataFrame({"open": close, "high": close, "low": close, "close": close,
+                                    "volume": 1.0, "tick_count": rng.integers(1, 50, per_day).astype(float)},
+                                   index=t))
+    df = pd.concat(frames)
+    df.index.name = "datetime"
+    df.to_parquet(path)
+    return df
+
+
+ACTIVITY_HP = dict(
+    obs_len=20, pred_len=1, normalize="zscore", src_normalize="zscore", require_contiguous=True,
+    normalize_scope="valid_windows", target_lookahead=4, src_lookback=1,
+    feature_cols=["log_return", "log_tick_count"], tgt_feature_cols=["future_mean_5_log_tick_count"],
+    preprocessing={"indicators": [
+        {"type": "log_return", "column": "close"}, {"type": "log", "column": "tick_count"},
+        {"type": "future_mean", "column": "log_tick_count", "period": 5}]},
+)
+
+
+class TestDaysSplit:
+    def test_roles_never_straddle_days_and_targets_are_future_means(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        df = _make_activity_parquet(artifact_store / "ds.parquet")
+        days = [str(d.date()) for d in pd.date_range("2024-01-01", periods=6)]
+        split = {"train": days[:3], "val": days[3:4], "test": days[4:]}
+        ds = OHLCWindowDataset("ds.parquet", split_mode="days", split_days=split, max_rows=10_000, **ACTIVITY_HP)
+        src, tgt, anchor = ds.test_arrays()
+        # each day has 200 bars -> 200 - 20 (obs) - 4 (lookahead) - 1 (first return) windows per day
+        assert len(anchor) > 0
+        assert set(pd.DatetimeIndex(anchor).tz_convert("UTC").normalize().strftime("%Y-%m-%d")) == set(days[4:])
+        assert ds.n_features == 2 and ds.n_tgt_features == 1
+        # target (un-z-scored) = mean log tick count over the 5 bars after the anchor
+        a = pd.Timestamp(anchor[7])
+        pos = df.index.get_loc(a)
+        expect = np.log(df["tick_count"].iloc[pos + 1:pos + 6]).mean()
+        assert tgt[7, 1, 0] * ds.tgt_std[0] + ds.tgt_mean[0] == pytest.approx(expect, rel=1e-5)
+        # inputs: the anchor row's log return is the last input
+        assert np.isfinite(src).all()
+
+    def test_days_split_validation(self, artifact_store):
+        from model_core.trainers.dataset import OHLCWindowDataset
+
+        _make_activity_parquet(artifact_store / "ds.parquet", n_days=3)
+        with pytest.raises(ValueError):
+            OHLCWindowDataset("ds.parquet", split_mode="days", split_days=None, **ACTIVITY_HP)
+        with pytest.raises(ValueError):
+            OHLCWindowDataset("ds.parquet", split_mode="days", max_rows=10_000,
+                              split_days={"train": ["2024-01-01"], "val": ["2024-01-01"]}, **ACTIVITY_HP)

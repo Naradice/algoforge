@@ -152,6 +152,54 @@ def _add_future_log_vol(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     return df
 
 
+def _add_log_return(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """log_return at row k = log(col_k / col_{k-1}) -- a per-bar input channel (NaN on row 0)."""
+    col = cfg.get("column", "close")
+    df[cfg.get("name", "log_return")] = np.log(df[col]).diff()
+    return df
+
+
+def _add_log(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """log_{col} = log(col); non-positive values become NaN (e.g. log tick count, log spread)."""
+    col = cfg["column"]
+    df[cfg.get("name", f"log_{col}")] = np.log(df[col].where(df[col] > 0))
+    return df
+
+
+def _add_signed_log1p(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """slog_{col} = sign(col) * log1p(|col|) -- compresses heavy-tailed signed series (e.g. OFI)."""
+    col = cfg["column"]
+    df[cfg.get("name", f"slog_{col}")] = np.sign(df[col]) * np.log1p(np.abs(df[col]))
+    return df
+
+
+def _add_time_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Clock channels from the row timestamp: tod_sin{k} / tod_cos{k} for k = 1..harmonics (time of
+    day) and dow_0 .. dow_4 (Mon-Fri one-hot) -- the same clock information model_core.analysis
+    gives its baselines."""
+    idx = pd.DatetimeIndex(df.index)
+    mod = (idx.hour * 60 + idx.minute).to_numpy()
+    for k in range(1, int(cfg.get("harmonics", 4)) + 1):
+        df[f"tod_sin{k}"] = np.sin(2 * np.pi * k * mod / 1440)
+        df[f"tod_cos{k}"] = np.cos(2 * np.pi * k * mod / 1440)
+    dow = idx.dayofweek.to_numpy()
+    for d in range(5):
+        df[f"dow_{d}"] = (dow == d).astype(np.float64)
+    return df
+
+
+def _add_future_mean(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """FUTURE-LOOKING -- use only as a target column, never as a model input.
+
+    future_mean_{p}_{col} at row k = mean(col_k, ..., col_{k+p-1}). At the row right after an input
+    window ending at row t it is the mean over the next p bars t+1 .. t+p (e.g. the next 20 minutes'
+    mean log tick count). The last p-1 rows are NaN; use target_lookahead = p - 1."""
+    p = int(cfg.get("period", 20))
+    col = cfg["column"]
+    df[cfg.get("name", f"future_mean_{p}_{col}")] = df[col].rolling(p).mean().shift(-(p - 1))
+    return df
+
+
 _INDICATOR_MAP = {
     "sma":        _add_sma,
     "ema":        _add_ema,
@@ -164,6 +212,11 @@ _INDICATOR_MAP = {
     "kurtosis":   _add_kurtosis,
     "autocorr":   _add_autocorr,
     "future_log_vol": _add_future_log_vol,
+    "log_return": _add_log_return,
+    "log":        _add_log,
+    "signed_log1p": _add_signed_log1p,
+    "time_features": _add_time_features,
+    "future_mean": _add_future_mean,
 }
 
 

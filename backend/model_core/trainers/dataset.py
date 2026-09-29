@@ -94,6 +94,8 @@ class OHLCWindowDataset:
         require_contiguous: bool = False,
         normalize_scope: str = "all_rows",
         target_lookahead: int = 0,
+        src_lookback: int = 0,
+        split_days: dict | None = None,
     ) -> None:
         # normalize_scope="valid_windows" (opt-in; default "all_rows" keeps every existing run
         # reproducible): z-score statistics come only from rows that actually play each role in
@@ -121,6 +123,19 @@ class OHLCWindowDataset:
         # windows with a NaN target (a future-looking column is NaN at the end of each series).
         if target_lookahead and normalize_scope != "valid_windows":
             raise ValueError("target_lookahead requires normalize_scope='valid_windows'")
+        # src_lookback=1: an input column's value at a row depends on the previous row (a
+        # precomputed per-bar return such as preprocessing's log_return) -- windows whose first row
+        # follows a gap are rejected, as for a differenced src.
+        # split_days (split_mode="days"): {"train": [...], "val": [...], "test": [...]} ISO dates; a
+        # window goes to a role only if its first input row, last input row (the anchor) and the last
+        # row its target depends on all fall on days of that role -- so no window straddles a
+        # boundary, and a caller can hand identical day lists to non-pipeline baselines
+        # (model_core.analysis). Test windows are never trained or validated on: test_arrays().
+        if split_mode == "days" and not split_days:
+            raise ValueError("split_mode='days' needs split_days")
+        if split_mode == "days" and normalize_scope != "valid_windows":
+            raise ValueError("split_mode='days' requires normalize_scope='valid_windows'")
+        self.src_lookback = int(src_lookback)
         self.normalize_scope = normalize_scope
         self.target_lookahead = int(target_lookahead)
         span = max(obs_len + pred_len + 1, obs_len + pred_len + self.target_lookahead)
@@ -160,11 +175,15 @@ class OHLCWindowDataset:
                 role_src, role_tgt, role_gap = raw, tgt_raw, raw_gap_mask_full
             m = len(role_tgt)
             ok = self._window_ok(role_gap, m, obs_len + pred_len + 1, corrected=True,
-                                 include_first=self._src_differenced, span=span)
+                                 include_first=self._src_differenced or self.src_lookback > 0, span=span)
             starts = np.where(ok)[0]
             src_rows = self._role_rows(m, starts, 0, obs_len)                  # rows i .. i+obs_len-1
             tgt_rows = self._role_rows(m, starts, obs_len - 1, pred_len + 2)  # rows i+obs_len-1 .. i+obs_len+pred_len
-            tgt_data = self._zscore_over(role_tgt, tgt_rows | src_rows if same_column else tgt_rows)
+            tgt_rows_used = tgt_rows | src_rows if same_column else tgt_rows
+            tgt_data = self._zscore_over(role_tgt, tgt_rows_used)
+            # target z-score parameters, to map predictions back to target units
+            self.tgt_mean = np.nanmean(role_tgt[tgt_rows_used], axis=0)
+            self.tgt_std = np.nanstd(role_tgt[tgt_rows_used], axis=0)
             valid_src_data = None if same_column else self._zscore_over(role_src, src_rows)
         else:
             tgt_data = self._apply_normalize(tgt_raw, normalize)
@@ -376,13 +395,19 @@ class OHLCWindowDataset:
             # its total_len-1 internal row-to-row transitions (gap_mask[i+1 .. i+total_len-1])
             # is a gap. Prefix-sum lets every window's check run in O(1).
             window_ok = self._window_ok(gap_mask, n, total_len, corrected=normalize_scope == "valid_windows",
-                                        include_first=self._src_differenced,
+                                        include_first=self._src_differenced or self.src_lookback > 0,
                                         span=span if normalize_scope == "valid_windows" else None)
             if normalize_scope == "valid_windows":
                 window_ok &= np.isfinite(all_tgt[:, 1:, :]).all(axis=(1, 2))
+                window_ok &= np.isfinite(all_src).all(axis=(1, 2))   # e.g. a log of a non-positive value
             all_src, all_tgt = all_src[window_ok], all_tgt[window_ok]
             all_start_ts = all_start_ts[window_ok]
+            all_pos = np.flatnonzero(window_ok)
             n_windows = len(all_src)
+        else:
+            all_pos = np.arange(n_windows)
+        row_ts = df.index[-n:]                      # timestamp of each position of tgt_data
+        self._test_src = self._test_tgt = self._test_anchor_ts = None
 
         if split_mode == "chronological":
             split_idx = int(n_windows * (1 - val_split))
@@ -450,6 +475,37 @@ class OHLCWindowDataset:
             self._train_start_ts = all_start_ts[train_idx]
             self._val_src, self._val_tgt = all_src[val_idx], all_tgt[val_idx]
             self._val_start_ts = all_start_ts[val_idx]
+        elif split_mode == "days":
+            role_of = {}
+            for role in ("train", "val", "test"):
+                for d in split_days.get(role, []):
+                    if pd.Timestamp(d).normalize() in role_of:
+                        raise ValueError(f"day {d} is in more than one role of split_days")
+                    role_of[pd.Timestamp(d).normalize()] = role
+
+            def roles(pos):
+                ix = pd.DatetimeIndex(row_ts[pos])
+                if ix.tz is not None:                      # day lists are UTC calendar dates
+                    ix = ix.tz_convert("UTC").tz_localize(None)
+                return pd.Series(ix.normalize()).map(role_of).to_numpy()
+
+            last = obs_len + pred_len - 1 + self.target_lookahead
+            r_first, r_anchor = roles(all_pos), roles(all_pos + obs_len - 1)
+            r_last = roles(np.minimum(all_pos + last, len(row_ts) - 1))
+            same = (r_first == r_anchor) & (r_anchor == r_last)
+            anchor_ts = np.asarray(row_ts[all_pos + obs_len - 1])
+            idx = {role: np.flatnonzero(same & (r_anchor == role)) for role in ("train", "val", "test")}
+            rng = np.random.default_rng(split_seed)
+            rng.shuffle(idx["train"])
+            self._train_src, self._train_tgt = all_src[idx["train"]], all_tgt[idx["train"]]
+            self._train_start_ts = all_start_ts[idx["train"]]
+            self._val_src, self._val_tgt = all_src[idx["val"]], all_tgt[idx["val"]]
+            self._val_start_ts = all_start_ts[idx["val"]]
+            self._val_anchor_ts = anchor_ts[idx["val"]]
+            self._test_src, self._test_tgt = all_src[idx["test"]], all_tgt[idx["test"]]
+            self._test_anchor_ts = anchor_ts[idx["test"]]
+            if len(idx["train"]) == 0 or len(idx["val"]) == 0:
+                raise ValueError("split_days left no train or no val windows")
         else:
             raise ValueError(f"Unknown split_mode: {split_mode!r}")
 
@@ -458,6 +514,8 @@ class OHLCWindowDataset:
         self.obs_len = obs_len
         self.pred_len = pred_len
         self.n_features = len(feature_cols)
+        # target channels -- equals n_features whenever src and tgt are the same column(s)
+        self.n_tgt_features = int(all_tgt.shape[-1]) if all_tgt.ndim == 3 else self.n_features
 
     @property
     def effective_seq_len(self) -> int:
@@ -703,6 +761,13 @@ class OHLCWindowDataset:
 
     def __len__(self) -> int:
         return len(self._train_src) if self._is_train else len(self._val_src)
+
+    def test_arrays(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """(src, tgt, anchor timestamps) of the held-out test windows (split_mode="days" only).
+        tgt is z-scored like training targets; tgt_mean / tgt_std map predictions back."""
+        if self._test_src is None:
+            raise ValueError("test windows exist only with split_mode='days'")
+        return self._test_src, self._test_tgt, self._test_anchor_ts
 
     @property
     def window_start_timestamps(self) -> np.ndarray:
@@ -984,3 +1049,4 @@ def _lz_compression_ratio(tokens: np.ndarray) -> float:
     raw_bytes = tokens.astype(np.uint8).tobytes()
     compressed = zlib.compress(raw_bytes, level=9)
     return len(compressed) / len(raw_bytes)
+
