@@ -479,6 +479,54 @@ pretrained sequence model could plausibly improve on. Remaining untested directi
 longer horizons across asset classes (MT5 daily, datasets 85–148), and liquidity / order-flow
 proxies (Dukascopy volume, tick counts — need upload-parser work first).
 
+## Phase 10C — long horizons across asset classes: daily panel (2026-09-29)
+
+Question: at days-to-weeks horizons, across asset classes, is there a target with signal and room for
+a nonlinear model? Panel of 57 OANDA MT5 daily instruments (FX majors/crosses/EM, 15 equity indices,
+gold/silver, oil, natgas, copper; datasets 85–148 minus 7 with < 1300 bars), 2016-06..2025-05,
+weekend bars dropped. Inputs: each instrument's last 60 daily log returns; `market=True` adds the
+per-day cross-instrument means of 5/20/60-day return sums and 20-day log RMS (+ dispersion). One
+pooled model (~97k train / 25k test windows). Script `backend/phase10c_daily_panel_screen.py`,
+outputs `backend/phase10c_daily_panel_screen.json` (chronological) and
+`backend/phase10c_daily_panel_folds.json` (holdout blocks).
+
+Chronological test (last 20 % of dates, 2023-07..2025-05, 60+h-day purge, bootstrap by month):
+
+| Target (h days) | linear own → + market | best | verdict |
+|---|---|---|---|
+| future_return 5 / 20 / 60 | R² −0.020 / +0.009 / **+0.032** → −0.020 / +0.006 / +0.012 | own-past linear | unpredictable |
+| direction 5 / 20 / 60 | AUC 0.499 / 0.521 / **0.535** → 0.500 / 0.513 / 0.518 | own-past linear (h5: HGB 0.513) | unpredictable |
+| future_log_rv 5 | R² 0.597 → 0.612 (market +3.6 %, CI > 0) | linear; k-NN −5 % | no_headroom |
+| future_log_rv 20 | 0.727 → 0.733 (+2.0 %, CI spans 0) | linear; k-NN −6 % | no_headroom |
+| extreme 20 (top 1 % per instrument) | AUC 0.623 → 0.643 | linear | no_headroom |
+
+The positive long-horizon return R² and direction AUC were re-tested on four other 1.5-year holdout
+blocks (purged both sides, the rest trains):
+
+| Test block | return h20 own R² | return h60 own R² | direction h60 own AUC | rv h5: market gain |
+|---|---|---|---|---|
+| 2018-01..2019-07 | −0.004 | −0.022 | 0.558 | +0.9 % |
+| 2019-07..2021-01 | −0.007 | −0.013 | 0.527 | +7.7 % |
+| 2021-01..2022-07 | −0.020 | −0.073 | 0.477 | +0.1 % |
+| 2022-07..2024-01 | −0.112 | −0.259 | 0.508 | +1.8 % |
+| 2023-07..2025-05 (chronological) | +0.009 | +0.032 | 0.535 | +3.6 % |
+
+- Long-horizon returns: the 2023–25 R² 0.032 does not replicate — negative in all four other
+  blocks (down to −0.26). Direction AUC swings 0.48–0.56 by period. No stable return signal.
+- Volatility: well predicted and linear; the market factor helps in every block (+0.1 … +7.7 %).
+  HGB / MLP / k-NN are at best equal and usually worse than linear at daily resolution — even the
+  tree-only headroom of the M1 data is gone.
+- A single chronological test period was enough to produce a plausible-looking return signal; the
+  toolkit now supports `test_period` holdouts to check this routinely.
+
+Conclusion of Phase 10 (A–C): across USDJPY M1 (own past, other pairs) and a 57-instrument daily
+panel, the only reliably predictable targets are volatility-type, and they are linear (plus, at M1,
+trees on some thresholds). No screened downstream target offers room for a smooth nonlinear sequence
+model over a strong linear baseline, so none can currently show that representation pretraining
+transfers anything. Untested: liquidity / order-flow proxies (Dukascopy volume, tick counts — need
+upload-parser support), and settings where the input is richer than price returns (events,
+fundamentals, text).
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale

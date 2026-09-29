@@ -295,6 +295,15 @@ windows, and `metrics.linear.exog_gain_rel` / `exog_ci95` say whether the instru
 headroom is then measured over the linear baseline *with* them. Align strictly (`ffill_limit=0`): a
 forward-filled stale quote can masquerade as lead-lag.
 
+Panels and long horizons: `close` may be `{name: series}` — windows and targets are built per
+instrument (per-instrument thresholds) and pooled into one model. For daily bars pass
+`max_gap="5D"` (weekends/holidays are not gaps), `split="chronological"` (last `test_frac` of dates
+after an `obs + horizon`-day purge) or `test_period=(start, end)` (a purged holdout block; move it
+across the sample — one test period can mislead, see Phase 10C), and `bootstrap_group="month"`
+(overlapping multi-day targets). `market=True` adds the per-day cross-instrument means of past return
+sums / volatility, scored like `exog` (`linear_own`, `exog_ci95`). Not yet exposed via REST/MCP
+(single dataset only).
+
 ### Token-level characteristics — comparing input representations, not just row counts
 
 When `token_level` (see the hyperparameter table above) produces a discretized input stream —
