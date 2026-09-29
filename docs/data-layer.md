@@ -84,6 +84,22 @@ A constant rate is used deliberately — the decaying-rate variant from the fore
 study makes shocks a brief early transient only, which is wrong for open-ended data generation.
 Plain `v3` is unchanged and bit-for-bit reproducible as before.
 
+### `tick_aggregate`
+Aggregates local tick exports into fixed-interval microstructure bars (`data/collectors/tick_aggregate.py`).
+Files are read by the collection worker from `path` one day at a time and streamed to parquet.
+
+```json
+{"type": "tick_aggregate",
+ "config": {"path": "L:/data/fx/Dukascopy/USDJPY/tick", "format": "dukascopy", "symbol": "USDJPY",
+            "from_ts": "2017-01-01", "to_ts": null, "bar": "1min"}}
+```
+
+Format `dukascopy`: daily CSVs `Gmt time,Ask,Bid,AskVolume,BidVolume` named `*_Ticks_dd.mm.yyyy-dd.mm.yyyy.csv`
+(GMT). Output per bar (bars with ≥ 1 tick): `open high low close` of the mid, `spread` (mean ask − bid),
+`tick_count` (= `volume`, quote activity), `bid_size` / `ask_size` (mean top-of-book volume),
+`imbalance` (mean (bid − ask size) / total), `ofi` (Cont–Kukanov–Stoikov order-flow imbalance summed over
+the bar, carried across file boundaries).
+
 ### `synthetic_function`
 Generates a time series from a closed-form formula or simple recurrence — no external data, no
 simulation randomness (unless you opt into noise, or the function itself is bit-driven).

@@ -193,6 +193,14 @@ export const TYPE_FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: "start_ts", label: "Start Date", type: "date" },
     { key: "seed", label: "Random Seed", type: "number", placeholder: "42", hint: "Used by noise (all functions), and to generate bits for xor/lfsr. Unused by sine/sine_sum/delay, which are fully deterministic." },
   ],
+  tick_aggregate: [
+    { key: "path", label: "Tick Directory", type: "text", placeholder: "L:/data/fx/Dukascopy/USDJPY/tick", hint: "Directory of tick files, read locally by the collection worker" },
+    { key: "format", label: "Format", type: "select", options: ["dukascopy"], optionDescriptions: { dukascopy: "Daily CSVs 'Gmt time,Ask,Bid,AskVolume,BidVolume' named *_Ticks_dd.mm.yyyy-dd.mm.yyyy.csv" } },
+    { key: "symbol", label: "Symbol", type: "text", placeholder: "USDJPY" },
+    { key: "from_ts", label: "From (file date)", type: "date" },
+    { key: "to_ts", label: "To (file date, inclusive)", type: "date" },
+    { key: "bar", label: "Bar Interval", type: "text", placeholder: "1min", hint: "pandas offset, e.g. 1min, 5min" },
+  ],
   manual_upload: [],
 };
 
@@ -246,6 +254,14 @@ export const TYPE_DEFAULTS: Record<string, Record<string, string>> = {
     start_ts: "2024-01-01",
     seed: "42",
   },
+  tick_aggregate: {
+    path: "",
+    format: "dukascopy",
+    symbol: "",
+    from_ts: "",
+    to_ts: "",
+    bar: "1min",
+  },
   manual_upload: {},
 };
 
@@ -267,6 +283,11 @@ export const TYPE_DESCRIPTIONS: Record<string, { label: string; description: str
     label: "Economic Calendar",
     description:
       "Download historical economic indicator releases (CPI, NFP, unemployment, Fed rate decisions) from Alpha Vantage or FRED. Stored as long-format parquet indexed by release date.",
+  },
+  tick_aggregate: {
+    label: "Tick Aggregate",
+    description:
+      "Aggregate local tick exports (Dukascopy) into microstructure bars: mid OHLC, spread, tick count, top-of-book sizes, order-book imbalance and order-flow imbalance (OFI).",
   },
   synthetic_function: {
     label: "Synthetic Function",

@@ -471,6 +471,9 @@ def _run_collector(datasource_type: str, datasource_id: int, config: dict, incre
     elif datasource_type == "synthetic_function":
         from data.collectors.synthetic_function import collect
         return collect(datasource_id, config)
+    elif datasource_type == "tick_aggregate":
+        from data.collectors.tick_aggregate import collect
+        return collect(datasource_id, config)
     elif datasource_type == "llm_typed_decisions":
         from data.collectors.llm_typed_decisions import collect
         return collect(datasource_id, config)
