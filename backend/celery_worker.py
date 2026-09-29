@@ -630,6 +630,16 @@ def _json_safe(value):
     return value
 
 
+def _json_safe_deep(value):
+    """_json_safe applied through nested dicts/lists -- e.g. dataset characteristics, where a
+    statistic of a column with a leading NaN (a per-bar return's first row) can come out NaN."""
+    if isinstance(value, dict):
+        return {k: _json_safe_deep(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_deep(v) for v in value]
+    return _json_safe(value)
+
+
 async def _resolve_training_context(factory, training_run_id: int):
     """Load the TrainingRun + MLModel, resolve preprocessing (recipe or inline) + the dataset
     artifact, snapshot the resolved hyperparams back onto the run, and flip status to
@@ -759,7 +769,7 @@ async def _run_arima_training(factory, training_run_id: int, model_id: int, arch
         ))
         await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
             status="completed", current_epoch=1, best_epoch=1, val_loss=metrics["mse"],
-            num_params=fit_result["n_params"], preprocessed_characteristics=preprocessed_characteristics,
+            num_params=fit_result["n_params"], preprocessed_characteristics=_json_safe_deep(preprocessed_characteristics),
             artifact_path=str(artifact_path.relative_to(store)), ended_at=datetime.now(timezone.utc), eta_seconds=0,
         ))
         await db.execute(update(MLModel).where(MLModel.id == model_id).values(status="trained"))
@@ -1267,7 +1277,7 @@ async def _train_model(training_run_id: int) -> dict:
                 preprocessed_characteristics = {**preprocessed_characteristics, "token_characteristics_error": str(e)}
         async with factory() as db:
             await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
-                num_params=num_params, preprocessed_characteristics=preprocessed_characteristics
+                num_params=num_params, preprocessed_characteristics=_json_safe_deep(preprocessed_characteristics)
             ))
             await db.commit()
 
