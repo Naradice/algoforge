@@ -359,8 +359,15 @@ async def assess_target_difficulty(
     Args:
         dataset_id: OHLC dataset with a close column (1-minute or other regular bars).
         target:     future_log_rv (log RMS of the next horizon returns), vol_change (that minus the
-                    log RMS of the last horizon inputs), or jump (any |r| in the next horizon
-                    returns > 4x the window RMS).
+                    log RMS of the last horizon inputs), jump (any |r| in the next horizon
+                    returns > 4x the window RMS), future_return (log return over the next horizon
+                    bars; reference 0), direction (up vs down over the horizon; flat windows
+                    dropped), extreme (any |r| in the horizon above the series' 99.9% |r|
+                    quantile), trend_er (efficiency ratio |net move| / path length of the next
+                    horizon returns: trend vs range), trend_change (that minus the ER of the last
+                    horizon inputs). For future_return / direction the baselines also get the raw
+                    lagged returns. result.metrics.linear.ci95_vs_reference tells whether the
+                    linear baseline beats persistence / the base rate at all.
         horizon:    number of future returns in the target (1..240).
         obs:        input returns per window (5..240).
         with_time:  give models time-of-day/weekday features.

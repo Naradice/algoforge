@@ -32,7 +32,7 @@ import pandas as pd
 from model_core.analysis.bootstrap import paired_block_bootstrap_ci
 from model_core.analysis.features import SCALES, har_features, linear_extras, time_features, vol_memory_features
 from model_core.analysis.splits import blocked_split
-from model_core.analysis.targets import CLASSIFICATION, EPS, make_target, rms
+from model_core.analysis.targets import CLASSIFICATION, SIGNED, make_target, persistence
 from model_core.analysis.windows import build_return_windows
 
 NONLINEAR = ("hgb", "mlp", "knn")
@@ -82,7 +82,11 @@ def assess_target(
     if len(w) < 1000:
         raise ValueError(f"only {len(w)} gap-free windows -- not enough to assess")
     y = make_target(target, w.X, w.F, horizon, **(target_kwargs or {}))
+    defined = np.isfinite(y)
+    if not defined.all():                     # e.g. direction over a flat future
+        w, y = w.take(np.flatnonzero(defined)), y[defined]
     classification = target in CLASSIFICATION
+    signed = target in SIGNED
 
     rng = np.random.default_rng(seed)
     tr, te = blocked_split(w.day, test_frac=test_frac, purge=obs + horizon, seed=seed)
@@ -93,8 +97,9 @@ def assess_target(
     base = vol_memory_features(w.X)
     ts = w.anchor_ts if with_time else None
     clock = time_features(w.anchor_ts) if with_time else np.empty((len(w), 0))
-    F_lin = np.c_[base, linear_extras(w.X, ts), clock]
-    F_tree = np.c_[base, clock]
+    lags = w.X if signed else np.empty((len(w), 0))    # AR(obs) term for sign-dependent targets
+    F_lin = np.c_[base, linear_extras(w.X, ts), clock, lags]
+    F_tree = np.c_[base, clock, lags]
     knn_cols = np.c_[har_features(w.X), base[:, -3:], clock]
     Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
     Mlp_tr, Mlp_te = _std(np.c_[F_tree[tr], w.X[tr]], np.c_[F_tree[te], w.X[te]])
@@ -120,9 +125,7 @@ def assess_target(
                        "auc": float(roc_auc_score(yte, p)) if m != "base_rate" else 0.5}
                    for m, p in preds.items()}
     else:
-        h_in = min(horizon, obs)
-        preds["persistence"] = (np.log(rms(w.X[te, -h_in:]) + EPS) if target == "future_log_rv"
-                                else np.zeros(len(te)))
+        preds["persistence"] = persistence(target, w.X[te], horizon)
         preds["linear"] = RidgeCV(alphas=[0.1, 1, 10, 100, 1000]).fit(Lin_tr, ytr).predict(Lin_te)
         if "hgb" in models:
             preds["hgb"] = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05, random_state=seed) \
@@ -135,6 +138,12 @@ def assess_target(
         var = float(yte.var())
         loss = {m: (yte - p) ** 2 for m, p in preds.items()}
         metrics = {m: {"mse": float(loss[m].mean()), "r2": float(1 - loss[m].mean() / var)} for m in preds}
+
+    ref = "base_rate" if classification else "persistence"
+    lo, hi = paired_block_bootstrap_ci(loss[ref], loss["linear"], groups, n_boot=n_boot, seed=seed + 2)
+    gain = float(loss[ref].mean() - loss["linear"].mean())
+    metrics["linear"].update({"reference": ref, "gain_vs_reference": gain,
+                              "gain_rel_vs_reference": gain / float(loss[ref].mean()), "ci95_vs_reference": [lo, hi]})
 
     for m in models:
         if m in loss:

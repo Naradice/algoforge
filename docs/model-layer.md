@@ -266,7 +266,16 @@ bootstrap CI of each model's loss gain over linear. It returns the metrics and a
 
 Targets (`model_core.analysis.targets`, realized volatility always as RMS of log returns):
 `future_log_rv` (log RMS of the next `horizon` returns), `vol_change` (that minus the log RMS of the
-last `horizon` inputs), `jump` (any |r| in the next `horizon` returns > 4 × the window's RMS).
+last `horizon` inputs), `jump` (any |r| in the next `horizon` returns > 4 × the window's RMS),
+`future_return` (log return over the next `horizon` bars; reference forecast 0), `direction` (up vs
+down; windows with no net move are dropped), `extreme` (any |r| in the horizon above the series'
+99.9 % |r| quantile — an absolute threshold, so largely a volatility question), `trend_er` (efficiency
+ratio |net move| / path length of the future returns — trend vs range; reference: the ER of the last
+`horizon` inputs) and `trend_change` (future ER minus that past ER). For the sign-dependent targets
+(`future_return`, `direction`) the linear and tree baselines also get every raw lagged return (an
+AR(`obs`) term). `metrics.linear.ci95_vs_reference` is the paired day-block CI of the linear
+baseline's loss gain over persistence / the base rate — for return targets, whether there is any
+signal at all.
 Reference results (2026-09-28): USDJPY `future_log_rv` 20 / 60 → `tree_only_headroom` (linear
 R² 0.715 / 0.757, HistGB +6.4% / +5.0%, MLP −6% / −10%); DDM v3_shock `future_log_rv` 20 →
 `unpredictable` (linear R² 0.037). The building blocks are importable on their own:

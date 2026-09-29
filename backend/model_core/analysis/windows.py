@@ -18,6 +18,9 @@ class ReturnWindows:
     def __len__(self) -> int:
         return len(self.X)
 
+    def take(self, idx: np.ndarray) -> "ReturnWindows":
+        return ReturnWindows(X=self.X[idx], F=self.F[idx], anchor_ts=self.anchor_ts[idx], day=self.day[idx])
+
 
 def build_return_windows(close: pd.Series, obs: int = 60, horizon: int = 20,
                          expected_delta: pd.Timedelta | None = None) -> ReturnWindows:

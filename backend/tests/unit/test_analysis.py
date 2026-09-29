@@ -129,3 +129,50 @@ def test_verdict_distinguishes_tree_only_headroom():
     weak = {"linear": {"r2": 0.037}, "persistence": {"r2": -0.7}, "hgb": g(0.003, -0.001)}
     assert _verdict(weak, False, ("hgb",), 0.02, 0.95, 0.99, 0.05)[0] == "unpredictable"
 
+
+
+def test_return_and_regime_targets():
+    X = np.tile(np.r_[0.01, -0.01], 30)[None, :].repeat(2, 0)          # a pure range: ER 0
+    F = np.array([np.full(20, 0.01), np.r_[np.full(10, 0.01), np.full(10, -0.01)]])
+    np.testing.assert_allclose(make_target("future_return", X, F, 20), [0.2, 0.0], atol=1e-12)
+    d = make_target("direction", X, F, 20)
+    assert d[0] == 1 and np.isnan(d[1])                                 # flat future is undefined
+    np.testing.assert_allclose(make_target("trend_er", X, F, 20), [1.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(make_target("trend_change", X, F, 20), [1.0, 0.0], atol=1e-12)
+    assert make_target("extreme", X, F * 2, 20).tolist() == [1, 1]       # 0.02 > the 0.01 |r| quantile
+    with pytest.raises(ValueError):
+        make_target("trend_change", X[:, :10], F, 20)                   # needs horizon <= obs
+
+
+def _ar_series(phi=-0.3, n_days=40, per_day=400, seed=0):
+    rng = np.random.default_rng(seed)
+    idx, vals, price = [], [], 100.0
+    for d in range(n_days):
+        e = rng.normal(0, 1e-3, per_day)
+        r = np.empty(per_day)
+        r[0] = e[0]
+        for k in range(1, per_day):
+            r[k] = phi * r[k - 1] + e[k]
+        p = price * np.exp(np.cumsum(r))
+        price = p[-1]
+        idx.append(pd.date_range(pd.Timestamp("2024-01-01") + pd.Timedelta(days=d), periods=per_day, freq="1min"))
+        vals.append(p)
+    return pd.Series(np.concatenate(vals), index=idx[0].append(idx[1:]))
+
+
+def test_assess_finds_return_signal_through_lagged_returns():
+    s = _ar_series()
+    r = assess_target(s, target="future_return", horizon=1, obs=20, with_time=False, models=("hgb",), n_boot=100)
+    lin = r["metrics"]["linear"]
+    assert lin["r2"] > 0.05 and lin["reference"] == "persistence" and lin["ci95_vs_reference"][0] > 0
+    assert r["verdict"] != "unpredictable"
+    r = assess_target(s, target="direction", horizon=1, obs=20, with_time=False, models=("hgb",), n_boot=100)
+    assert r["metrics"]["linear"]["auc"] > 0.55 and r["metrics"]["linear"]["ci95_vs_reference"][0] > 0
+
+
+def test_assess_drops_undefined_windows():
+    s = _ar_series(phi=0.0, n_days=30, per_day=300)
+    s = (s * 100).round() / 100                                       # coarse ticks: many flat futures
+    r = assess_target(s, target="direction", horizon=1, obs=20, with_time=False, models=("hgb",), n_boot=50)
+    w = build_return_windows(s, obs=20, horizon=1)
+    assert r["n_windows"] < len(w) and 0.3 < r["positive_rate"] < 0.7
