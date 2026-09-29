@@ -33,7 +33,7 @@ import pandas as pd
 
 from model_core.analysis.bootstrap import paired_block_bootstrap_ci
 from model_core.analysis.features import (
-    aux_features, aux_hour_interactions, exog_features, future_aux_mean, har_features, past_aux_mean, linear_extras, market_features, time_features, trend_features,
+    _window_means, aux_features, aux_hour_interactions, exog_features, weekly_profile, future_aux_mean, har_features, past_aux_mean, linear_extras, market_features, time_features, trend_features,
     vol_memory_features,
 )
 from model_core.analysis.splits import blocked_split, chronological_split, holdout_split
@@ -77,6 +77,7 @@ def assess_target(
     market: bool = False,
     test_period: tuple | None = None,
     aux: pd.DataFrame | None = None,
+    weekly: bool = False,
 ) -> dict:
     """Score persistence, the strong linear baseline and nonlinear `models` on `target` built from
     `close` (a DatetimeIndex-ed price series), and return metrics plus a verdict (module docstring).
@@ -100,7 +101,12 @@ def assess_target(
     `aux`: row-level non-price series on `close`'s index (e.g. log volume, a signed-flow proxy),
     already transformed. Models get each one's mean over the last 1/5/20/60 bars, scored like
     `exog` (`linear_own` without them). target="future_aux" forecasts aux column 0's mean over the
-    next `horizon` bars (persistence: its mean over the last `horizon` bars)."""
+    next `horizon` bars (persistence: its mean over the last `horizon` bars).
+
+    `weekly=True` (needs with_time) gives the linear baseline weekday x hour dummies, and with `aux`
+    also their products with each aux series' 20-bar mean -- a weekly seasonal profile the trees can
+    otherwise build from the clock features and the linear model cannot. Added to the own-block for
+    the dummies (linear_own gets them) and to the aux block for the products."""
     from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
     from sklearn.linear_model import LogisticRegression, RidgeCV
     from sklearn.metrics import roc_auc_score
@@ -167,10 +173,14 @@ def assess_target(
     lags = w.X if signed else np.empty((len(w), 0))    # AR(obs) term for sign-dependent targets
     trend = trend_features(w.X) if target in REGIME else np.empty((len(w), 0))
     E = np.c_[M if M is not None else exog_features(w), aux_features(w)]   # other instruments / market / aux
-    F_own = np.c_[base, linear_extras(w.X, ts), clock, lags, trend]
+    wk = weekly and with_time
+    F_own = np.c_[base, linear_extras(w.X, ts), clock, lags, trend,
+                  weekly_profile(w.anchor_ts) if wk else np.empty((len(w), 0))]
     # Linear-only: hour x aux terms (the aux analogue of linear_extras' hour x RMS) -- part of the
     # aux block, so linear_own does not get them either.
-    F_lin = np.c_[F_own, E, aux_hour_interactions(w) if with_time else np.empty((len(w), 0))]
+    wk_aux = (weekly_profile(w.anchor_ts, _window_means(w.aux_v, w.t, [min(20, obs)])[0])[:, 168:]
+              if wk and w.aux_v is not None else np.empty((len(w), 0)))
+    F_lin = np.c_[F_own, E, aux_hour_interactions(w) if with_time else np.empty((len(w), 0)), wk_aux]
     F_tree = np.c_[base, clock, lags, trend, E]
     knn_cols = np.c_[har_features(w.X), base[:, -3:], clock, trend]
     Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
@@ -245,7 +255,7 @@ def assess_target(
     verdict, reason = _verdict(metrics, classification, models, headroom_threshold, trivial_r2,
                                trivial_auc, min_signal_r2)
     return {
-        "target": target, "horizon": horizon, "obs": obs, "with_time": with_time,
+        "target": target, "horizon": horizon, "obs": obs, "with_time": with_time, "weekly": wk,
         "exog": list(w.exog_names) + list(w.aux_names) + (["market"] if market else []),
         "instruments": names if panel else None, "split": split, "bootstrap_group": bootstrap_group,
         "test_period": [str(w.anchor_ts[te].min()), str(w.anchor_ts[te].max())],

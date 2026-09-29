@@ -335,3 +335,14 @@ def test_aux_hour_interactions_shape():
     w = build_return_windows(close, obs=20, horizon=5, aux=aux)
     H = aux_hour_interactions(w)
     assert H.shape == (len(w), 24) and np.count_nonzero(H[0]) <= 1
+
+
+def test_weekly_profile_baseline_runs():
+    from model_core.analysis.features import weekly_profile
+    ts = pd.date_range("2024-01-01", periods=10, freq="1h")
+    D = weekly_profile(ts, np.ones((10, 2)))
+    assert D.shape == (10, 168 * 3) and D[:, :168].sum() == 10
+    close, aux = _volume_driven(n_days=20, per_day=300)
+    r = assess_target(close, target="future_aux", horizon=20, obs=20, models=("hgb",), n_boot=50,
+                      aux=aux, weekly=True)
+    assert r["weekly"] is True and np.isfinite(r["metrics"]["linear"]["r2"])

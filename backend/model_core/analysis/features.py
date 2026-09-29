@@ -117,3 +117,14 @@ def aux_hour_interactions(w) -> np.ndarray:
     hour = np.eye(24)[w.anchor_ts.hour.to_numpy()]
     m = _window_means(w.aux_v, w.t, [min(20, w.X.shape[1])])[0]
     return np.column_stack([hour[:, a] * m[:, c] for c in range(m.shape[1]) for a in range(24)])
+
+
+def weekly_profile(ts: pd.DatetimeIndex, level: np.ndarray | None = None) -> np.ndarray:
+    """Weekday x hour dummies (7 x 24): a linear model's weekly seasonal profile. With `level`
+    [n, m] (e.g. 20-bar aux means) also each dummy x level column -- the weekly profile of
+    persistence. Wide (168 or 168 x (1 + m) columns); opt-in via assess_target(weekly=True)."""
+    cell = ts.dayofweek.to_numpy() * 24 + ts.hour.to_numpy()
+    D = np.eye(168)[cell]
+    if level is None:
+        return D
+    return np.column_stack([D] + [D * level[:, [c]] for c in range(level.shape[1])])
