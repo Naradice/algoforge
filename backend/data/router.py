@@ -182,7 +182,9 @@ async def trigger_collection(datasource_id: int, db: AsyncSession = Depends(get_
         job = await data_service.trigger_datasource_collection(db, datasource_id)
     except AlreadyRunningError as exc:
         raise HTTPException(status_code=409, detail={"code": "ALREADY_RUNNING", "message": str(exc)})
-    return DataResponse(data={"job_id": job.id, "status": job.status})
+    # job.status is still the previous run's (e.g. "error") until the worker picks the task up;
+    # report what just happened so callers do not enqueue it again.
+    return DataResponse(data={"job_id": job.id, "status": "queued", "previous_status": job.status})
 
 
 # ── Datasource config ──────────────────────────────────────────────────────────
