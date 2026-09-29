@@ -577,6 +577,47 @@ model. Volatility and trading activity are predictable; only activity shows a si
 activity forecasting — conditional on first showing that a neural sequence model, trained from
 scratch, can match the trees there.
 
+## Phase 11 — scratch neural baselines on activity forecasting (2026-09-30)
+
+Question (the prerequisite for any pretraining study on this target): can a neural sequence model,
+trained from scratch, match the gradient-boosted trees on the one target with sizeable nonlinear
+headroom — the mean log tick count over the next 20 minutes (Phase 10D/E)?
+
+Setup (`backend/phase11_activity_scratch.py`, output `backend/phase11_activity_scratch.json`):
+dataset 165 (USDJPY Dukascopy ticks → 1-minute bars), most recent 500k rows (2021-11..2023-03).
+Same information for every model: per-bar log return, log tick count, log spread, order-book
+imbalance, signed-log OFI, time of day and weekday, over 60 input bars. One day-level split drawn
+once (295 train / 41 val / 83 test days, `phase11_split_days.json`); a window is used only if all
+its rows lie on days of one role — the new `OHLCWindowDataset` `split_mode="days"`, with the same
+rule applied to the baselines. Val is used only for early stopping / hyperparameter selection;
+every model is scored once on the 86,800 test windows (identical window sets: target mismatch
+3.6e-7). The Transformer is the Phase 6–9 decoder_only config trained as AlgoForge TrainingRuns
+1628–1630 (3 seeds, early stopping on val). Tuned on val: ridge alpha; HistGB learning rate /
+leaves / min leaf size / iterations (8 settings); sklearn MLP width / L2 (6 settings) on the tree
+features plus the raw 60 × 5 channels, then 3 seeds.
+
+| Model | Test R² | vs linear | vs HistGB (95 % CI of loss gain) |
+|---|---|---|---|
+| linear (ridge) | 0.876 | — | −11.6 % |
+| **HistGB (tuned)** | **0.889** | **+10.4 %** | — |
+| Transformer, seeds 0 / 1 / 2 | 0.877 / 0.877 / 0.876 | +0.8 / +0.6 / −0.0 % | −10.7 / −10.9 / −11.6 % (CIs < 0) |
+| Transformer, mean of 3 seeds | 0.880 | +3.4 % | −7.9 % (CI < 0) |
+| MLP (tuned), seeds 0 / 1 / 2 | 0.842 / 0.819 / 0.845 | −27 / −46 / −25 % | −39 … −63 % |
+| MLP, mean of 3 seeds | 0.862 | −10.8 % | −23.7 % |
+
+- Outcome B: Transformer < HistGB. The Transformer reaches the linear model (single seeds) or
+  slightly above it (3-seed average, +3.4 %), and stays 8–12 % behind the trees with CIs well
+  below zero. The tuned MLP remains worse than linear.
+- The Transformer's best validation check came early (steps 2k–4k of a 30k budget, stopped after
+  5 non-improving checks) — it fits what linear fits and then overfits rather than finding the
+  trees' structure. Only the Phase 6–9 architecture config was tried; its hyperparameters were not
+  tuned for this target.
+
+Implication for the original question: on this target a synthetic-pretraining study would ask
+"can pretraining lift a neural model up to trees", not "does transfer give new predictive ability".
+Together with Phases 8–10, no financial downstream task in the available data currently meets the
+precondition (a neural model that can represent structure linear models miss).
+
 ## Open questions
 
 - What N3 (dt=0.0125) lacks that N1 (dt=0.01) has, for the same attractor — the window-scale

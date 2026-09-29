@@ -188,13 +188,15 @@ def transformer_test_predictions(run_ids: list[int], hp_seed0: dict):
     import database
     from sqlalchemy import select
 
-    async def runs():
+    from data.models import Dataset
+
+    async def runs():        # one event loop for every query: the pooled engine is bound to it
         async with database.async_session_factory() as db:
             rows = (await db.execute(select(TrainingRun).where(TrainingRun.id.in_(run_ids)))).scalars().all()
-            return {r.id: (r.status, r.artifact_path, r.hyperparams) for r in rows}
+            ds = (await db.execute(select(Dataset).where(Dataset.id == DATASET_ID))).scalar_one()
+            return {r.id: (r.status, r.artifact_path, r.hyperparams) for r in rows}, ds.artifact_path
 
-    info = asyncio.run(runs())
-    _, path = load_frame()
+    info, path = asyncio.run(runs())
     hp = hp_seed0
     ds = OHLCWindowDataset(path, obs_len=hp["obs_len"], pred_len=hp["pred_len"], feature_cols=hp["feature_cols"],
                            normalize="zscore", val_split=0.2, preprocessing=hp["preprocessing"], max_rows=hp["max_rows"],
@@ -309,7 +311,7 @@ def evaluate(run_ids: list[int]) -> None:
     ti = anchor_t.get_indexer(common)
     yb = y_te[bi]
     gap = float(np.max(np.abs(yb - y_t[ti])))
-    print(f"test windows: baselines {len(te)}, transformer {len(anchor_t)}, common {len(common)}; "
+    print(f"test windows: baselines {len(base_anchor)}, transformer {len(anchor_t)}, common {len(common)}; "
           f"max target mismatch {gap:.2e}", flush=True)
     all_preds = {k: p[bi] for k, p in preds.items()} | {k: p[ti] for k, p in tpreds.items()}
     groups = np.asarray(common.normalize().asi8)
