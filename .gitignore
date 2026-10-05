@@ -18,3 +18,5 @@ backend/model_core/build/
 tsconfig.tsbuildinfo
 .github
 .vscode
+# Celery Beat runtime state (incl. SQLite -shm/-wal and shelve .dat/.dir/.bak variants)
+celerybeat-schedule*
