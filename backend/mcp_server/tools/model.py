@@ -35,13 +35,21 @@ async def list_models() -> list[dict]:
 
 
 @mcp.tool()
-async def get_model_training_runs(model_id: int) -> list[dict]:
+async def get_model_training_runs(model_id: int, include_packages: bool = False) -> list[dict]:
     """
     Get training run history for a model, ordered newest first.
-    Shows training status, best epoch, validation loss, and hyperparameters.
+    Shows training status, best epoch, validation loss, hyperparameters, and run_environment:
+    the code and environment each run executed with (git_commit, git_dirty, git_diff_sha256,
+    worker_git_commit / code_changed_since_worker_start, python, torch, cuda, gpu,
+    packages_sha256). Use it to reproduce a run or check two runs used the same code.
+    run_environment is null for runs started before it was recorded and for Colab runs (see
+    hyperparams._external_ref.git_commit for those).
 
     Args:
-        model_id: ID of the ML model.
+        model_id:          ID of the ML model.
+        include_packages:  Also return the full installed-package list ("name==version") per
+                           run. Off by default because it is long; packages_sha256 tells
+                           whether two runs' lists are identical.
     """
     from database import db_session
     from model.models import TrainingRun
@@ -67,9 +75,19 @@ async def get_model_training_runs(model_id: int) -> list[dict]:
             "started_at": r.started_at.isoformat() if r.started_at else None,
             "ended_at": r.ended_at.isoformat() if r.ended_at else None,
             "artifact_path": r.artifact_path,
+            "run_environment": _run_environment_view(r.run_environment, include_packages),
         }
         for r in rows
     ]
+
+
+def _run_environment_view(env: dict | None, include_packages: bool) -> dict | None:
+    if env is None or include_packages:
+        return env
+    view = {k: v for k, v in env.items() if k != "packages"}
+    if "packages" in env:
+        view["packages_count"] = len(env["packages"] or [])
+    return view
 
 
 @mcp.tool()

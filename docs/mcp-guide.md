@@ -50,7 +50,7 @@ The MCP server is mounted at `http://localhost:8000/mcp` using SSE transport. Ad
 | `get_target_assessment(assessment_id)` | Status and result: `verdict` = `trivial` (target likely overlaps the input), `unpredictable`, `no_headroom`, `tree_only_headroom` (only trees gain — weak case for a Transformer), `headroom` (a neural net beats linear — worth studying); `reason`; `result.metrics` per model. See docs/model-layer.md "Assessing a target before training" |
 | `get_queue_status()` | Workers and queues: per queue `pending` / `workers` / `busy`; per worker `started_at`, `code_revision`, `stale_code` (loaded code older than the repository HEAD), `code_dirty`, `current_task`, `host_memory`. Check before dispatching: `workers == 0` means nothing will pick the job up |
 | `stop_training_run(training_run_id, force=False)` | Gracefully stop training. `force=True` ends a worker-lost run immediately (status `error`, `error_message` set, `training.error` dispatched) — only allowed when its heartbeat is stale, or it has none and started more than the stale threshold ago; a live run gets `409 RUN_NOT_STALE`. Stale runs are also reaped automatically (see below) |
-| `get_model_training_runs(model_id)` | List training run history |
+| `get_model_training_runs(model_id, include_packages=False)` | List training run history, including each run's `run_environment` (git commit / uncommitted-change state, Python, torch/CUDA/GPU, `packages_sha256`; the full package list only with `include_packages=true`) — see `model-layer.md` → Training Lifecycle |
 | `get_model_validations(model_id)` | Get validation metrics |
 | `compare_model_runs(model_id)` | Compare runs ranked by val_loss |
 | `deploy_model(model_id, training_run_id)` | Deploy best run |

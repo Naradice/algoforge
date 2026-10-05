@@ -90,6 +90,11 @@ class TrainingRun(Base):
     # truncation (a real bug that went undetected through an entire DDM data-volume investigation
     # phase) shows up immediately instead of requiring after-the-fact numerical detective work.
     data_provenance: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Which code and packages the run executed with: git commit / uncommitted-change state,
+    # Python, torch/CUDA/GPU, installed packages. Written by the worker when the run starts
+    # (model/run_environment.py). NULL for runs started before this existed and for Colab runs,
+    # whose commit is pinned in hyperparams["_external_ref"] instead.
+    run_environment: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     stop_requested: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="false")
     # Liveness (requirements.md R-13, model/heartbeat.py): refreshed ~every minute by the worker
     # executing the run; a `running` run whose heartbeat goes stale is reaped to `error` with
@@ -236,6 +241,7 @@ class TrainingRunRead(BaseModel):
     num_params: int | None
     preprocessed_characteristics: dict[str, Any] | None
     data_provenance: dict[str, Any] | None
+    run_environment: dict[str, Any] | None = None
     artifact_path: str | None
     started_at: datetime | None
     ended_at: datetime | None

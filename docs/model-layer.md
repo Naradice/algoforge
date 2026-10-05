@@ -421,6 +421,33 @@ When a run references a `PreprocessedDataset`, the worker also snapshots the rec
 self-describing (what data it actually trained on) even if its recipe is later renamed or
 deleted.
 
+The same update also records **`TrainingRun.run_environment`** (`model/run_environment.py`):
+which code and packages the run executed with, so it can be re-run later.
+- `git_commit` is the full SHA of HEAD.
+- `git_dirty`, `git_dirty_files` and `git_diff_sha256` describe uncommitted changes to tracked
+  files under `backend/`. The hash identifies the exact uncommitted state.
+- `git_remote` has any credentials stripped.
+- `worker_git_commit` is HEAD when the worker process started, and
+  `code_changed_since_worker_start` compares it with HEAD at run start. A worker keeps running
+  the code it imported at startup, so `true` means the run executed older code than
+  `git_commit` says.
+- `python`, `platform`, `torch`, `cuda` and `gpu` describe the environment.
+- `packages` is the full `name==version` list, and `packages_sha256` lets you compare two runs'
+  lists quickly.
+
+Recording is best-effort. A failure stores `{"error": ...}` and never aborts training.
+
+In the Docker dev containers only `backend/` is mounted, so `git` isn't available there. Set
+`ALGOFORGE_CODE_REVISION` (the same override `ops/worker_registry.py` uses) and optionally
+`ALGOFORGE_CODE_DIRTY=1`, or mount the repo's `.git`. Otherwise `git_commit` is `null` and
+`git_unavailable_reason` says why.
+
+`run_environment` is `null` in two cases. Runs started before this existed are one. Colab runs
+are the other: their code is pinned by the generated notebook instead, in
+`hyperparams._external_ref.git_commit`. The value is returned by
+`GET /models/{id}/training-runs` and by the MCP `get_model_training_runs` tool, which omits the
+package list unless `include_packages=true`.
+
 ---
 
 ## Deployment

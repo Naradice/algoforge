@@ -42,8 +42,14 @@ from datetime import datetime, timezone
 
 from celery_app import celery_app
 from webhooks.dispatcher import dispatch
+from model import run_environment
 
 logger = logging.getLogger("celery_worker")
+
+# HEAD of the code this worker process loads, recorded once at import (before prefork children
+# fork, so they inherit it). Each training run compares it with HEAD at run start -- see
+# model/run_environment.py's code_changed_since_worker_start.
+run_environment.record_worker_start()
 
 
 # ---------------------------------------------------------------------------
@@ -655,6 +661,10 @@ async def _resolve_training_context(factory, training_run_id: int):
     from model.models import MLModel, TrainingRun
     from model_core.architectures import TRAINING_DEFAULTS
 
+    # Code + package fingerprint (model/run_environment.py) so the run can be re-run later with
+    # the same code. Taken before opening the transaction: it shells out to git. Never raises.
+    run_env = run_environment.capture()
+
     async with factory() as db:
         result = await db.execute(select(TrainingRun).where(TrainingRun.id == training_run_id))
         run = result.scalar_one_or_none()
@@ -703,7 +713,8 @@ async def _resolve_training_context(factory, training_run_id: int):
             }
 
         await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
-            status="running", started_at=datetime.now(timezone.utc), hyperparams=snapshot_hp
+            status="running", started_at=datetime.now(timezone.utc), hyperparams=snapshot_hp,
+            run_environment=run_env,
         ))
         await db.execute(update(MLModel).where(MLModel.id == model_rec.id).values(status="training"))
         await db.commit()
