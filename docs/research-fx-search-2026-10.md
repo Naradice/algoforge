@@ -43,3 +43,18 @@ Maxdrawdown −13% (10%-vol-per-leg units) vs −25% for plain carry. Robust to 
 currency-year rate (20 draws: mean SR 0.59, worst 0.52 all-sample, 0.15 post-2009). Mom5/mom120 variants were
 unstable (sign flips between neighbours) → only 60/250 used. Caveat: most of the all-sample carry P&L is 2001–06;
 2008 carry crash (−14%) is the dominant risk; rates are approximate.
+
+## Round 3 — real rates (FRED) replace approximate ones
+`d1.py` now uses FRED 3-month interbank rates (IR3TIB01{US,EZ,GB,JP,AU,CH}M156N; JPY pre-2002 from IRSTCB01JPM156N),
+1-month lag, daily forward-fill. Download: `https://fred.stlouisfed.org/graph/fredgraph.csv?id=<ID>` into
+`artifacts/research/fx/rates/` (not tracked). Results barely moved, i.e. the conclusions do not rely on my rate guesses:
+
+| | SR all | 2009+ | 2023+ | maxDD |
+|---|---|---|---|---|
+| carry, sign | 0.42 | 0.26 | 0.79 | −24% |
+| carry*, diff-weighted + vol guard | 0.52 | 0.32 | 0.80 | −23% |
+| **0.65 carry* + 0.35 mom60/250** | **0.58** | **0.41** | **0.80** | **−14%** |
+
+Negative / rejected (`ext.py`): rate-change momentum (SR 0.08–0.14), cross-sectional carry top-2/bottom-2 (0.29 < sign carry),
+daily GBM on carry/momentum/vol features (IC −0.075 pooled, net SR −0.5; no usable edge, sign-flipping it would be snooping).
+Data end 2025-05 (MT5 D1); no later FX price data located locally.

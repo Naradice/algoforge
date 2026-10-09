@@ -16,7 +16,16 @@ def load_c():
     return C
 C = load_c(); LR = np.log(C).diff().fillna(0)
 VOL = LR.rolling(60, min_periods=20).std().shift(1)
-CARRY = pd.DataFrame({s: (RATES[s[:3]] - RATES[s[3:]]).reindex(C.index.year).values for s in PAIRS}, index=C.index)
+import pathlib
+_RD = pathlib.Path(__file__).resolve().parents[3] / "artifacts" / "research" / "fx" / "rates"
+def _fred(i): d = pd.read_csv(_RD / f"{i}.csv", index_col=0, parse_dates=True).iloc[:, 0]; return pd.to_numeric(d, errors="coerce").dropna() / 100
+_ids = {"USD": "IR3TIB01USM156N", "EUR": "IR3TIB01EZM156N", "GBP": "IR3TIB01GBM156N", "JPY": "IR3TIB01JPM156N", "AUD": "IR3TIB01AUM156N", "CHF": "IR3TIB01CHM156N"}
+_m = pd.DataFrame({k: _fred(v) for k, v in _ids.items()})
+_m["JPY"] = _m["JPY"].fillna(_fred("IRSTCB01JPM156N"))
+RD = _m.shift(1).reindex(C.index.union(_m.index)).ffill().reindex(C.index)   # month-start values, 1-month lag, daily ffill
+RD = RD.ffill().bfill()
+USE_FRED = True
+CARRY = pd.DataFrame({s: (RD[s[:3]] - RD[s[3:]]) for s in PAIRS}, index=C.index)
 def scale(s, tgt=0.10): return (tgt / np.sqrt(252) / VOL[s]).clip(upper=5).fillna(0)
 def book(sig, reb="M", carry_on=True):
     """sig: DataFrame of desired direction per pair; rebalance at period end, applied next day."""
@@ -36,7 +45,7 @@ def sig_mom(L): sc = ccy_scores(L); return pd.DataFrame({s: np.sign(sc[s[:3]] - 
 def sig_carry(thr=0.005): return np.sign(CARRY) * (CARRY.abs() > thr)
 def sig_xcarry(k=2):
     """Cross-sectional: long top-k, short bottom-k currencies by rate."""
-    rk = pd.DataFrame({c: RATES[c].reindex(C.index.year).values for c in CCY}, index=C.index)
+    rk = RD[CCY]
     r = rk.rank(axis=1); w = (r > len(CCY) - k).astype(float) - (r <= k).astype(float)
     return pd.DataFrame({s: np.sign(w[s[:3]] - w[s[3:]]) for s in PAIRS})
 def rep(n, r):
