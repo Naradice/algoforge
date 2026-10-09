@@ -79,7 +79,7 @@ The `id` becomes the column name referenced in conditions.
 | `bb` | `<id>_upper`, `<id>_middle`, `<id>_lower` | `period`, `std_dev` |
 | `slope` | `<id>` | `period`, `column` |
 | `renko` | `<id>_direction`, `<id>_flip`, `<id>_momentum` | `atr_window`, `brick_size` |
-| `carry` | `<id>` (annual base-quote 3m rate differential), `<id>_w` (diff/`scale` clipped to ±`cap`, 0 inside ±`threshold`) | `base`, `quote`, `threshold`=0.005, `scale`=0.03, `cap`=1.5, `rates_dir` (FRED CSVs in `$ARTIFACT_STORE_PATH/research/fx/rates`). Engine P&L is price-only: swap/rollover accrual is not modelled. |
+| `carry` | `<id>` (annual base-quote 3m rate differential), `<id>_w` (diff/`scale` clipped to ±`cap`, 0 inside ±`threshold`) | `base`, `quote`, `threshold`=0.005, `scale`=0.03, `cap`=1.5, `rates_dir` (FRED CSVs in `$ARTIFACT_STORE_PATH/research/fx/rates`). Add `risk.swap_col: "<id>"` to accrue it as swap P&L. |
 
 All indicators also have access to the base OHLCV columns: `open`, `high`, `low`, `close`, `volume`.
 
@@ -213,6 +213,7 @@ Both entry and exit use the same structure:
 | `sl_pct` | Stop-loss as fraction of entry price (0.02 = 2%) |
 | `tp_pct` | Take-profit as fraction of entry price |
 | `position_size` | Fraction of equity or fixed lot size |
+| `swap_col` | Optional indicator column holding the annual long-side carry (e.g. `carry`). Each trade accrues `side × volume × mean(rate) × days_held / 365` into its profit and the equity curve (buy = +rate, sell = −rate). Omitted = price-only P&L. |
 
 ---
 

@@ -97,3 +97,6 @@ New data was collected **through AlgoForge** (datasets 177–187: yfinance D1 fo
 **Forward OOS after the previous report's data end (2025-05-03 … 2026-10-09, 373 days):** SR 1.37, +21% at 10% vol, max DD −6%.
 Caveat: a single favourable carry regime (rate differentials USD/AUD/NZD/NOK vs JPY/CHF still wide); it does not change the
 tail-risk picture (2008-type crash), and the sample is only ~1.5 years.
+
+Engine check (`engine_check.py`, `risk.swap_col="carry"`): the same carry rule run through AlgoForge's own backtest engine on MT5 D1
+(2000–2025-05, fixed unit size, 9 pairs) gives positive total P&L on all 9 pairs (0.20…1.09 of starting equity per pair, incl. swap accrual).

@@ -12,7 +12,7 @@ def defn(sym):
                   "exit":  {"conditions": [{"left": "carry_w", "op": "<=", "right": 0}], "logic": "or"}},
         "short": {"entry": {"conditions": [{"left": "carry_w", "op": "<", "right": 0}], "logic": "and"},
                   "exit":  {"conditions": [{"left": "carry_w", "op": ">=", "right": 0}], "logic": "or"}},
-        "risk": {"risk_type": "fixed", "position_size": 1.0, "sl_pct": 0.0, "tp_pct": 0.0,
+        "risk": {"risk_type": "fixed", "position_size": 1.0, "sl_pct": 0.0, "tp_pct": 0.0, "swap_col": "carry",
                  "slippage_pct": 0.00003, "commission_pct": 0.0, "max_positions": 1}}
 for s in PAIRS:
     d = pd.read_csv(f"L:/data/fx/OANDA-Japan MT5 Live/mt5_{s}_d1.csv", parse_dates=["time"]).set_index("time")

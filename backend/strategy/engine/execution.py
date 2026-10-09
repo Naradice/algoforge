@@ -34,6 +34,7 @@ class RiskParams:
     trailing_atr_multiplier: float = 3.0
     trailing_clip_with_price: bool = False
     trailing_only_in_profit: bool = True
+    swap_col: str = ""   # indicator column holding the annual long-side carry (e.g. "carry"); accrued daily per open trade
 
     @classmethod
     def from_dict(cls, data: dict) -> "RiskParams":
@@ -53,6 +54,7 @@ class RiskParams:
             trailing_atr_multiplier=float(data.get("trailing_atr_multiplier", 3.0)),
             trailing_clip_with_price=bool(data.get("trailing_clip_with_price", False)),
             trailing_only_in_profit=bool(data.get("trailing_only_in_profit", True)),
+            swap_col=str(data.get("swap_col", "") or ""),
         )
 
 

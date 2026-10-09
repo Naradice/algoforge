@@ -33,6 +33,7 @@ Definition format (new)
     "trailing_atr_multiplier":  3.0,     # distance from close in ATR multiples
     "trailing_clip_with_price": false,   # clip stop to entry price (breakeven floor)
     "trailing_only_in_profit":  true,    # only move stop when position is profitable (matches trade_strategy default)
+    "swap_col":                 "carry", # optional: indicator column with annual long-side carry; accrued per day held
   }
 }
 
@@ -382,6 +383,10 @@ def run_backtest(
                 pnl = close_trade(pos, fill, last_dt, "end_of_data", trades, symbol, rp, last_phase)
                 equity += pnl
 
+    # ── Swap / carry accrual (risk.swap_col): annual rate differential accrued per calendar day held ──
+    if rp.swap_col and trades and df_with_indicators is not None and rp.swap_col in df_with_indicators.columns:
+        _apply_swap(trades, equity_curve, df_with_indicators[rp.swap_col])
+
     # ── Compute drawdown on equity curve ─────────────────────────────────
     eq_vals = np.array([p["equity"] for p in equity_curve])
     peak = np.maximum.accumulate(eq_vals)
@@ -404,6 +409,41 @@ def run_backtest(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _apply_swap(trades: list[dict], equity_curve: list[dict], rate: pd.Series) -> None:
+    """Add carry accrual to every trade's profit and shift the equity curve accordingly.
+
+    accrual = side * volume * mean(rate over holding period) * calendar_days / 365, where `rate` is the annual
+    long-side differential (base - quote) and side is +1 for buy, -1 for sell. Profit is in the engine's normalised
+    equity units (volume is a fraction of equity), so this adds directly.
+    """
+    idx = pd.DatetimeIndex(rate.index)
+    if idx.tz is not None:
+        idx = idx.tz_convert(None)
+    r = pd.Series(rate.values, index=idx)
+    steps = []
+    for t in trades:
+        a, b = pd.Timestamp(t["opened_at"]), pd.Timestamp(t["closed_at"])
+        a = a.tz_convert(None) if a.tzinfo else a
+        b = b.tz_convert(None) if b.tzinfo else b
+        seg = r[(r.index >= a) & (r.index <= b)]
+        if seg.empty or b <= a:
+            continue
+        side = 1.0 if t["direction"] == "buy" else -1.0
+        acc = side * float(t["volume"]) * float(seg.mean()) * (b - a).days / 365.0
+        t["profit"] = round(t["profit"] + acc, 6)
+        steps.append((b, acc))
+    if not steps:
+        return
+    steps.sort()
+    ts = [pd.Timestamp(p["timestamp"]) for p in equity_curve]
+    ts = [x.tz_convert(None) if x.tzinfo else x for x in ts]
+    j, cum = 0, 0.0
+    for k, p in enumerate(equity_curve):
+        while j < len(steps) and steps[j][0] <= ts[k]:
+            cum += steps[j][1]; j += 1
+        p["equity"] = round(p["equity"] + cum, 6)
+
 
 def _record_day_loss(day_loss: dict[date, float], d: date, pnl: float) -> None:
     if pnl < 0:
