@@ -58,3 +58,26 @@ unstable (sign flips between neighbours) → only 60/250 used. Caveat: most of t
 Negative / rejected (`ext.py`): rate-change momentum (SR 0.08–0.14), cross-sectional carry top-2/bottom-2 (0.29 < sign carry),
 daily GBM on carry/momentum/vol features (IC −0.075 pooled, net SR −0.5; no usable edge, sign-flipping it would be snooping).
 Data end 2025-05 (MT5 D1); no later FX price data located locally.
+
+## Round 4 — widening the search (all negative or not tradable)
+Code: `backend/research/fx_search/{d2,scan,sm,m7,micro,final2,final3}.py`. d2 = 10 currencies / 30 MT5 D1 pairs (2007-05…2025-05),
+real FRED rates incl. CAD/NZD/NOK/SEK, spread = 2× recent MT5 median.
+
+- **Carry is regime-dependent, not a steady premium.** On the 2007+ window plain carry SR is ≈ −0.1 (2008 crash −36…−44% at 10% vol);
+  2009+ SR 0.2–0.4, and that is concentrated in 2023–24 (+12%, +35% at 10% vol); 2010–2022 ≈ flat. The 0.5–0.6 all-sample SR of
+  rounds 2–3 came largely from 2000–06. Wider universe (30 pairs) is worse than the 9 majors (SR 2009+ 0.21 vs 0.34; CHF crosses lose).
+- VIX-jump guard (VIX/VIX₋₂₀ > 1.3 → size ×0.3) improves 9-pair SR 2009+ 0.34→0.40, 2023+ 0.80→1.02, DD −30%→−20%; faster vol scaling
+  (max of 20/60/250d) trims 2008 only from −41% to −36%. Tail risk of carry is not removable with these tools.
+- Currency momentum is **not robust**: positive on the 9 pairs (SR~0.3), negative on the 30-pair universe (60d: −0.3, 250d: −0.2 post-2009).
+  Drop it from the recommended blend (or ≤ 20% weight).
+- Rejected (train ≤2015 / test ≥2016): cross-asset lead-lag (64 instruments × 30 pairs × 1d/5d: 23 train-significant, 0 survive in test),
+  calendar effects (dow/day-of-month/month: 2 train-significant, 1 weak survivor, AUDNZD Fri), pair-spread mean reversion
+  (125 spreads, mean SR ≈ 0; walk-forward selection −0.07), value/long-term reversal (3y/5y: SR ≈ 0), momentum on carry-adjusted returns,
+  monthly and daily GBM with carry/VIX/momentum features (IC consistently negative −0.07…−0.08 OOS → relations learned in-sample reverse).
+- Tick microstructure (USDJPY Dukascopy M1 with OFI/imbalance, GBM walk-forward 2019–22): IC +0.02…0.03 real, but top-decile gross edge
+  0.04–0.11 bp/trade vs ~0.86 bp spread → not tradable by taking liquidity.
+
+## Conclusion of the search
+Out of everything tested, the only repeatable positive-expectancy source is low-turnover carry on the major pairs, with a VIX/vol
+guard; it is dominated by rare crash risk and its payoff depends on rate differentials being wide. There is no evidence of a
+cost-surviving directional price-prediction edge in FX (technical rules, momentum, reversal, ML at M1/H1/D1/monthly, cross-asset, calendar).
