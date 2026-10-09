@@ -24,6 +24,8 @@ in AlgoForge strategy definitions so existing saved strategies keep working:
                   {id}_pos (continuous brick position: (price - last_ref) / brick_size, same as finance_client renko_BrickSize)
     streak      → {id}  integer count of consecutive bars where left op right is true (default id: streak)
     roc         → {id}                                  (default id: roc)
+    carry       → {id} (annual base-quote rate differential), {id}_w (diff/scale clipped to +-cap, 0 inside +-threshold)
+                  params: base, quote, threshold=0.005, scale=0.03, cap=1.5, rates_dir (FRED CSVs)
     rolling     → {id}  rolling aggregate (sum/mean/std/min/max/diff/pct_change) of an existing column
     derived     → {id}  result of an arbitrary pandas expression evaluated against the DataFrame
     candle      → {id}_bull_engulf, {id}_bear_engulf,  (default id: candle)
@@ -386,6 +388,13 @@ def _apply_one(df: pd.DataFrame, itype: str, iid: str, params: dict) -> pd.DataF
             df[iid] = result
         except Exception as exc:
             raise ValueError(f"Derived indicator '{iid}': expression error — {exc}") from exc
+
+    elif itype == "carry":
+        from strategy.engine.carry_rates import rate_differential
+        diff = rate_differential(df.index, str(params["base"]).upper(), str(params["quote"]).upper(), params.get("rates_dir"))
+        thr = float(params.get("threshold", 0.005)); scale = float(params.get("scale", 0.03)); cap = float(params.get("cap", 1.5))
+        df[iid] = diff
+        df[f"{iid}_w"] = (diff / scale).clip(-cap, cap).where(diff.abs() > thr, 0.0)
 
     elif itype == "roc":
         period = int(params.get("period", 10))

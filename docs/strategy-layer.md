@@ -79,6 +79,7 @@ The `id` becomes the column name referenced in conditions.
 | `bb` | `<id>_upper`, `<id>_middle`, `<id>_lower` | `period`, `std_dev` |
 | `slope` | `<id>` | `period`, `column` |
 | `renko` | `<id>_direction`, `<id>_flip`, `<id>_momentum` | `atr_window`, `brick_size` |
+| `carry` | `<id>` (annual base-quote 3m rate differential), `<id>_w` (diff/`scale` clipped to ±`cap`, 0 inside ±`threshold`) | `base`, `quote`, `threshold`=0.005, `scale`=0.03, `cap`=1.5, `rates_dir` (FRED CSVs in `$ARTIFACT_STORE_PATH/research/fx/rates`). Engine P&L is price-only: swap/rollover accrual is not modelled. |
 
 All indicators also have access to the base OHLCV columns: `open`, `high`, `low`, `close`, `volume`.
 
