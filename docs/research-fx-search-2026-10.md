@@ -26,3 +26,20 @@ fixed EST; bad ticks removed in `core.load`.
 - Not yet done: true out-of-sample beyond 2022 (MT5 / Dukascopy data exist), vol-timing of carry, real spread data
   from the OANDA tick files, replay of the sleeves through the AlgoForge backtest engine (engine has no cross-sectional
   or carry condition handler — would need a new handler).
+
+## Round 2 — daily framework on MT5 D1 (2000–2025-05), true holdout 2023+
+Code: `backend/research/fx_search/{d1,carry2,final}.py`. Rates extended to 2025 (approximate, from memory).
+Design rules were fixed on ≤2022 data; 2023-01…2025-05 is a genuine holdout.
+
+| Sleeve (net of spread, monthly/weekly rebal.) | SR all | SR 2009+ | SR 2023+ |
+|---|---|---|---|
+| carry, sign | 0.45 | 0.32 | 0.89 |
+| carry, weight ∝ rate diff (clip ±1.5, thr 0.5%) | 0.52 | 0.40 | 0.87 |
+| + vol guard (scale by 1y-median / 20d vol of book, cap 1) | **0.56** | 0.30 | 0.81 |
+| currency momentum 60d+250d (weekly) | 0.37 | 0.29 | 0.42 |
+| **0.65 carry* + 0.35 momentum (risk-parity)** | **0.62** | **0.39** | **0.81** |
+
+Maxdrawdown −13% (10%-vol-per-leg units) vs −25% for plain carry. Robust to ±0.5% random noise on every
+currency-year rate (20 draws: mean SR 0.59, worst 0.52 all-sample, 0.15 post-2009). Mom5/mom120 variants were
+unstable (sign flips between neighbours) → only 60/250 used. Caveat: most of the all-sample carry P&L is 2001–06;
+2008 carry crash (−14%) is the dominant risk; rates are approximate.
