@@ -138,17 +138,26 @@ def collect(datasource_id: int, config: dict, incremental: dict | None = None) -
 def _collect_yfinance(
     symbol: str, timeframe: str, from_dt: pd.Timestamp, to_dt: pd.Timestamp, config: dict
 ) -> pd.DataFrame:
-    # H4 is not natively supported — download H1 and resample
-    download_tf = "H1" if timeframe == "H4" else timeframe
-    frame = _FRAME_MAP.get(download_tf, Frame.D1)
+    # H4 is not natively supported — download H1 and resample.
+    # yfinance is called directly with explicit start/end: finance_client's wrapper ignores the
+    # requested range and returned a single bar for daily FX.
+    import yfinance as yf
 
-    df = yf_download_ohlc(
-        symbols=symbol,
-        frame=frame,
-        adjust_close=config.get("adjust_close", False),
+    interval = {"M1": "1m", "M5": "5m", "M15": "15m", "M30": "30m", "H1": "1h", "H4": "1h",
+                "D1": "1d", "W1": "1wk", "MN": "1mo"}.get(timeframe, "1d")
+    df = yf.download(
+        symbol,
+        start=from_dt.tz_convert(None).strftime("%Y-%m-%d"),
+        end=(to_dt.tz_convert(None) + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+        interval=interval,
+        auto_adjust=bool(config.get("adjust_close", False)),
+        progress=False,
     )
     if df.empty:
         return df
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.drop(columns=[c for c in ("Adj Close",) if c in df.columns])
 
     df = _normalise_index(df)
     df = _filter_date_range(df, from_dt, to_dt)

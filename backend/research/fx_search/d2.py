@@ -12,10 +12,16 @@ closes, spr = {}, {}
 for s in PAIRS:
     d = pd.read_csv(MT5 / f"mt5_{s}_d1.csv", parse_dates=["time"]).set_index("time")
     closes[s] = d.close[d.index >= "2000-01-01"]
+    # splice newer bars from AlgoForge yfinance D1 datasets (collected via the API) after MT5 history ends
+    for f in (RD_.parents[2] / "datasets").glob(f"src_*/{s}=X_D1.parquet"):
+        y = pd.read_parquet(f).close; y.index = pd.to_datetime(y.index).tz_localize(None).normalize()
+        ov = closes[s].index.intersection(y.index)
+        if len(ov) > 100 and abs(np.log(closes[s][ov] / y[ov]).median()) < 0.005:
+            closes[s] = pd.concat([closes[s], y[y.index > closes[s].index[-1]]])
     pt = 0.001 if s.endswith("JPY") else 0.00001
     spr[s] = max(2 * d.spread[-750:].median(), 10) * pt      # price units, 2x recent median, floor 1 pip
 C = pd.DataFrame(closes).dropna(how="all"); C = C[C.index.dayofweek < 5]
-C = C.dropna(thresh=20)
+C = C.dropna(thresh=9)
 LR = np.log(C).diff().fillna(0)
 VOL = LR.rolling(60, min_periods=20).std().shift(1)
 rm = pd.DataFrame({c: fred(f"IR3TIB01{IDS[c]}M156N") / 100 for c in CCY})

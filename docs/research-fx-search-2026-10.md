@@ -81,3 +81,19 @@ real FRED rates incl. CAD/NZD/NOK/SEK, spread = 2× recent MT5 median.
 Out of everything tested, the only repeatable positive-expectancy source is low-turnover carry on the major pairs, with a VIX/vol
 guard; it is dominated by rare crash risk and its payoff depends on rate differentials being wide. There is no evidence of a
 cost-surviving directional price-prediction edge in FX (technical rules, momentum, reversal, ML at M1/H1/D1/monthly, cross-asset, calendar).
+
+## Round 5 — fresh data via AlgoForge + true forward OOS (2025-05 … 2026-10)
+New data was collected **through AlgoForge** (datasets 177–187: yfinance D1 for 11 pairs from 2003; dataset 188: FRED
+`RATE_*` + VIX via the keyless `economic_calendar` collector). The yfinance collector was fixed (it returned a single bar).
+`d2.py` now splices these onto the MT5 history after 2025-05-02 (overlap check: median log diff 0).
+
+9 majors, diff-weighted carry (+ VIX-jump guard), all sample now 2000→2026-10:
+
+| | SR all | 2009+ | 2023+ | maxDD |
+|---|---|---|---|---|
+| carry | 0.53 | 0.43 | 0.94 | −30% |
+| carry + VIX-jump guard | 0.69 | 0.50 | 1.10 | −20% |
+
+**Forward OOS after the previous report's data end (2025-05-03 … 2026-10-09, 373 days):** SR 1.37, +21% at 10% vol, max DD −6%.
+Caveat: a single favourable carry regime (rate differentials USD/AUD/NZD/NOK vs JPY/CHF still wide); it does not change the
+tail-risk picture (2008-type crash), and the sample is only ~1.5 years.

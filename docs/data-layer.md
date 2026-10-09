@@ -34,6 +34,8 @@ Downloads OHLCV candles from a market data provider.
 
 Supported clients: `yfinance` (free, no credentials), `vantage` (Alpha Vantage API key required).
 
+The yfinance client calls `yfinance.download` with explicit `from_ts`/`to_ts` (daily FX history back to ~2003; intraday is limited by Yahoo to recent weeks/months, e.g. `1h` ≈ 2 years, `1m` ≈ 7 days).
+
 Timeframes: `M1`, `M5`, `M15`, `M30`, `H1`, `H4`, `D1`.
 
 ### `ddm_simulation`
@@ -218,6 +220,8 @@ playwright install chromium
 
 ### `economic_calendar`
 Downloads historical economic indicator releases (CPI, NFP, unemployment, interest rate decisions) from Alpha Vantage or FRED.
+The `fred` source works **without an API key** (public `fredgraph.csv`); `indicators` accepts friendly names (`CPI`, `VIX`, …),
+`RATE_<CCY>` aliases for 3-month interbank rates (USD EUR GBP JPY AUD CHF CAD NZD NOK SEK; monthly, percent) or any raw FRED series id.
 
 ```json
 {
