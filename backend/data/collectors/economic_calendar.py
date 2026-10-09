@@ -5,7 +5,7 @@ Datasource config shape:
     {
         "source": "alpha_vantage",          # alpha_vantage | fred
         "api_key": "...",                    # AV key; for FRED use fred_api_key or FRED_API_KEY env
-        "fred_api_key": "...",              # FRED key (fred source only)
+        "fred_api_key": "...",              # FRED key (optional: without it the keyless fredgraph.csv endpoint is used)
         "indicators": ["CPI", "NONFARM_PAYROLL", "UNEMPLOYMENT", "FEDERAL_FUNDS_RATE"],
         "interval": "monthly",              # monthly | quarterly | annual (AV only; FRED ignores)
         "from_ts": "2020-01-01",
@@ -20,6 +20,7 @@ FRED series IDs (source="fred"):
     CPIAUCSL (CPI), PAYEMS (Nonfarm Payroll), UNRATE (Unemployment Rate),
     FEDFUNDS (Federal Funds Rate), GDP, RSXFS (Retail Sales), DGORDER (Durable Goods),
     T10Y2Y (Treasury Yield Spread), VIXCLS (VIX)
+    RATE_USD/EUR/GBP/JPY/AUD/CHF/CAD/NZD/NOK/SEK (3m interbank rate, monthly, percent)
 
 Output parquet columns (long format, indexed by datetime UTC):
     indicator, value, unit
@@ -51,6 +52,11 @@ _FRED_SERIES: dict[str, str] = {
     "DURABLES":             "DGORDER",
     "TREASURY_YIELD":       "DGS10",
     "VIX":                  "VIXCLS",
+    # 3-month interbank rates (monthly, %), used by the FX carry indicator
+    "RATE_USD": "IR3TIB01USM156N", "RATE_EUR": "IR3TIB01EZM156N", "RATE_GBP": "IR3TIB01GBM156N",
+    "RATE_JPY": "IR3TIB01JPM156N", "RATE_AUD": "IR3TIB01AUM156N", "RATE_CHF": "IR3TIB01CHM156N",
+    "RATE_CAD": "IR3TIB01CAM156N", "RATE_NZD": "IR3TIB01NZM156N", "RATE_NOK": "IR3TIB01NOM156N",
+    "RATE_SEK": "IR3TIB01SEM156N",
 }
 
 # Alpha Vantage indicator functions that support an interval param
@@ -88,11 +94,10 @@ def collect(datasource_id: int, config: dict) -> CollectResult:
             time.sleep(0.5)  # respect AV rate limit (5 calls/min free tier)
 
     elif source == "fred":
+        # Without an API key the public fredgraph.csv endpoint is used (no registration needed).
         api_key = config.get("fred_api_key") or config.get("api_key") or os.getenv("FRED_API_KEY", "")
-        if not api_key:
-            raise ValueError("FRED api_key required in datasource config (fred_api_key) or FRED_API_KEY env")
         for indicator in indicators:
-            df = _fetch_fred(indicator, api_key, from_dt, to_dt)
+            df = _fetch_fred(indicator, api_key, from_dt, to_dt) if api_key else _fetch_fred_csv(indicator, from_dt, to_dt)
             if not df.empty:
                 frames.append(df)
             time.sleep(0.2)
@@ -211,6 +216,26 @@ def _fetch_fred(
     df = pd.DataFrame(rows, columns=["datetime", "value"])
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
     df = df.set_index("datetime").sort_index()
+    df["indicator"] = indicator
+    df["unit"] = ""
+    return df[["indicator", "value", "unit"]]
+
+
+def _fetch_fred_csv(indicator: str, from_dt: pd.Timestamp, to_dt: pd.Timestamp) -> pd.DataFrame:
+    """Keyless FRED download via fredgraph.csv."""
+    import io
+    import requests  # type: ignore
+
+    series_id = _FRED_SERIES.get(indicator, indicator)
+    resp = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv", params={"id": series_id}, timeout=60)
+    resp.raise_for_status()
+    raw = pd.read_csv(io.StringIO(resp.text))
+    if raw.shape[1] < 2:
+        return pd.DataFrame()
+    df = pd.DataFrame({"datetime": pd.to_datetime(raw.iloc[:, 0], utc=True),
+                       "value": pd.to_numeric(raw.iloc[:, 1], errors="coerce")}).dropna()
+    df = df.set_index("datetime").sort_index()
+    df = df[(df.index >= from_dt) & (df.index <= to_dt)]
     df["indicator"] = indicator
     df["unit"] = ""
     return df[["indicator", "value", "unit"]]
