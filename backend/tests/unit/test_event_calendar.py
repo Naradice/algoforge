@@ -78,3 +78,16 @@ def test_alfred_keyless_single_vintage_is_rejected(monkeypatch):
     monkeypatch.setattr("requests.get", lambda *a, **k: resp)
     with pytest.raises(RuntimeError, match="API key"):
         ec.fetch_alfred_series("PAYEMS", "USD", "NFP", "diff", pd.Timestamp("2024-01-01", tz="UTC"))
+
+
+def test_proxy_surprise_uses_previous_when_forecast_missing():
+    ev = ec._norm_frame(pd.DataFrame({
+        "datetime": ["2024-01-05T13:30:00Z", "2024-02-02T13:30:00Z", "2024-03-01T13:30:00Z"],
+        "currency": ["USD"] * 3, "title": ["X"] * 3, "impact": ["high"] * 3,
+        "previous": [100, 110, 105], "actual": [110, 105, 120]}), "t")
+    idx = pd.date_range("2024-03-02", periods=1, freq="D")
+    none = event_features(idx, ev, ["USD"], surprise_basis="forecast")
+    assert np.isnan(none["surprise"].iloc[0])
+    prev = event_features(idx, ev, ["USD"], surprise_basis="previous")
+    # surprises: +10, -5, +15 ; last z = 15 / std(+10,-5) (trailing, excludes itself)
+    assert prev["surprise"].iloc[0] == pytest.approx(15 / np.std([10, -5], ddof=1))

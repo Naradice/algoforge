@@ -190,7 +190,19 @@ def run_portfolio_backtest(definition: dict) -> dict:
     book = book[avail.any(axis=1)]
     equity = (1.0 + book.fillna(0.0)).cumprod()
     return {"returns": book, "equity": equity, "metrics": portfolio_metrics(book),
-            "contribution": (pnl.sum() / avail.sum().clip(lower=1)), "stress": stress_report(book)}
+            "contribution": (pnl.sum() / avail.sum().clip(lower=1)), "stress": stress_report(book),
+            "targets": _targets(pos, n_avail, closes)}
+
+
+def _targets(pos: pd.DataFrame, n_avail: pd.Series, closes: pd.DataFrame) -> dict:
+    """Latest target book: signed position per symbol as a fraction of equity (pre-overlay) and last close."""
+    if pos.empty:
+        return {"asof": None, "positions": {}}
+    last = pos.index[-1]
+    n = float(n_avail.iloc[-1])
+    return {"asof": last.strftime("%Y-%m-%d"),
+            "positions": {c: {"weight": round(float(pos[c].iloc[-1]) / n, 5), "last_close": float(closes[c].dropna().iloc[-1])}
+                          for c in pos.columns if pos[c].iloc[-1] != 0 and not np.isnan(pos[c].iloc[-1])}}
 
 
 def _drawdown_breaker(r: pd.Series, limit: float, cut: float) -> pd.Series:

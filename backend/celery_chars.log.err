@@ -12,3 +12,154 @@ you should set broker_connection_retry_on_startup to True.
   warnings.warn(
 
 [2026-10-15 12:42:41,366: INFO/MainProcess] mingle: searching for neighbors
+[2026-10-15 12:43:45,516: INFO/MainProcess] mingle: all alone
+[2026-10-15 12:45:31,145: INFO/MainProcess] worker registry: {'hostname': 'chars@DESKTOP-FNBU991', 'pid': 26696, 'machine': 'DESKTOP-FNBU991', 'started_at': '2026-10-15T03:45:30.842429+00:00', 'code_revision': 'a4dd6aa9d8b1ca0378d3333fc059a2b81122f1d5', 'code_dirty': True, 'queues': ['characteristics'], 'current_task': None}
+[2026-10-15 12:45:31,145: INFO/MainProcess] chars@DESKTOP-FNBU991 ready.
+[2026-10-15 12:45:31,148: INFO/MainProcess] Task celery_worker.compute_characteristics[55fb255d-4b21-485b-901d-b6342b585ffa] received
+[2026-10-15 12:46:14,989: INFO/MainProcess] compute_characteristics started for dataset 66
+[2026-10-15 12:46:15,110: WARNING/MainProcess] compute_characteristics: dataset 66 not found or has no artifact
+[2026-10-15 12:46:36,142: INFO/MainProcess] Task celery_worker.compute_characteristics[55fb255d-4b21-485b-901d-b6342b585ffa] succeeded in 64.99315399999614s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 12:46:57,196: INFO/MainProcess] sync with backtest2@DESKTOP-FNBU991
+[2026-10-15 12:46:57,198: INFO/MainProcess] Task celery_worker.compute_characteristics[973e81ac-f7ec-45a0-9352-39c43aa2bef2] received
+[2026-10-15 12:47:18,241: INFO/MainProcess] compute_characteristics started for dataset 67
+[2026-10-15 12:47:18,338: ERROR/MainProcess] Failed to load dataset 67
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\celery_worker.py", line 527, in _compute_characteristics
+    df = await asyncio.to_thread(load_df_for_dataset, artifact_path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\characteristics.py", line 702, in load_df_for_dataset
+    return pd.read_parquet(full_path)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 671, in read_parquet
+    return impl.read(
+           ~~~~~~~~~^
+        path,
+        ^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 260, in read
+    pa_table = self.api.parquet.read_table(
+        path_or_handle,
+    ...<3 lines>...
+        **kwargs,
+    )
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pyarrow\parquet\core.py", line 1858, in read_table
+    dataset = ParquetDataset(
+        source,
+    ...<16 lines>...
+        arrow_extensions_enabled=arrow_extensions_enabled,
+    )
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pyarrow\parquet\core.py", line 1427, in __init__
+    [fragment], schema=schema or fragment.physical_schema,
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pyarrow/_dataset.pyx", line 1477, in pyarrow._dataset.Fragment.physical_schema.__get__
+  File "pyarrow/error.pxi", line 155, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 92, in pyarrow.lib.check_status
+pyarrow.lib.ArrowInvalid: Could not open Parquet input source '<Buffer>': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+[2026-10-15 12:47:39,425: INFO/MainProcess] Task celery_worker.compute_characteristics[973e81ac-f7ec-45a0-9352-39c43aa2bef2] succeeded in 42.226076599996304s: {'error': 'Could not open Parquet input source \'<Buffer>\': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.'}
+[2026-10-15 12:48:00,491: WARNING/MainProcess] Substantial drift from train@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 148 seconds.  [orig: 2026-10-15 12:48:00.491166 recv: 2026-10-15 12:45:32.660485]
+[2026-10-15 12:48:00,492: WARNING/MainProcess] Substantial drift from collect5@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 148 seconds.  [orig: 2026-10-15 12:48:00.491960 recv: 2026-10-15 12:45:32.837509]
+[2026-10-15 12:48:00,500: WARNING/MainProcess] Substantial drift from backtest2@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 53 seconds.  [orig: 2026-10-15 12:48:00.500594 recv: 2026-10-15 12:47:07.493099]
+[2026-10-15 12:48:00,504: INFO/MainProcess] Task celery_worker.compute_characteristics[3c803bb3-8704-4706-95ac-ab3446d2be0e] received
+[2026-10-15 12:48:06,593: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:48:06,594: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 12:48:06,594: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:48:21,551: INFO/MainProcess] compute_characteristics started for dataset 71
+[2026-10-15 12:48:21,597: ERROR/MainProcess] Failed to load dataset 71
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\celery_worker.py", line 527, in _compute_characteristics
+    df = await asyncio.to_thread(load_df_for_dataset, artifact_path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\characteristics.py", line 702, in load_df_for_dataset
+    return pd.read_parquet(full_path)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 671, in read_parquet
+    return impl.read(
+           ~~~~~~~~~^
+        path,
+        ^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 260, in read
+    pa_table = self.api.parquet.read_table(
+        path_or_handle,
+    ...<3 lines>...
+        **kwargs,
+    )
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pyarrow\parquet\core.py", line 1858, in read_table
+    dataset = ParquetDataset(
+        source,
+    ...<16 lines>...
+        arrow_extensions_enabled=arrow_extensions_enabled,
+    )
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pyarrow\parquet\core.py", line 1427, in __init__
+    [fragment], schema=schema or fragment.physical_schema,
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pyarrow/_dataset.pyx", line 1477, in pyarrow._dataset.Fragment.physical_schema.__get__
+  File "pyarrow/error.pxi", line 155, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 92, in pyarrow.lib.check_status
+pyarrow.lib.ArrowInvalid: Could not open Parquet input source '<Buffer>': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+[2026-10-15 12:48:42,647: INFO/MainProcess] Task celery_worker.compute_characteristics[3c803bb3-8704-4706-95ac-ab3446d2be0e] succeeded in 42.14141500002006s: {'error': 'Could not open Parquet input source \'<Buffer>\': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.'}
+[2026-10-15 12:49:03,688: INFO/MainProcess] Task celery_worker.compute_characteristics[18410dba-20e6-4ee6-a5f4-37dc2a2137fd] received
+[2026-10-15 12:49:11,601: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:49:11,602: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:49:11,602: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 12:49:24,742: INFO/MainProcess] compute_characteristics started for dataset 72
+[2026-10-15 12:49:24,795: ERROR/MainProcess] Failed to load dataset 72
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\celery_worker.py", line 527, in _compute_characteristics
+    df = await asyncio.to_thread(load_df_for_dataset, artifact_path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\characteristics.py", line 702, in load_df_for_dataset
+    return pd.read_parquet(full_path)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 671, in read_parquet
+    return impl.read(
+           ~~~~~~~~~^
+        path,
+        ^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 260, in read
+    pa_table = self.api.parquet.read_table(
+        path_or_handle,
+    ...<3 lines>...
+        **kwargs,
+    )
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pyarrow\parquet\core.py", line 1858, in read_table
+    dataset = ParquetDataset(
+        source,
+    ...<16 lines>...
+        arrow_extensions_enabled=arrow_extensions_enabled,
+    )
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pyarrow\parquet\core.py", line 1427, in __init__
+    [fragment], schema=schema or fragment.physical_schema,
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pyarrow/_dataset.pyx", line 1477, in pyarrow._dataset.Fragment.physical_schema.__get__
+  File "pyarrow/error.pxi", line 155, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 92, in pyarrow.lib.check_status
+pyarrow.lib.ArrowInvalid: Could not open Parquet input source '<Buffer>': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.

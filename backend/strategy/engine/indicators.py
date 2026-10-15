@@ -27,6 +27,8 @@ in AlgoForge strategy definitions so existing saved strategies keep working:
     event       → {id}_near (1 inside a pre/post window of a matching release), {id}_mins_to_next, {id}_mins_since_last,
                   {id}_surprise (last (actual-forecast), z-scored). params: calendar (event_calendar artifact path),
                   currencies, min_impact=high, pre_minutes=60, post_minutes=60, title_contains, surprise_window=24
+    rvol        → {id} (annualised realised vol), {id}_ratio (short/long vol), {id}_pct (1y percentile rank);
+                  proxy for implied vol. params: window=20, long_window=250, periods_per_year=252, column
     carry       → {id} (annual base-quote rate differential), {id}_w (diff/scale clipped to +-cap, 0 inside +-threshold)
                   also {id}_long / {id}_short (accrual after `markup`, annual); params: base, quote, threshold=0.005, scale=0.03,
                   cap=1.5, markup=0, rates_dir (FRED CSVs)
@@ -39,6 +41,7 @@ in AlgoForge strategy definitions so existing saved strategies keep working:
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 from finance_client.fprocess.fprocess import regime as fprocess_regime
 from finance_client.fprocess.fprocess.idcprocess import (
@@ -413,9 +416,22 @@ def _apply_one(df: pd.DataFrame, itype: str, iid: str, params: dict) -> pd.DataF
             post_minutes=int(params.get("post_minutes", 60)),
             title_contains=params.get("title_contains"),
             surprise_window=int(params.get("surprise_window", 24)),
+            surprise_basis=str(params.get("surprise_basis", "forecast")),
         )
         for c in feats.columns:
             df[f"{iid}_{c}"] = feats[c].values
+
+    elif itype == "rvol":
+        # Realized-volatility proxy for implied vol (no free FX option vol history): annualised stdev of log returns
+        w = int(params.get("window", 20))
+        lw = int(params.get("long_window", 250))
+        ann = float(params.get("periods_per_year", 252))
+        r = np.log(df[col]).diff()
+        short = r.rolling(w, min_periods=max(2, w // 2)).std() * np.sqrt(ann)
+        long_ = r.rolling(lw, min_periods=max(2, lw // 4)).std() * np.sqrt(ann)
+        df[iid] = short
+        df[f"{iid}_ratio"] = short / long_
+        df[f"{iid}_pct"] = short.rolling(lw, min_periods=max(2, lw // 4)).rank(pct=True)
 
     elif itype == "roc":
         period = int(params.get("period", 10))

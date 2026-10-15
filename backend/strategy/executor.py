@@ -49,6 +49,9 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
         if strategy is None:
             return {"error": "strategy_not_found"}
 
+        if "universe" in (strategy.definition or {}):
+            return await _run_portfolio(run, strategy, session_factory)
+
         from data.models import Dataset
         ds_rec = None
         if run.dataset_id:
@@ -225,6 +228,61 @@ async def _run(run_id: int, *, session_factory=None) -> dict:
         context={"run_id": run_id, "trades": len(raw_trades), "metrics": metrics},
     )
     return {"trades": len(raw_trades), "metrics": metrics}
+
+
+async def _run_portfolio(run, strategy, session_factory) -> dict:
+    """Multi-symbol (portfolio) strategies: backtest and paper (re-computed target book) in one code path."""
+    import asyncio
+    import functools
+
+    from sqlalchemy import update
+    from strategy.models import RunMetric, StrategyEvent, StrategyRun
+    from strategy.portfolio.engine import run_portfolio_backtest
+
+    definition = dict(strategy.definition)
+    if run.risk_override:
+        definition["risk"] = {**definition.get("risk", {}), **run.risk_override}
+    async with session_factory() as db:
+        await db.execute(update(StrategyRun).where(StrategyRun.id == run.id).values(
+            status="running", started_at=datetime.now(timezone.utc), progress_pct=0.0))
+        await db.commit()
+    try:
+        res = await asyncio.get_running_loop().run_in_executor(
+            None, functools.partial(run_portfolio_backtest, definition))
+    except Exception as exc:
+        async with session_factory() as db:
+            await db.execute(update(StrategyRun).where(StrategyRun.id == run.id).values(
+                status="error", message=str(exc), ended_at=datetime.now(timezone.utc)))
+            await dispatch(db, "run.error", {"run_id": run.id, "strategy_id": run.strategy_id,
+                                             "mode": run.mode, "error": str(exc)})
+            await db.commit()
+        return {"error": str(exc)}
+
+    eq = res["equity"].resample("W").last().dropna()
+    cum = res["returns"].cumsum()
+    dd = (cum - cum.cummax()).resample("W").last().reindex(eq.index).fillna(0.0)
+    curve = [{"timestamp": t.isoformat(), "equity": round(float(v), 6), "drawdown": round(float(dd.loc[t]), 6),
+              "phase": "oos"} for t, v in eq.items()]
+    m = res["metrics"]
+    flat = {k: float(v) for k, v in m.items() if isinstance(v, (int, float)) and v is not None}
+    async with session_factory() as db:
+        for k, v in flat.items():
+            db.add(RunMetric(run_id=run.id, key=k, value=v))
+        for name, value in res["stress"].items():
+            if value is not None:
+                db.add(RunMetric(run_id=run.id, key="stress: " + name, value=float(value)))
+        db.add(StrategyEvent(run_id=run.id, strategy_id=run.strategy_id, event_type="portfolio.targets",
+                             payload=res["targets"], occurred_at=datetime.now(timezone.utc)))
+        sr = flat.get("sharpe")
+        await db.execute(update(StrategyRun).where(StrategyRun.id == run.id).values(
+            status="completed", progress_pct=100.0, ended_at=datetime.now(timezone.utc),
+            message=f"portfolio {run.mode}: Sharpe {sr:.2f}, DD {flat.get('max_drawdown', 0):.3f}, "
+                    f"asof {res['targets'].get('asof')}" if sr is not None else "portfolio run: no data",
+            equity_curve=curve))
+        await dispatch(db, "run.completed", {"run_id": run.id, "strategy_id": run.strategy_id, "mode": run.mode,
+                                             "metrics": flat, "targets": res["targets"]})
+        await db.commit()
+    return {"metrics": flat, "targets": res["targets"]}
 
 
 async def _load_model_cache(definition: dict, session_factory) -> dict:

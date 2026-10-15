@@ -106,3 +106,37 @@ httpx.ConnectError: All connection attempts failed
 [2026-10-15 12:34:54,707: INFO/MainProcess] Collection job 49 completed: dataset 190, 116 rows
 [2026-10-15 12:35:15,769: INFO/MainProcess] Task celery_worker.run_collection_job[02394275-c2d7-4ffa-9a67-84fbb73bbe91] succeeded in 69.36010330001591s: {'dataset_id': 190, 'row_count': 116}
 [2026-10-15 12:43:02,451: INFO/MainProcess] Task celery_worker.tick_scheduler[9e22add0-4b68-4b2a-a69b-f5f71e1db510] received
+[2026-10-15 12:43:23,552: INFO/MainProcess] Task celery_worker.tick_scheduler[9e22add0-4b68-4b2a-a69b-f5f71e1db510] succeeded in 21.101188400003593s: None
+[2026-10-15 12:43:44,606: INFO/MainProcess] Task celery_worker.tick_scheduler[8228327b-d49f-4e71-b34b-cf6e9c9ca307] received
+[2026-10-15 12:44:05,700: INFO/MainProcess] Task celery_worker.tick_scheduler[8228327b-d49f-4e71-b34b-cf6e9c9ca307] succeeded in 21.09301380001125s: None
+[2026-10-15 12:44:26,739: INFO/MainProcess] Task celery_worker.tick_scheduler[bbd70c19-e2d2-4827-a3cc-c6fac710d4cd] received
+[2026-10-15 12:44:47,818: INFO/MainProcess] Task celery_worker.tick_scheduler[bbd70c19-e2d2-4827-a3cc-c6fac710d4cd] succeeded in 21.077867800020613s: None
+[2026-10-15 12:45:08,864: WARNING/MainProcess] Substantial drift from train@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 41 seconds.  [orig: 2026-10-15 12:45:08.864246 recv: 2026-10-15 12:44:27.594308]
+[2026-10-15 12:45:08,864: WARNING/MainProcess] Substantial drift from chars@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 41 seconds.  [orig: 2026-10-15 12:45:08.864756 recv: 2026-10-15 12:44:27.624132]
+[2026-10-15 12:45:08,867: INFO/MainProcess] Task celery_worker.tick_scheduler[42c7201f-3bb1-4446-8b05-2baab534cf05] received
+[2026-10-15 12:45:14,323: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:45:14,323: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 12:45:29,962: INFO/MainProcess] Task celery_worker.tick_scheduler[42c7201f-3bb1-4446-8b05-2baab534cf05] succeeded in 21.094831299997168s: None
+[2026-10-15 12:45:50,997: INFO/MainProcess] sync with chars@DESKTOP-FNBU991
+[2026-10-15 12:45:50,998: INFO/MainProcess] sync with backtest@DESKTOP-FNBU991
+[2026-10-15 12:45:50,999: INFO/MainProcess] sync with train@DESKTOP-FNBU991
+[2026-10-15 12:45:51,000: INFO/MainProcess] sync with backtest2@DESKTOP-FNBU991
+[2026-10-15 12:46:02,454: INFO/MainProcess] Task celery_worker.tick_scheduler[f63bcff5-3d3a-4bde-a37d-2cdb84ed3624] received
+[2026-10-15 12:46:09,328: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:46:09,329: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 12:46:23,540: INFO/MainProcess] Task celery_worker.tick_scheduler[f63bcff5-3d3a-4bde-a37d-2cdb84ed3624] succeeded in 21.08589600000414s: None
+[2026-10-15 12:47:02,453: INFO/MainProcess] Task celery_worker.tick_scheduler[5a20a4ee-bd44-40fc-b943-545cf97f1a00] received
+[2026-10-15 12:47:09,335: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:47:09,336: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 12:47:23,548: INFO/MainProcess] Task celery_worker.tick_scheduler[5a20a4ee-bd44-40fc-b943-545cf97f1a00] succeeded in 21.094367399986368s: None
+[2026-10-15 12:47:44,596: WARNING/MainProcess] Substantial drift from backtest2@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 37 seconds.  [orig: 2026-10-15 12:47:44.596259 recv: 2026-10-15 12:47:07.493099]
+[2026-10-15 12:48:02,454: INFO/MainProcess] Task celery_worker.tick_scheduler[73062745-8212-415b-ae4f-4ac5bc977a3e] received
+[2026-10-15 12:48:09,343: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:48:09,344: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 12:48:09,344: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:48:23,547: INFO/MainProcess] Task celery_worker.tick_scheduler[73062745-8212-415b-ae4f-4ac5bc977a3e] succeeded in 21.093099099991377s: None
+[2026-10-15 12:49:02,454: INFO/MainProcess] Task celery_worker.tick_scheduler[4dc2527f-f130-412b-afbe-337cb15a73b4] received
+[2026-10-15 12:49:09,350: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:49:09,350: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:49:09,351: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 12:49:23,546: INFO/MainProcess] Task celery_worker.tick_scheduler[4dc2527f-f130-412b-afbe-337cb15a73b4] succeeded in 21.092024800018407s: None

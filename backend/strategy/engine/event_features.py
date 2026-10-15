@@ -30,14 +30,17 @@ def event_features(
     post_minutes: int = 60,
     title_contains: str | None = None,
     surprise_window: int = 24,
+    surprise_basis: str = "forecast",
 ) -> pd.DataFrame:
     """Point-in-time features aligned to `index` (bar timestamps, interpreted as UTC when naive).
 
     near            1 if a matching release is within [-pre_minutes, +post_minutes] of the bar timestamp
     mins_to_next    minutes until the next matching scheduled release (NaN if none)
     mins_since_last minutes since the last matching release (NaN if none)
-    surprise        (actual - forecast) of the last released event, divided by the std of the previous
-                    `surprise_window` surprises (NaN until two events exist; uses only events released <= t)
+    surprise        (actual - expected) of the last released event, divided by the std of the previous
+                    `surprise_window` surprises (NaN until two events exist; uses only events released <= t).
+                    surprise_basis: "forecast" (needs consensus), "previous" (actual - previous; a free proxy that
+                    mixes trend with surprise) or "auto" (forecast when present, else previous)
     """
     ev = events
     if currencies:
@@ -70,10 +73,12 @@ def event_features(
             | (np.nan_to_num(prv, nan=1e18) <= post_minutes)).astype(int)
 
     # surprise: only rows with both actual and forecast; z-scored by trailing std (past events only)
-    sp = ev.dropna(subset=["actual", "forecast"])
+    expected = {"forecast": ev["forecast"], "previous": ev["previous"],
+                "auto": ev["forecast"].where(ev["forecast"].notna(), ev["previous"])}[surprise_basis]
+    sp = ev.assign(_exp=expected).dropna(subset=["actual", "_exp"])
     surprise = np.full(len(t), np.nan)
     if len(sp) >= 2:
-        s_raw = (sp["actual"] - sp["forecast"]).to_numpy(float)
+        s_raw = (sp["actual"] - sp["_exp"]).to_numpy(float)
         sd = pd.Series(s_raw).rolling(surprise_window, min_periods=2).std().shift(1).to_numpy()
         z = s_raw / np.where(sd > 0, sd, np.nan)
         s_t = sp["datetime"].dt.tz_convert("UTC").dt.as_unit("ns").astype("int64").to_numpy()

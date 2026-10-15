@@ -12,3 +12,4 @@ you should set broker_connection_retry_on_startup to True.
   warnings.warn(
 
 [2026-10-15 12:42:41,366: INFO/MainProcess] mingle: searching for neighbors
+[2026-10-15 12:43:45,516: INFO/MainProcess] mingle: all alone
