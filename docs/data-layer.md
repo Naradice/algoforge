@@ -221,7 +221,7 @@ playwright install chromium
 ### `economic_calendar`
 Downloads historical economic indicator releases (CPI, NFP, unemployment, interest rate decisions) from Alpha Vantage or FRED.
 The `fred` source works **without an API key** (public `fredgraph.csv`); `indicators` accepts friendly names (`CPI`, `VIX`, …),
-`RATE_<CCY>` aliases for 3-month interbank rates (USD EUR GBP JPY AUD CHF CAD NZD NOK SEK; monthly, percent) or any raw FRED series id.
+`EVZ`/`GVZ`/`VXN`/`OVX` (CBOE implied-vol indices; ids unverified at time of writing), `RATE_<CCY>` aliases for 3-month interbank rates (USD EUR GBP JPY AUD CHF CAD NZD NOK SEK; monthly, percent) or any raw FRED series id.
 
 ```json
 {
@@ -370,3 +370,24 @@ The MCP tool `get_dataset_download(dataset_id)` returns the artifact path plus t
 Collectors write partitions incrementally using `pyarrow.parquet.ParquetWriter`. New partitions are flushed to disk as data arrives; the full dataset never needs to fit in memory.
 
 Before starting a new collection run the existing partition directory is cleared to avoid mixing old and new data (stale artifact accumulation bug).
+
+
+### `event_calendar`
+Scheduled releases **with release timestamps**, forecast, previous and actual (`data/collectors/event_calendar.py`).
+Sources are merged by `(datetime, currency, title)`, keeping the row with most fields filled:
+
+| source | gives | history | notes |
+|---|---|---|---|
+| `faireconomy` | schedule + forecast + previous (+ impact) for the **current week** | forward only — re-run (e.g. daily cron) to accumulate | public JSON, rate-limited; no `actual` |
+| `alfred` | **first-release actual + release date** for FRED series (NFP, CPI, UNRATE, retail sales, IP by default) | full | keyless `alfredgraph.csv` or `fred_api_key`; no forecast (consensus is not free) |
+| `csv` | any user history (`datetime,currency,title,[impact,forecast,previous,actual]`) | whatever you supply | e.g. output of your own scrapers / cyclic_downloader |
+
+`actual` from ALFRED is the *first release* (not later revisions), so using it in a backtest is point-in-time correct.
+Use with the `event` indicator (strategy-layer.md). Forecast/consensus history is the one thing not freely available:
+for surprise features on history, either supply a CSV or use the naive surprise `actual - previous`.
+
+### `mt5_swap`
+Read-only snapshot of the broker's real swap rates (`data/collectors/mt5_swap.py`; needs the MetaTrader5 package and a
+running terminal). MT5 has no swap history, so each run appends one row per symbol — schedule it daily to build history.
+Columns include `swap_long`, `swap_short`, `swap_mode`, `point`, `bid` and `swap_*_ann` (annualised fraction of price when
+derivable). Use `carry.markup` / `risk.swap_col_short` to feed measured long/short swaps into backtests.

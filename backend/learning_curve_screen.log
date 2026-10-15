@@ -1,0 +1,57 @@
+train pool: 557220 windows / 555 days; test sample 90551
+rv20 frac=0.01  draw=0 days=6    windows=6660    linear 0.470  hgb 0.489  mlp -6.347  (15s)
+rv60 frac=0.01  draw=0 days=6    windows=6660    linear 0.354  hgb 0.415  mlp -7.857  (13s)
+rv20 frac=0.01  draw=1 days=6    windows=5736    linear 0.509  hgb 0.495  mlp -6.953  (9s)
+rv60 frac=0.01  draw=1 days=6    windows=5736    linear 0.549  hgb 0.492  mlp -7.997  (9s)
+rv20 frac=0.01  draw=2 days=6    windows=6509    linear 0.237  hgb 0.182  mlp -21.105  (8s)
+C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\neural_network\_multilayer_perceptron.py:785: ConvergenceWarning: Stochastic Optimizer: Maximum iterations (200) reached and the optimization hasn't converged yet.
+  warnings.warn(
+rv60 frac=0.01  draw=2 days=6    windows=6509    linear -0.140  hgb 0.149  mlp -24.066  (14s)
+rv20 frac=0.02  draw=0 days=11   windows=11154   linear 0.560  hgb 0.559  mlp -2.626  (13s)
+rv60 frac=0.02  draw=0 days=11   windows=11154   linear 0.651  hgb 0.585  mlp -2.289  (19s)
+rv20 frac=0.02  draw=1 days=11   windows=11395   linear 0.620  hgb 0.525  mlp -1.856  (11s)
+rv60 frac=0.02  draw=1 days=11   windows=11395   linear 0.665  hgb 0.534  mlp -1.826  (14s)
+rv20 frac=0.02  draw=2 days=11   windows=10551   linear 0.611  hgb 0.556  mlp -1.780  (10s)
+rv60 frac=0.02  draw=2 days=11   windows=10551   linear 0.657  hgb 0.508  mlp -1.749  (15s)
+rv20 frac=0.05  draw=0 days=28   windows=28395   linear 0.671  hgb 0.630  mlp 0.395  (29s)
+rv60 frac=0.05  draw=0 days=28   windows=28395   linear 0.703  hgb 0.641  mlp 0.406  (35s)
+rv20 frac=0.05  draw=1 days=28   windows=29136   linear 0.601  hgb 0.625  mlp 0.002  (20s)
+rv60 frac=0.05  draw=1 days=28   windows=29136   linear 0.693  hgb 0.630  mlp -0.014  (20s)
+rv20 frac=0.05  draw=2 days=28   windows=28103   linear 0.627  hgb 0.641  mlp 0.189  (17s)
+rv60 frac=0.05  draw=2 days=28   windows=28103   linear 0.685  hgb 0.662  mlp 0.287  (22s)
+rv20 frac=0.1   draw=0 days=56   windows=56857   linear 0.679  hgb 0.666  mlp 0.499  (33s)
+rv60 frac=0.1   draw=0 days=56   windows=56857   linear 0.725  hgb 0.692  mlp 0.531  (43s)
+rv20 frac=0.1   draw=1 days=56   windows=52116   linear 0.660  hgb 0.663  mlp 0.429  (30s)
+rv60 frac=0.1   draw=1 days=56   windows=52116   linear 0.715  hgb 0.686  mlp 0.484  (35s)
+rv20 frac=0.1   draw=2 days=56   windows=55438   linear 0.680  hgb 0.673  mlp 0.556  (32s)
+rv60 frac=0.1   draw=2 days=56   windows=55438   linear 0.718  hgb 0.698  mlp 0.515  (59s)
+rv20 frac=0.25  draw=0 days=139  windows=140886  linear 0.687  hgb 0.692  mlp 0.622  (69s)
+C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\neural_network\_multilayer_perceptron.py:785: ConvergenceWarning: Stochastic Optimizer: Maximum iterations (200) reached and the optimization hasn't converged yet.
+  warnings.warn(
+rv60 frac=0.25  draw=0 days=139  windows=140886  linear 0.728  hgb 0.725  mlp 0.543  (309s)
+rv20 frac=0.25  draw=1 days=139  windows=143308  linear 0.685  hgb 0.689  mlp 0.625  (68s)
+C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\neural_network\_multilayer_perceptron.py:785: ConvergenceWarning: Stochastic Optimizer: Maximum iterations (200) reached and the optimization hasn't converged yet.
+  warnings.warn(
+rv60 frac=0.25  draw=1 days=139  windows=143308  linear 0.728  hgb 0.719  mlp 0.544  (304s)
+rv20 frac=0.25  draw=2 days=139  windows=133794  linear 0.685  hgb 0.690  mlp 0.620  (47s)
+rv60 frac=0.25  draw=2 days=139  windows=133794  linear 0.727  hgb 0.723  mlp 0.632  (86s)
+rv20 frac=1.0   draw=0 days=555  windows=300000  linear 0.688  hgb 0.700  mlp 0.667  (99s)
+rv60 frac=1.0   draw=0 days=555  windows=300000  linear 0.733  hgb 0.742  mlp 0.708  (103s)
+
+Summary (mean over draws; R^2 on the fixed test sample)
+--- rv20  (full data: linear 0.688  hgb 0.700  mlp 0.667)
+      1%  days=6    linear 0.406±0.120 (gap -0.282)  hgb 0.389±0.146 (gap -0.312)  mlp -11.468±6.818 (gap -12.136)
+      2%  days=11   linear 0.597±0.026 (gap -0.091)  hgb 0.547±0.016 (gap -0.154)  mlp -2.087±0.382 (gap -2.755)
+      5%  days=28   linear 0.633±0.029 (gap -0.054)  hgb 0.632±0.007 (gap -0.069)  mlp 0.196±0.161 (gap -0.472)
+     10%  days=56   linear 0.673±0.009 (gap -0.015)  hgb 0.668±0.004 (gap -0.033)  mlp 0.495±0.052 (gap -0.173)
+     25%  days=139  linear 0.685±0.001 (gap -0.002)  hgb 0.690±0.001 (gap -0.010)  mlp 0.623±0.002 (gap -0.045)
+    100%  days=555  linear 0.688±0.000 (gap +0.000)  hgb 0.700±0.000 (gap +0.000)  mlp 0.667±0.000 (gap +0.000)
+--- rv60  (full data: linear 0.733  hgb 0.742  mlp 0.708)
+      1%  days=6    linear 0.254±0.290 (gap -0.479)  hgb 0.352±0.147 (gap -0.390)  mlp -13.307±7.608 (gap -14.015)
+      2%  days=11   linear 0.658±0.006 (gap -0.075)  hgb 0.542±0.032 (gap -0.199)  mlp -1.955±0.238 (gap -2.663)
+      5%  days=28   linear 0.694±0.007 (gap -0.039)  hgb 0.644±0.013 (gap -0.097)  mlp 0.226±0.177 (gap -0.482)
+     10%  days=56   linear 0.719±0.004 (gap -0.014)  hgb 0.692±0.005 (gap -0.050)  mlp 0.510±0.020 (gap -0.198)
+     25%  days=139  linear 0.728±0.000 (gap -0.005)  hgb 0.722±0.002 (gap -0.020)  mlp 0.573±0.042 (gap -0.135)
+    100%  days=555  linear 0.733±0.000 (gap +0.000)  hgb 0.742±0.000 (gap +0.000)  mlp 0.708±0.000 (gap +0.000)
+
+Saved C:\Users\ksato\workspace\finance\algoforge\backend\learning_curve_screen.json

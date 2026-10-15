@@ -1,0 +1,27 @@
+windows train 314080 val 38993 test 86800 (31s)
+linear {'alpha': 10, 'val_mse': 0.07521196710851032}
+hgb (0.06678659210938105, 0.05, 31, 20, 517)
+hgb (0.0665175668540578, 0.05, 31, 200, 486)
+hgb (0.06688971150022491, 0.05, 127, 20, 180)
+hgb (0.0667558891688185, 0.05, 127, 200, 173)
+hgb (0.06695858524525729, 0.1, 31, 20, 199)
+hgb (0.06685944235237387, 0.1, 31, 200, 423)
+hgb (0.06696219696740668, 0.1, 127, 20, 79)
+hgb (0.0676244667447325, 0.1, 127, 200, 120)
+mlp (0.10119412054430903, (256, 128), 0.0001)
+mlp (0.09534848511531616, (256, 128), 0.001)
+mlp (0.11218842608071637, (512, 256), 0.0001)
+C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\neural_network\_multilayer_perceptron.py:785: ConvergenceWarning: Stochastic Optimizer: Maximum iterations (100) reached and the optimization hasn't converged yet.
+  warnings.warn(
+mlp (0.11353877104758439, (512, 256), 0.001)
+mlp (0.1082374324503114, (512, 256, 128), 0.0001)
+C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\neural_network\_multilayer_perceptron.py:785: ConvergenceWarning: Stochastic Optimizer: Maximum iterations (100) reached and the optimization hasn't converged yet.
+  warnings.warn(
+mlp (0.11022281197432876, (512, 256, 128), 0.001)
+mlp seed 0 done
+C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\neural_network\_multilayer_perceptron.py:785: ConvergenceWarning: Stochastic Optimizer: Maximum iterations (100) reached and the optimization hasn't converged yet.
+  warnings.warn(
+mlp seed 1 done
+mlp seed 2 done
+baselines saved (11359s)
+FINISHED

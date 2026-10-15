@@ -34,6 +34,7 @@ Definition format (new)
     "trailing_clip_with_price": false,   # clip stop to entry price (breakeven floor)
     "trailing_only_in_profit":  true,    # only move stop when position is profitable (matches trade_strategy default)
     "swap_col":                 "carry", # optional: indicator column with annual long-side carry; accrued per day held
+    "swap_col_short":           "",      # optional: separate (already signed) accrual column for sells, e.g. "carry_short"
   }
 }
 
@@ -385,7 +386,9 @@ def run_backtest(
 
     # ── Swap / carry accrual (risk.swap_col): annual rate differential accrued per calendar day held ──
     if rp.swap_col and trades and df_with_indicators is not None and rp.swap_col in df_with_indicators.columns:
-        _apply_swap(trades, equity_curve, df_with_indicators[rp.swap_col])
+        short_rate = (df_with_indicators[rp.swap_col_short]
+                      if rp.swap_col_short and rp.swap_col_short in df_with_indicators.columns else None)
+        _apply_swap(trades, equity_curve, df_with_indicators[rp.swap_col], short_rate)
 
     # ── Compute drawdown on equity curve ─────────────────────────────────
     eq_vals = np.array([p["equity"] for p in equity_curve])
@@ -410,7 +413,8 @@ def run_backtest(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _apply_swap(trades: list[dict], equity_curve: list[dict], rate: pd.Series) -> None:
+def _apply_swap(trades: list[dict], equity_curve: list[dict], rate: pd.Series,
+                short_rate: pd.Series | None = None) -> None:
     """Add carry accrual to every trade's profit and shift the equity curve accordingly.
 
     accrual = side * volume * mean(rate over holding period) * calendar_days / 365, where `rate` is the annual
@@ -421,15 +425,17 @@ def _apply_swap(trades: list[dict], equity_curve: list[dict], rate: pd.Series) -
     if idx.tz is not None:
         idx = idx.tz_convert(None)
     r = pd.Series(rate.values, index=idx)
+    rs = pd.Series(short_rate.values, index=idx) if short_rate is not None else None
     steps = []
     for t in trades:
         a, b = pd.Timestamp(t["opened_at"]), pd.Timestamp(t["closed_at"])
         a = a.tz_convert(None) if a.tzinfo else a
         b = b.tz_convert(None) if b.tzinfo else b
-        seg = r[(r.index >= a) & (r.index <= b)]
+        src = rs if (rs is not None and t["direction"] != "buy") else r
+        seg = src[(src.index >= a) & (src.index <= b)]
         if seg.empty or b <= a:
             continue
-        side = 1.0 if t["direction"] == "buy" else -1.0
+        side = 1.0 if (t["direction"] == "buy" or src is rs) else -1.0
         acc = side * float(t["volume"]) * float(seg.mean()) * (b - a).days / 365.0
         t["profit"] = round(t["profit"] + acc, 6)
         steps.append((b, acc))

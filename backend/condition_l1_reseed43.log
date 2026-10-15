@@ -1,0 +1,3 @@
+Created MLModel id=163 -- paste into ML_MODEL_ID at the top of this file.
+Submitted TrainingRun id=1554 dataset_id=29 execution_target=local hyperparams={'obs_len': 60, 'pred_len': 1, 'feature_cols': ['close'], 'tgt_feature_cols': ['vol_20'], 'preprocessing': {'indicators': [{'type': 'volatility', 'period': 20, 'column': 'close'}]}, 'normalize': 'zscore', 'split_mode': 'regime_controlled', 'require_contiguous': True, 'max_rows': 1000000, 'val_split': 0.2, 'batch_size': 64, 'disable_lr_scheduler': True, 'seed': 43, 'max_steps': 20000, 'val_every_steps': 1000, 'early_stop_patience_checks': 5, 'warm_start_checkpoint': 'models/162/training_1548/best.pt'}
+Resubmitted seed 43 as run_ids=[1554]

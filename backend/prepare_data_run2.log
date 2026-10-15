@@ -1,0 +1,69 @@
+[*********************100%***********************]  1 of 1 completed
+Created Datasource id=37 (USDJPY)
+Collecting USDJPY via yfinance (M1 intraday history is provider-limited -- expect only the last several weeks, not years)...
+from 2026-09-11 to 2026-09-12 of USDJPY=X
+2026-09-12 16:59:12,965 finance_client.client_base:1139 download [INFO]: save is not supported by this client.
+  DDM pretrain run 1/60: 5000 candles
+  DDM pretrain run 2/60: 5000 candles
+  DDM pretrain run 3/60: 5000 candles
+  DDM pretrain run 4/60: 5000 candles
+  DDM pretrain run 5/60: 5000 candles
+  DDM pretrain run 6/60: 5000 candles
+  DDM pretrain run 7/60: 5000 candles
+  DDM pretrain run 8/60: 5000 candles
+  DDM pretrain run 9/60: 5000 candles
+  DDM pretrain run 10/60: 5000 candles
+  DDM pretrain run 11/60: 5000 candles
+  DDM pretrain run 12/60: 5000 candles
+  DDM pretrain run 13/60: 5000 candles
+  DDM pretrain run 14/60: 5000 candles
+  DDM pretrain run 15/60: 5000 candles
+  DDM pretrain run 16/60: 5000 candles
+  DDM pretrain run 17/60: 5000 candles
+  DDM pretrain run 18/60: 5000 candles
+  DDM pretrain run 19/60: 5000 candles
+  DDM pretrain run 20/60: 5000 candles
+  DDM pretrain run 21/60: 5000 candles
+  DDM pretrain run 22/60: 5000 candles
+  DDM pretrain run 23/60: 5000 candles
+  DDM pretrain run 24/60: 5000 candles
+  DDM pretrain run 25/60: 5000 candles
+  DDM pretrain run 26/60: 5000 candles
+  DDM pretrain run 27/60: 5000 candles
+  DDM pretrain run 28/60: 5000 candles
+  DDM pretrain run 29/60: 5000 candles
+  DDM pretrain run 30/60: 5000 candles
+  DDM pretrain run 31/60: 5000 candles
+  DDM pretrain run 32/60: 5000 candles
+  DDM pretrain run 33/60: 5000 candles
+  DDM pretrain run 34/60: 5000 candles
+  DDM pretrain run 35/60: 5000 candles
+  DDM pretrain run 36/60: 5000 candles
+  DDM pretrain run 37/60: 5000 candles
+  DDM pretrain run 38/60: 5000 candles
+  DDM pretrain run 39/60: 5000 candles
+  DDM pretrain run 40/60: 5000 candles
+  DDM pretrain run 41/60: 5000 candles
+  DDM pretrain run 42/60: 5000 candles
+  DDM pretrain run 43/60: 5000 candles
+  DDM pretrain run 44/60: 5000 candles
+  DDM pretrain run 45/60: 5000 candles
+  DDM pretrain run 46/60: 5000 candles
+  DDM pretrain run 47/60: 5000 candles
+  DDM pretrain run 48/60: 5000 candles
+  DDM pretrain run 49/60: 5000 candles
+  DDM pretrain run 50/60: 5000 candles
+  DDM pretrain run 51/60: 5000 candles
+  DDM pretrain run 52/60: 5000 candles
+  DDM pretrain run 53/60: 5000 candles
+  DDM pretrain run 54/60: 5000 candles
+  DDM pretrain run 55/60: 5000 candles
+  DDM pretrain run 56/60: 5000 candles
+  DDM pretrain run 57/60: 5000 candles
+  DDM pretrain run 58/60: 5000 candles
+  DDM pretrain run 59/60: 5000 candles
+  DDM pretrain run 60/60: 5000 candles
+USDJPY dataset id=51 row_count=29611 span=2026-08-13 23:00:00+00:00 .. 2026-09-11 20:59:00+00:00
+DDM dataset id=52 row_count=300000 span=2000-01-03 00:00:00+00:00 .. 2000-09-26 07:00:00+00:00
+
+Paste these into USDJPY_DATASET_ID / DDM_DATASET_ID at the top of this file.

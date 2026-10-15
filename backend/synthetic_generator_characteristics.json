@@ -1,0 +1,93 @@
+[
+  {
+    "name": "sine",
+    "status": "TRANSFERS (D1: 0.507, 3/3)",
+    "acf_decay_lag": 10,
+    "dominant_period": 50.0,
+    "spectral_concentration": 1.0,
+    "recurrence_lag": 50,
+    "recurrence_height": 0.999,
+    "range_in_std": 2.82,
+    "var_stationarity_ratio": 1.0,
+    "lyapunov_per_step": 0.00638,
+    "perm_entropy": 0.2702
+  },
+  {
+    "name": "delay",
+    "status": "TRANSFERS (D2: 0.516, 3/3)",
+    "acf_decay_lag": 9,
+    "dominant_period": 51.3,
+    "spectral_concentration": 0.0712,
+    "recurrence_lag": 50,
+    "recurrence_height": 0.573,
+    "range_in_std": 4.15,
+    "var_stationarity_ratio": 0.997,
+    "lyapunov_per_step": 0.00888,
+    "perm_entropy": 0.3565
+  },
+  {
+    "name": "xor",
+    "status": "no effect (D3: 0/3)",
+    "acf_decay_lag": 1,
+    "dominant_period": 3.2,
+    "spectral_concentration": 0.0004,
+    "recurrence_lag": null,
+    "recurrence_height": null,
+    "range_in_std": 2.0,
+    "var_stationarity_ratio": 1.0,
+    "lyapunov_per_step": 0.00226,
+    "perm_entropy": 0.6516
+  },
+  {
+    "name": "lfsr",
+    "status": "no effect (D4: 0/3)",
+    "acf_decay_lag": 1,
+    "dominant_period": 7.5,
+    "spectral_concentration": 0.0079,
+    "recurrence_lag": 255,
+    "recurrence_height": 0.996,
+    "range_in_std": 2.0,
+    "var_stationarity_ratio": 1.0,
+    "lyapunov_per_step": 0.00159,
+    "perm_entropy": 0.6549
+  },
+  {
+    "name": "ar1",
+    "status": "no effect (G1: 0.825, 0/3)",
+    "acf_decay_lag": 45,
+    "dominant_period": 2500.0,
+    "spectral_concentration": 0.0128,
+    "recurrence_lag": null,
+    "recurrence_height": null,
+    "range_in_std": 8.12,
+    "var_stationarity_ratio": 0.863,
+    "lyapunov_per_step": 0.0051,
+    "perm_entropy": 0.9174
+  },
+  {
+    "name": "lorenz",
+    "status": "no effect (H1: 0.826, 0/3)",
+    "acf_decay_lag": 15,
+    "dominant_period": 327.9,
+    "spectral_concentration": 0.0061,
+    "recurrence_lag": null,
+    "recurrence_height": null,
+    "range_in_std": 4.76,
+    "var_stationarity_ratio": 0.994,
+    "lyapunov_per_step": 0.01693,
+    "perm_entropy": 0.2724
+  },
+  {
+    "name": "ar1_forced",
+    "status": "no effect (H2: FLUKE -- 2/3 on pretrain_seed=42 did not replicate, 0/3 on seed=99)",
+    "acf_decay_lag": 22,
+    "dominant_period": 157.1,
+    "spectral_concentration": 0.3883,
+    "recurrence_lag": 140,
+    "recurrence_height": 0.51,
+    "range_in_std": 5.87,
+    "var_stationarity_ratio": 0.991,
+    "lyapunov_per_step": 0.01666,
+    "perm_entropy": 0.237
+  }
+]

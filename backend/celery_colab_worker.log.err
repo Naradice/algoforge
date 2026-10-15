@@ -1,0 +1,30 @@
+[2026-09-03 17:33:25,795: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-03 17:33:25,827: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-03 17:33:25,828: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-03 17:33:25,848: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-03 17:33:26,898: INFO/MainProcess] mingle: all alone
+[2026-09-03 17:33:26,931: INFO/MainProcess] colab-worker@DESKTOP-FNBU991 ready.
+[2026-09-03 17:34:07,298: INFO/MainProcess] Task celery_worker.colab_train_model[f172f14e-7e87-4b75-b0e5-8d3ef93eaa9f] received
+[2026-09-03 17:34:11,912: INFO/MainProcess] missed heartbeat from celery@DESKTOP-FNBU991
+[2026-09-03 17:34:12,281: INFO/MainProcess] dataset 33: snapshot 31 created at dataset_snapshots/33/20260903T083411Z_60a1830f.parquet (1999970 rows, sha256=60a1830f)
+[2026-09-03 17:34:12,730: ERROR/MainProcess] colab training run 1363 failed
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_trainer.py", line 264, in run_colab_training
+    snapshot = await snapshot_service.upload_snapshot(db, snapshot.id, provider="gdrive")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\snapshot_service.py", line 105, in upload_snapshot
+    ref = gdrive_export.upload(local_path, name=name)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\gdrive_export.py", line 105, in upload
+    raise GDriveNotConfigured("GDRIVE_SNAPSHOT_FOLDER_ID is not set")
+data.gdrive_export.GDriveNotConfigured: GDRIVE_SNAPSHOT_FOLDER_ID is not set
+[2026-09-03 17:34:12,859: INFO/MainProcess] Task celery_worker.colab_train_model[f172f14e-7e87-4b75-b0e5-8d3ef93eaa9f] succeeded in 5.559771200001705s: {'error': 'GDRIVE_SNAPSHOT_FOLDER_ID is not set'}

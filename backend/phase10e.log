@@ -1,0 +1,31 @@
+dataset 165: 2000000 rows 2017-10-26 06:04:00 .. 2023-03-12 23:59:00
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10e_microstructure_screen.py", line 77, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10e_microstructure_screen.py", line 63, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, aux=a,
+                      n_train=200_000)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 170, in assess_target
+    F_own = np.c_[base, linear_extras(w.X, ts), clock, lags, trend]
+                        ~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\features.py", line 41, in linear_extras
+    parts += [hour, np.column_stack([hour[:, a] * h[:, c] for a in range(24) for c in cols])]
+                    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\lib\_shape_base_impl.py", line 669, in column_stack
+    return _nx.concatenate(arrays, 1)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 165. MiB for an array with shape (300000, 72) and data type float64
+retry 1 after failure
+dataset 165: 2000000 rows 2017-10-26 06:04:00 .. 2023-03-12 23:59:00
+future_return_h1           unpredictable      own -0.0033 lin -0.0050 best hgb -0.0009 hgb +0.4% mlp -2.7% aux_gain -0.16% ci [-0.0, -0.0] (139s)
+future_return_h5           unpredictable      own -0.0017 lin -0.0022 best hgb +0.0002 hgb +0.2% mlp -0.0% aux_gain -0.05% ci [-0.0, 0.0] (141s)
+future_return_h20          unpredictable      own -0.0043 lin -0.0059 best mlp -0.0003 hgb +0.3% mlp +0.6% aux_gain -0.17% ci [-0.0, -0.0] (213s)
+direction_h1               unpredictable      own +0.5169 lin +0.5168 best hgb +0.5210 hgb +0.1% mlp -4.0% aux_gain -0.01% ci [-0.000228, 7.5e-05] (68s)
+direction_h5               unpredictable      own +0.5233 lin +0.5245 best hgb +0.5292 hgb +0.1% mlp -0.2% aux_gain +0.00% ci [-0.000245, 0.000268] (64s)
+direction_h20              unpredictable      own +0.5207 lin +0.5178 best hgb +0.5247 hgb +0.2% mlp -0.1% aux_gain -0.11% ci [-0.001248, -0.000235] (67s)
+future_log_rv_h20          tree_only_headroom own +0.6737 lin +0.6812 best hgb +0.6955 hgb +4.5% mlp -13.2% aux_gain +2.31% ci [0.00139, 0.003392] (103s)
+future_log_rv_h60          tree_only_headroom own +0.6878 lin +0.7010 best hgb +0.7082 hgb +2.4% mlp -10.3% aux_gain +4.23% ci [0.00267, 0.004873] (89s)
+future_aux_h20_log_ticks   tree_only_headroom own +0.6462 lin +0.8480 best hgb +0.8623 hgb +9.4% mlp -5.3% aux_gain +57.03% ci [0.097367, 0.127444] (75s)
+future_aux_h20_log_spread  trivial            own +0.3670 lin +0.9530 best hgb +0.9649 hgb +25.3% mlp -3.9% aux_gain +92.57% ci [0.12014, 0.163031] (88s)
+future_aux_h20_ofi         unpredictable      own +0.0065 lin +0.0316 best hgb +0.0454 hgb +1.4% mlp -0.4% aux_gain +2.52% ci [0.008849, 0.015917] (56s)

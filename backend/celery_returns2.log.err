@@ -1,0 +1,235 @@
+[2026-09-27 17:58:02,082: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-27 17:58:02,097: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-27 17:58:02,098: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-27 17:58:02,110: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-27 17:58:03,143: INFO/MainProcess] mingle: all alone
+[2026-09-27 17:58:03,172: INFO/MainProcess] returns2@DESKTOP-FNBU991 ready.
+[2026-09-27 17:58:35,593: INFO/MainProcess] Task celery_worker.train_model[b739ae39-85a5-4f2a-8912-7dd9cf077a5d] received
+[2026-09-27 17:58:43,205: INFO/MainProcess] missed heartbeat from returns4@DESKTOP-FNBU991
+[2026-09-27 17:58:43,222: INFO/MainProcess] missed heartbeat from returns1@DESKTOP-FNBU991
+[2026-09-27 17:58:43,238: INFO/MainProcess] missed heartbeat from returns3@DESKTOP-FNBU991
+[2026-09-27 17:58:46,197: INFO/MainProcess] Training run 1617 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-27 18:09:04,953: INFO/MainProcess] Training run 1617 step 1000/20000 (check 1): train=0.202703 val=0.063724
+[2026-09-27 18:18:50,673: INFO/MainProcess] Training run 1617 step 2000/20000 (check 2): train=0.082878 val=0.053787
+[2026-09-27 18:28:09,784: INFO/MainProcess] Training run 1617 step 3000/20000 (check 3): train=0.044892 val=0.061406
+[2026-09-27 18:35:29,871: INFO/MainProcess] Training run 1617 step 4000/20000 (check 4): train=0.060936 val=0.047718
+[2026-09-27 18:42:46,438: INFO/MainProcess] Training run 1617 step 5000/20000 (check 5): train=0.079395 val=0.034048
+[2026-09-27 18:50:10,269: INFO/MainProcess] Training run 1617 step 6000/20000 (check 6): train=0.064317 val=0.028547
+[2026-09-27 18:57:38,050: INFO/MainProcess] Training run 1617 step 7000/20000 (check 7): train=0.068556 val=0.034735
+[2026-09-27 19:06:22,088: INFO/MainProcess] Training run 1617 step 8000/20000 (check 8): train=0.068125 val=0.034871
+[2026-09-27 19:16:59,960: INFO/MainProcess] Training run 1617 step 9000/20000 (check 9): train=0.036461 val=0.028956
+[2026-09-27 19:28:17,382: INFO/MainProcess] Training run 1617 step 10000/20000 (check 10): train=0.080564 val=0.030656
+[2026-09-27 19:38:59,265: INFO/MainProcess] Training run 1617 step 11000/20000 (check 11): train=0.069094 val=0.022900
+[2026-09-27 19:49:45,492: INFO/MainProcess] Training run 1617 step 12000/20000 (check 12): train=0.043971 val=0.021929
+[2026-09-27 20:00:18,045: INFO/MainProcess] Training run 1617 step 13000/20000 (check 13): train=0.032792 val=0.037442
+[2026-09-27 20:11:15,048: INFO/MainProcess] Training run 1617 step 14000/20000 (check 14): train=0.038115 val=0.022811
+[2026-09-27 20:18:32,068: INFO/MainProcess] Training run 1617 step 15000/20000 (check 15): train=0.042993 val=0.021804
+[2026-09-27 20:25:35,033: INFO/MainProcess] Training run 1617 step 16000/20000 (check 16): train=0.028988 val=0.025533
+[2026-09-27 20:32:35,712: INFO/MainProcess] Training run 1617 step 17000/20000 (check 17): train=0.062523 val=0.028439
+[2026-09-27 20:39:41,579: INFO/MainProcess] Training run 1617 step 18000/20000 (check 18): train=0.071620 val=0.026515
+[2026-09-27 20:46:45,558: INFO/MainProcess] Training run 1617 step 19000/20000 (check 19): train=0.052175 val=0.016990
+[2026-09-27 20:53:45,067: INFO/MainProcess] Training run 1617 step 20000/20000 (check 20): train=0.025316 val=0.014960
+[2026-09-27 20:53:47,228: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-27 20:53:47,246: INFO/MainProcess] Training run 1617 completed. Best epoch: 20, val_loss: 0.014960
+[2026-09-27 20:53:47,367: INFO/MainProcess] Task celery_worker.train_model[b739ae39-85a5-4f2a-8912-7dd9cf077a5d] succeeded in 10511.605189300026s: {'best_epoch': 20, 'val_loss': 0.014959811257799747, 'artifact_path': 'models\184\training_1617\best.pt'}
+[2026-09-27 20:53:47,376: WARNING/MainProcess] Substantial drift from returns3@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 10510 seconds.  [orig: 2026-09-27 20:53:47.376063 recv: 2026-09-27 17:58:37.195040]
+[2026-09-27 20:53:47,377: WARNING/MainProcess] Substantial drift from returns1@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 10510 seconds.  [orig: 2026-09-27 20:53:47.377161 recv: 2026-09-27 17:58:37.201735]
+[2026-09-27 20:53:47,377: WARNING/MainProcess] Substantial drift from returns4@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 10510 seconds.  [orig: 2026-09-27 20:53:47.377661 recv: 2026-09-27 17:58:37.279267]
+[2026-09-27 21:37:39,960: INFO/MainProcess] sync with returns1@DESKTOP-FNBU991
+[2026-09-27 21:37:46,936: INFO/MainProcess] Task celery_worker.train_model[43105c4e-b626-43c1-b33b-c5e57c2de27b] received
+[2026-09-27 21:37:49,739: INFO/MainProcess] missed heartbeat from returns1@DESKTOP-FNBU991
+[2026-09-27 21:37:52,736: INFO/MainProcess] Training run 1621 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-27 21:37:52,916: INFO/MainProcess] Training run 1621 warm-started from models/183/training_1615/best.pt
+[2026-09-27 21:37:54,756: INFO/MainProcess] missed heartbeat from returns3@DESKTOP-FNBU991
+[2026-09-27 21:37:54,757: INFO/MainProcess] missed heartbeat from returns4@DESKTOP-FNBU991
+[2026-09-27 21:40:41,239: ERROR/MainProcess] Training run 1621 failed during training
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\celery_worker.py", line 1294, in _train_model
+    train_loss = await loop.run_in_executor(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        None, step_train_fn, model, dataset, optimizer, criterion, batch_size, chunk
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\trainers\supervised.py", line 81, in train_steps
+    logits = model(src, input_tgt)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\nn\modules\module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\nn\modules\module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\architectures\decoder_only.py", line 308, in forward
+    x = block(x, self.causal_mask)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\nn\modules\module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\nn\modules\module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\architectures\decoder_only.py", line 108, in forward
+    mixed = self.dropout(self._mix(self.norm1(x), causal_mask))
+                         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\architectures\decoder_only.py", line 102, in _mix
+    mixed, _ = self.mix(x, x, x, attn_mask=causal_mask, need_weights=False)
+               ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\nn\modules\module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\nn\modules\module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\nn\modules\activation.py", line 1492, in forward
+    attn_output, attn_output_weights = F.multi_head_attention_forward(
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        query,
+        ^^^^^^
+    ...<17 lines>...
+        is_causal=is_causal,
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\nn\functional.py", line 6690, in multi_head_attention_forward
+    attn_output = linear(attn_output, out_proj_weight, out_proj_bias)
+RuntimeError: [enforce fail at alloc_cpu.cpp:117] data. DefaultCPUAllocator: not enough memory: you tried to allocate 983040 bytes.
+[2026-09-27 21:41:41,381: ERROR/MainProcess] Task celery_worker.train_model[43105c4e-b626-43c1-b33b-c5e57c2de27b] raised unexpected: TimeoutError()
+Traceback (most recent call last):
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\asyncpg\connection.py", line 2443, in connect
+    return await connect_utils._connect(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<22 lines>...
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\asyncpg\connect_utils.py", line 1218, in _connect
+    conn = await _connect_addr(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\asyncpg\connect_utils.py", line 1054, in _connect_addr
+    return await __connect_addr(params, True, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\asyncpg\connect_utils.py", line 1099, in __connect_addr
+    tr, pr = await connector
+             ^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\asyncpg\connect_utils.py", line 977, in _create_ssl_connection
+    do_ssl_upgrade = await pr.on_data
+                     ^^^^^^^^^^^^^^^^
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\app\trace.py", line 477, in trace_task
+    R = retval = fun(*args, **kwargs)
+                 ~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\app\trace.py", line 760, in __protected_call__
+    return self.run(*args, **kwargs)
+           ~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\celery_worker.py", line 542, in train_model
+    return asyncio.run(_train_model(training_run_id))
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\celery_worker.py", line 1457, in _train_model
+    await db.execute(update(TrainingRun).where(TrainingRun.id == training_run_id).values(
+        status="error", ended_at=datetime.now(timezone.utc)
+    ))
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\ext\asyncio\session.py", line 449, in execute
+    result = await greenlet_spawn(
+             ^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 201, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\session.py", line 2239, in _execute_internal
+    conn = self._connection_for_bind(bind)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\session.py", line 2108, in _connection_for_bind
+    return trans._connection_for_bind(engine, execution_options)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 2, in _connection_for_bind
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\session.py", line 1187, in _connection_for_bind
+    conn = bind.connect()
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 3277, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 143, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 3301, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\pool\base.py", line 447, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\pool\base.py", line 1264, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\pool\base.py", line 711, in checkout
+    rec = pool._do_get()
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\pool\impl.py", line 306, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\pool\base.py", line 388, in _create_connection
+    return _ConnectionRecord(self)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\pool\base.py", line 673, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\pool\base.py", line 899, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\util\langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\pool\base.py", line 895, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\create.py", line 661, in connect
+    return dialect.connect(*cargs, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\default.py", line 629, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 955, in connect
+    await_only(creator_fn(*arg, **kw)),
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 132, in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 196, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\asyncpg\connection.py", line 2442, in connect
+    async with compat.timeout(timeout):
+               ~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\timeouts.py", line 116, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError
+[2026-09-27 21:41:49,778: INFO/MainProcess] missed heartbeat from returns3@DESKTOP-FNBU991

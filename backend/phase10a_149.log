@@ -1,0 +1,20 @@
+dataset 149: 2000000 rows 2017-08-13 22:56:00 .. 2022-12-30 16:58:00
+future_return_h1     unpredictable      R2 -0.0027 ci_vs_ref [-7.131160925169412e-11, -3.105701025888646e-11] (169s) -- linear R2 -0.003 < 0.05: no usable signal
+future_return_h5     unpredictable      R2 -0.0027 ci_vs_ref [-3.6685748734147667e-10, -1.4092788270571964e-10] (95s) -- linear R2 -0.003 < 0.05: no usable signal
+future_return_h20    unpredictable      R2 -0.0039 ci_vs_ref [-2.5734675844811097e-09, -5.403369102345573e-10] (265s) -- linear R2 -0.004 < 0.05: no usable signal
+future_return_h60    unpredictable      R2 -0.0035 ci_vs_ref [-1.161098674655205e-08, 2.7485452706295823e-09] (125s) -- linear R2 -0.003 < 0.05: no usable signal
+direction_h1         unpredictable      AUC 0.5181 ci_vs_ref [-0.00010946653715975976, 0.0006040149149468635] (58s) -- linear AUC 0.518 < 0.55: no usable signal in the window
+direction_h5         unpredictable      AUC 0.5198 ci_vs_ref [-3.8765242115505086e-05, 0.0009249472321414549] (66s) -- linear AUC 0.520 < 0.55: no usable signal in the window
+direction_h20        unpredictable      AUC 0.5219 ci_vs_ref [0.00011952962339129253, 0.0012632286789667376] (65s) -- linear AUC 0.522 < 0.55: no usable signal in the window
+direction_h60        unpredictable      AUC 0.5218 ci_vs_ref [-0.0001778517113608878, 0.0025678879955927194] (59s) -- linear AUC 0.522 < 0.55: no usable signal in the window
+extreme_h20          tree_only_headroom AUC 0.8494 ci_vs_ref [0.009472976194449171, 0.021147285733248505] (54s) -- hgb beats the strong linear baseline by 2.5% (95% CI of loss gain +0.0000..+0.0030), but the MLP changes loss by -9.6% -- only trees find it
+extreme_h60          tree_only_headroom AUC 0.8203 ci_vs_ref [0.01754738780808313, 0.03742902828460137] (55s) -- hgb beats the strong linear baseline by 3.5% (95% CI of loss gain +0.0015..+0.0070), but the MLP changes loss by -3.8% -- only trees find it
+trend_er_h20         unpredictable      R2 +0.0016 ci_vs_ref [0.025473913674844844, 0.026852219088878748] (57s) -- linear R2 0.002 < 0.05: no usable signal
+trend_er_h60         unpredictable      R2 +0.0022 ci_vs_ref [0.008613381253143445, 0.009409867783409952] (66s) -- linear R2 0.002 < 0.05: no usable signal
+trend_change_h20     unpredictable      R2 +0.0210 ci_vs_ref [0.0008879566756452863, 0.0012871851984804486] (74s) -- linear R2 0.021 < 0.05: no usable signal
+trend_change_h60     unpredictable      R2 +0.0285 ci_vs_ref [0.000337018281749742, 0.0006823936817244871] (75s) -- linear R2 0.029 < 0.05: no usable signal
+dataset 149: 2000000 rows 2017-08-13 22:56:00 .. 2022-12-30 16:58:00
+trend_er_h20         unpredictable      R2 +0.0017 ci_vs_ref [0.02547681881258606, 0.02685556567265384] (58s) -- best R2 0.002 < 0.05 (linear 0.002): no usable signal
+trend_er_h60         unpredictable      R2 +0.0022 ci_vs_ref [0.008613927393788716, 0.009411731510209213] (75s) -- best R2 0.002 < 0.05 (linear 0.002): no usable signal
+trend_change_h20     no_headroom        R2 +0.5027 ci_vs_ref [0.025476970229680897, 0.02685564448997906] (69s) -- best nonlinear (hgb) changes loss by -0.1% vs linear (CI -0.0001..-0.0000); threshold 2% with CI > 0
+trend_change_h60     no_headroom        R2 +0.5102 ci_vs_ref [0.008613916998193949, 0.009411595058197069] (76s) -- best nonlinear (hgb) changes loss by -0.0% vs linear (CI -0.0000..+0.0000); threshold 2% with CI > 0

@@ -1,0 +1,6 @@
+INFO:     Loading environment from '.env'
+INFO:     Started server process [15016]
+INFO:     Waiting for application startup.
+2026-09-29 19:50:52,141 INFO  mcp.server.streamable_http_manager — StreamableHTTP session manager started
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)

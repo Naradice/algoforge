@@ -1,0 +1,42 @@
+USDJPY + ['EURUSD', 'GBPUSD', 'AUDUSD', 'USDCHF', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CHFJPY']: 1948757 rows 2017-08-14 00:00:00 .. 2022-12-30 16:58:00
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10b_cross_pair_screen.py", line 60, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10b_cross_pair_screen.py", line 47, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, exog=exog)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 125, in assess_target
+    Mlp_tr, Mlp_te = _std(np.c_[F_tree[tr], w.X[tr]], np.c_[F_tree[te], w.X[te]])
+                     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 52, in _std
+    return [(a - mu) / sd for a in (train, *arrays)]
+            ~~~~~~~~~^~~~
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 629. MiB for an array with shape (300000, 275) and data type float64
+USDJPY + ['EURUSD', 'GBPUSD', 'AUDUSD', 'USDCHF', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CHFJPY']: 1948757 rows 2017-08-14 00:00:00 .. 2022-12-30 16:58:00
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10b_cross_pair_screen.py", line 60, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10b_cross_pair_screen.py", line 47, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, exog=exog)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 124, in assess_target
+    Own_tr, Own_te = _std(F_own[tr], F_own[te]) if E.shape[1] else (None, None)
+                     ~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 52, in _std
+    return [(a - mu) / sd for a in (train, *arrays)]
+            ~~~~~~~~~^~~~
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 611. MiB for an array with shape (300000, 267) and data type float64
+retry 1 after failure
+USDJPY + ['EURUSD', 'GBPUSD', 'AUDUSD', 'USDCHF', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CHFJPY']: 1948757 rows 2017-08-14 00:00:00 .. 2022-12-30 16:58:00
+future_return_h1   unpredictable      own -0.0029 lin -0.0031 best hgb -0.0001 exog_gain -0.02% ci [-1.9093707836011428e-11, 1.2300080226663687e-11] (96s) -- best R2 -0.000 < 0.05 (linear -0.003): no usable signal
+future_return_h5   unpredictable      own -0.0039 lin -0.0042 best hgb -0.0012 exog_gain -0.03% ci [-1.6485526119788578e-10, 7.383683488865891e-11] (132s) -- best R2 -0.001 < 0.05 (linear -0.004): no usable signal
+future_return_h20  unpredictable      own -0.0072 lin -0.0073 best hgb -0.0007 exog_gain -0.01% ci [-4.213495493931344e-10, 3.7560094035905855e-10] (92s) -- best R2 -0.001 < 0.05 (linear -0.007): no usable signal
+future_return_h60  unpredictable      own -0.0065 lin -0.0074 best hgb -0.0019 exog_gain -0.09% ci [-6.339397948329059e-09, 5.127646298349214e-09] (130s) -- best R2 -0.002 < 0.05 (linear -0.007): no usable signal
+direction_h1       unpredictable      own +0.5181 lin +0.5303 best linear +0.5303 exog_gain +0.10% ci [0.00034466101955606967, 0.0009972998978243703] (75s) -- best AUC 0.530 < 0.55 (linear 0.530): no usable signal in the window
+direction_h5       unpredictable      own +0.5229 lin +0.5240 best hgb +0.5250 exog_gain -0.02% ci [-0.0003888252649820368, 0.00017342262951109338] (68s) -- best AUC 0.525 < 0.55 (linear 0.524): no usable signal in the window
+direction_h20      unpredictable      own +0.5188 lin +0.5188 best hgb +0.5193 exog_gain -0.03% ci [-0.0005656698319303607, 0.00013979280009845742] (81s) -- best AUC 0.519 < 0.55 (linear 0.519): no usable signal in the window
+direction_h60      unpredictable      own +0.5076 lin +0.5043 best hgb +0.5143 exog_gain -0.11% ci [-0.0014327906096942371, -0.00015421780563803936] (87s) -- best AUC 0.514 < 0.55 (linear 0.504): no usable signal in the window
+future_log_rv_h20  tree_only_headroom own +0.6378 lin +0.6416 best hgb +0.6568 exog_gain +1.04% ci [0.0007225017696243688, 0.0013575173105693852] (102s) -- hgb beats the strong linear baseline by 4.2% (95% CI of loss gain +0.0030..+0.0053), but the MLP changes loss by -9.5% -- only trees find it
+future_log_rv_h60  tree_only_headroom own +0.6520 lin +0.6539 best hgb +0.6733 exog_gain +0.54% ci [8.829295996927763e-06, 0.0009854580138716255] (98s) -- hgb beats the strong linear baseline by 5.6% (95% CI of loss gain +0.0030..+0.0070), but the MLP changes loss by -7.4% -- only trees find it
+vol_change_h20     tree_only_headroom own +0.2988 lin +0.3061 best hgb +0.3331 exog_gain +1.04% ci [0.0007224898584554014, 0.0013574857671932133] (67s) -- hgb beats the strong linear baseline by 3.9% (95% CI of loss gain +0.0027..+0.0049), but the MLP changes loss by -4.8% -- only trees find it
+extreme_h20        no_headroom        own +0.8670 lin +0.8653 best hgb +0.8767 exog_gain -0.40% ci [-0.000743267019245347, 0.00028769557866469974] (60s) -- best nonlinear (hgb) changes loss by +1.1% vs linear (CI -0.0012..+0.0021); threshold 2% with CI > 0

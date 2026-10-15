@@ -1,0 +1,9 @@
+source                    persist     HAR  [HAR coef 5/20/60]  |r| ACF lags (1, 5, 20, 60, 240)  logvol ACF lags 1,3,12 blocks
+USDJPY (reference)          0.434   0.523  [0.07 0.24 0.54]  |r| ACF 0.339 0.290 0.256 0.223 0.154  logvol ACF 0.761 0.663 0.395  decay=None  kurt=278
+v3_shock (current)         -0.950  -0.007  [0.01 0.04 0.10]  |r| ACF 0.206 -0.001 0.012 0.008 -0.006  logvol ACF 0.068 0.069 0.035  decay=2  kurt=37
+v3 no shock                -1.009  -0.086  [0.00 -0.01 0.52]  |r| ACF 0.064 0.012 0.008 0.020 0.020  logvol ACF 0.213 0.208 0.206  decay=2  kurt=1
+decayed shock tau300       -0.563  -0.170  [0.00 -0.02 0.15]  |r| ACF 0.054 0.006 0.013 0.011 0.005  logvol ACF 0.137 0.146 0.171  decay=2  kurt=3
+spread feedback a0.25      -0.747  -0.035  [0.02 0.05 0.13]  |r| ACF 0.224 0.003 0.017 0.003 0.019  logvol ACF 0.131 0.070 0.112  decay=2  kurt=44
+loss limit 1.404           -0.628   0.022  [0.02 0.04 0.08]  |r| ACF 0.199 0.013 0.015 -0.000 0.002  logvol ACF 0.118 0.059 0.108  decay=2  kurt=45
+
+Saved C:\Users\ksato\workspace\finance\algoforge\backend\ddm_variant_vol_screen.json

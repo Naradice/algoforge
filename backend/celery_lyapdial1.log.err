@@ -1,0 +1,233 @@
+[2026-09-25 08:20:53,001: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-25 08:20:53,013: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-25 08:20:53,014: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-25 08:20:53,025: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-25 08:20:54,053: INFO/MainProcess] mingle: all alone
+[2026-09-25 08:20:54,079: INFO/MainProcess] lyapdial1@DESKTOP-FNBU991 ready.
+[2026-09-25 08:21:15,832: INFO/MainProcess] Task celery_worker.train_model[2d939fc6-74fb-4bbe-9a26-96bcddc9028e] received
+[2026-09-25 08:21:19,075: INFO/MainProcess] missed heartbeat from lyapdial3@DESKTOP-FNBU991
+[2026-09-25 08:21:19,075: INFO/MainProcess] missed heartbeat from lyapdial2@DESKTOP-FNBU991
+[2026-09-25 08:21:20,091: INFO/MainProcess] Training run 1580 data_provenance: {'source_rows': 300000, 'effective_rows': 300000, 'max_rows': 1000000, 'first_timestamp': '2000-01-03 00:00:00+00:00', 'last_timestamp': '2000-09-15 07:11:00+00:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-25 08:29:27,900: INFO/MainProcess] Training run 1580 step 2000/40000 (check 1): train=0.018313 val=0.010516
+[2026-09-25 08:37:39,557: INFO/MainProcess] Training run 1580 step 4000/40000 (check 2): train=0.009663 val=0.008867
+[2026-09-25 08:45:55,395: INFO/MainProcess] Training run 1580 step 6000/40000 (check 3): train=0.008926 val=0.008003
+[2026-09-25 08:54:02,320: INFO/MainProcess] Training run 1580 step 8000/40000 (check 4): train=0.008439 val=0.007935
+[2026-09-25 09:02:12,581: INFO/MainProcess] Training run 1580 step 10000/40000 (check 5): train=0.008201 val=0.007466
+[2026-09-25 09:10:12,734: INFO/MainProcess] Training run 1580 step 12000/40000 (check 6): train=0.007835 val=0.007619
+[2026-09-25 09:17:54,307: INFO/MainProcess] Training run 1580 step 14000/40000 (check 7): train=0.007820 val=0.007031
+[2026-09-25 09:25:32,365: INFO/MainProcess] Training run 1580 step 16000/40000 (check 8): train=0.007442 val=0.006743
+[2026-09-25 09:33:04,700: INFO/MainProcess] Training run 1580 step 18000/40000 (check 9): train=0.007403 val=0.006341
+[2026-09-25 09:40:18,671: INFO/MainProcess] Training run 1580 step 20000/40000 (check 10): train=0.007234 val=0.006456
+[2026-09-25 09:47:10,667: INFO/MainProcess] Training run 1580 step 22000/40000 (check 11): train=0.007068 val=0.005736
+[2026-09-25 09:54:12,860: INFO/MainProcess] Training run 1580 step 24000/40000 (check 12): train=0.006850 val=0.006087
+[2026-09-25 10:01:14,599: INFO/MainProcess] Training run 1580 step 26000/40000 (check 13): train=0.006760 val=0.005880
+[2026-09-25 10:08:16,710: INFO/MainProcess] Training run 1580 step 28000/40000 (check 14): train=0.006645 val=0.005423
+[2026-09-25 10:15:12,579: INFO/MainProcess] Training run 1580 step 30000/40000 (check 15): train=0.006545 val=0.005289
+[2026-09-25 10:22:23,151: INFO/MainProcess] Training run 1580 step 32000/40000 (check 16): train=0.006412 val=0.005304
+[2026-09-25 10:30:06,690: INFO/MainProcess] Training run 1580 step 34000/40000 (check 17): train=0.006230 val=0.004965
+[2026-09-25 10:37:55,663: INFO/MainProcess] Training run 1580 step 36000/40000 (check 18): train=0.006166 val=0.005089
+[2026-09-25 10:45:47,711: INFO/MainProcess] Training run 1580 step 38000/40000 (check 19): train=0.006039 val=0.004965
+[2026-09-25 10:53:38,429: INFO/MainProcess] Training run 1580 step 40000/40000 (check 20): train=0.005988 val=0.004879
+[2026-09-25 10:53:39,307: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-25 10:53:39,314: INFO/MainProcess] Training run 1580 completed. Best epoch: 20, val_loss: 0.004879
+[2026-09-25 10:53:39,345: INFO/MainProcess] Task celery_worker.train_model[2d939fc6-74fb-4bbe-9a26-96bcddc9028e] succeeded in 9143.386511200006s: {'best_epoch': 20, 'val_loss': 0.0048791532860597165, 'artifact_path': 'models\176\training_1580\best.pt'}
+[2026-09-25 10:53:39,349: WARNING/MainProcess] Substantial drift from lyapdial3@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 9143 seconds.  [orig: 2026-09-25 10:53:39.349693 recv: 2026-09-25 08:21:16.095242]
+[2026-09-25 10:53:39,350: WARNING/MainProcess] Substantial drift from lyapdial2@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 9143 seconds.  [orig: 2026-09-25 10:53:39.350288 recv: 2026-09-25 08:21:16.110022]
+[2026-09-25 10:53:40,001: INFO/MainProcess] Task celery_worker.train_model[fa3f8725-1393-4519-bedd-fabc1c333838] received
+[2026-09-25 10:53:42,079: INFO/MainProcess] Training run 1583 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-25 10:53:42,144: INFO/MainProcess] Training run 1583 warm-started from models/175/training_1579/best.pt
+[2026-09-25 10:53:44,928: INFO/MainProcess] missed heartbeat from lyapdial3@DESKTOP-FNBU991
+[2026-09-25 10:53:44,929: INFO/MainProcess] missed heartbeat from lyapdial2@DESKTOP-FNBU991
+[2026-09-25 11:00:21,602: INFO/MainProcess] Training run 1583 step 1000/20000 (check 1): train=0.936321 val=0.839079
+[2026-09-25 11:07:09,760: INFO/MainProcess] Training run 1583 step 2000/20000 (check 2): train=0.862534 val=0.828707
+[2026-09-25 11:14:03,450: INFO/MainProcess] Training run 1583 step 3000/20000 (check 3): train=0.871337 val=0.827477
+[2026-09-25 11:20:48,693: INFO/MainProcess] Training run 1583 step 4000/20000 (check 4): train=0.820025 val=0.770725
+[2026-09-25 11:27:36,758: INFO/MainProcess] Training run 1583 step 5000/20000 (check 5): train=0.779112 val=0.702504
+[2026-09-25 11:34:31,430: INFO/MainProcess] Training run 1583 step 6000/20000 (check 6): train=0.775017 val=0.714406
+[2026-09-25 11:41:26,035: INFO/MainProcess] Training run 1583 step 7000/20000 (check 7): train=0.717421 val=0.675252
+[2026-09-25 11:48:33,219: INFO/MainProcess] Training run 1583 step 8000/20000 (check 8): train=0.782465 val=0.690074
+[2026-09-25 11:56:02,628: INFO/MainProcess] Training run 1583 step 9000/20000 (check 9): train=0.724339 val=0.668641
+[2026-09-25 12:03:32,982: INFO/MainProcess] Training run 1583 step 10000/20000 (check 10): train=0.725067 val=0.664523
+[2026-09-25 12:11:01,355: INFO/MainProcess] Training run 1583 step 11000/20000 (check 11): train=0.710073 val=0.676587
+[2026-09-25 12:18:26,335: INFO/MainProcess] Training run 1583 step 12000/20000 (check 12): train=0.703788 val=0.654602
+[2026-09-25 12:25:51,180: INFO/MainProcess] Training run 1583 step 13000/20000 (check 13): train=0.673399 val=0.685438
+[2026-09-25 12:33:17,127: INFO/MainProcess] Training run 1583 step 14000/20000 (check 14): train=0.680346 val=0.631310
+[2026-09-25 12:40:41,087: INFO/MainProcess] Training run 1583 step 15000/20000 (check 15): train=0.710862 val=0.629669
+[2026-09-25 12:48:00,959: INFO/MainProcess] Training run 1583 step 16000/20000 (check 16): train=0.700502 val=0.606805
+[2026-09-25 12:55:15,699: INFO/MainProcess] Training run 1583 step 17000/20000 (check 17): train=0.639768 val=0.609547
+[2026-09-25 13:02:28,160: INFO/MainProcess] Training run 1583 step 18000/20000 (check 18): train=0.665790 val=0.608699
+[2026-09-25 13:09:38,980: INFO/MainProcess] Training run 1583 step 19000/20000 (check 19): train=0.691774 val=0.633344
+[2026-09-25 13:16:25,479: INFO/MainProcess] Training run 1583 step 20000/20000 (check 20): train=0.644339 val=0.596167
+[2026-09-25 13:16:26,217: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-25 13:16:26,225: INFO/MainProcess] Training run 1583 completed. Best epoch: 20, val_loss: 0.596167
+[2026-09-25 13:16:26,253: INFO/MainProcess] Task celery_worker.train_model[fa3f8725-1393-4519-bedd-fabc1c333838] succeeded in 8566.095639900013s: {'best_epoch': 20, 'val_loss': 0.59616670946463, 'artifact_path': 'models\175\training_1583\best.pt'}
+[2026-09-25 13:16:26,257: INFO/MainProcess] sync with lyapdial4@DESKTOP-FNBU991
+[2026-09-25 13:16:26,272: WARNING/MainProcess] Substantial drift from lyapdial4@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 8468 seconds.  [orig: 2026-09-25 13:16:26.272878 recv: 2026-09-25 10:55:18.559495]
+[2026-09-25 13:16:27,600: INFO/MainProcess] Task celery_worker.train_model[b8572a26-dbd8-4571-8f90-5bb2b737ab75] received
+[2026-09-25 13:16:30,311: INFO/MainProcess] Training run 1588 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-25 13:16:30,403: INFO/MainProcess] Training run 1588 warm-started from models/176/training_1580/best.pt
+[2026-09-25 13:16:35,919: INFO/MainProcess] missed heartbeat from lyapdial3@DESKTOP-FNBU991
+[2026-09-25 13:16:35,920: INFO/MainProcess] missed heartbeat from lyapdial2@DESKTOP-FNBU991
+[2026-09-25 13:16:35,920: INFO/MainProcess] missed heartbeat from lyapdial4@DESKTOP-FNBU991
+[2026-09-25 13:23:44,081: INFO/MainProcess] Training run 1588 step 1000/20000 (check 1): train=0.839160 val=0.633819
+[2026-09-25 13:30:31,552: INFO/MainProcess] Training run 1588 step 2000/20000 (check 2): train=0.710835 val=0.595732
+[2026-09-25 13:37:17,626: INFO/MainProcess] Training run 1588 step 3000/20000 (check 3): train=0.645864 val=0.567068
+[2026-09-25 13:43:58,893: INFO/MainProcess] Training run 1588 step 4000/20000 (check 4): train=0.596987 val=0.538536
+[2026-09-25 13:50:39,325: INFO/MainProcess] Training run 1588 step 5000/20000 (check 5): train=0.571137 val=0.548401
+[2026-09-25 13:57:18,701: INFO/MainProcess] Training run 1588 step 6000/20000 (check 6): train=0.569750 val=0.504778
+[2026-09-25 14:03:54,061: INFO/MainProcess] Training run 1588 step 7000/20000 (check 7): train=0.517641 val=0.493025
+[2026-09-25 14:10:32,351: INFO/MainProcess] Training run 1588 step 8000/20000 (check 8): train=0.591369 val=0.492384
+[2026-09-25 14:17:09,783: INFO/MainProcess] Training run 1588 step 9000/20000 (check 9): train=0.523447 val=0.471875
+[2026-09-25 14:23:46,898: INFO/MainProcess] Training run 1588 step 10000/20000 (check 10): train=0.509650 val=0.528919
+[2026-09-25 14:30:23,526: INFO/MainProcess] Training run 1588 step 11000/20000 (check 11): train=0.486679 val=0.487049
+[2026-09-25 14:36:58,574: INFO/MainProcess] Training run 1588 step 12000/20000 (check 12): train=0.483030 val=0.455351
+[2026-09-25 14:43:31,617: INFO/MainProcess] Training run 1588 step 13000/20000 (check 13): train=0.461190 val=0.479617
+[2026-09-25 14:50:04,879: INFO/MainProcess] Training run 1588 step 14000/20000 (check 14): train=0.450926 val=0.414768
+[2026-09-25 14:56:41,475: INFO/MainProcess] Training run 1588 step 15000/20000 (check 15): train=0.453023 val=0.390689
+[2026-09-25 15:03:23,380: INFO/MainProcess] Training run 1588 step 16000/20000 (check 16): train=0.446861 val=0.359850
+[2026-09-25 15:09:59,122: INFO/MainProcess] Training run 1588 step 17000/20000 (check 17): train=0.390562 val=0.354816
+[2026-09-25 15:16:39,076: INFO/MainProcess] Training run 1588 step 18000/20000 (check 18): train=0.381127 val=0.349240
+[2026-09-25 15:23:14,805: INFO/MainProcess] Training run 1588 step 19000/20000 (check 19): train=0.406432 val=0.505290
+[2026-09-25 15:29:32,636: INFO/MainProcess] Training run 1588 step 20000/20000 (check 20): train=0.374414 val=0.303613
+[2026-09-25 15:29:33,559: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-25 15:29:33,571: INFO/MainProcess] Training run 1588 completed. Best epoch: 20, val_loss: 0.303613
+[2026-09-25 15:29:33,616: INFO/MainProcess] Task celery_worker.train_model[b8572a26-dbd8-4571-8f90-5bb2b737ab75] succeeded in 7985.883601700014s: {'best_epoch': 20, 'val_loss': 0.30361315604215505, 'artifact_path': 'models\176\training_1588\best.pt'}
+[2026-09-25 19:16:28,577: INFO/MainProcess] Task celery_worker.train_model[5541a288-fb13-44b7-a5a1-18a911983fb0] received
+[2026-09-25 19:16:32,074: INFO/MainProcess] Training run 1594 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-25 19:16:32,187: INFO/MainProcess] Training run 1594 warm-started from models/177/training_1591/best.pt
+[2026-09-25 19:16:33,054: INFO/MainProcess] missed heartbeat from lyapdial3@DESKTOP-FNBU991
+[2026-09-25 19:16:33,055: INFO/MainProcess] missed heartbeat from lyapdial2@DESKTOP-FNBU991
+[2026-09-25 19:16:33,055: INFO/MainProcess] missed heartbeat from lyapdial4@DESKTOP-FNBU991
+[2026-09-25 19:23:19,464: INFO/MainProcess] Training run 1594 step 1000/20000 (check 1): train=0.931040 val=0.842092
+[2026-09-25 19:29:46,139: INFO/MainProcess] Training run 1594 step 2000/20000 (check 2): train=0.840050 val=0.837964
+[2026-09-25 19:36:11,645: INFO/MainProcess] Training run 1594 step 3000/20000 (check 3): train=0.887498 val=0.823335
+[2026-09-25 19:42:48,410: INFO/MainProcess] Training run 1594 step 4000/20000 (check 4): train=0.819208 val=0.769127
+[2026-09-25 19:49:19,710: INFO/MainProcess] Training run 1594 step 5000/20000 (check 5): train=0.771601 val=0.700901
+[2026-09-25 19:55:52,488: INFO/MainProcess] Training run 1594 step 6000/20000 (check 6): train=0.732990 val=0.691688
+[2026-09-25 20:02:49,957: INFO/MainProcess] Training run 1594 step 7000/20000 (check 7): train=0.683658 val=0.660165
+[2026-09-25 20:09:50,533: INFO/MainProcess] Training run 1594 step 8000/20000 (check 8): train=0.709588 val=0.656255
+[2026-09-25 20:16:25,709: INFO/MainProcess] Training run 1594 step 9000/20000 (check 9): train=0.642166 val=0.634553
+[2026-09-25 20:22:57,876: INFO/MainProcess] Training run 1594 step 10000/20000 (check 10): train=0.736414 val=0.648850
+[2026-09-25 20:29:28,564: INFO/MainProcess] Training run 1594 step 11000/20000 (check 11): train=0.715088 val=0.636603
+[2026-09-25 20:36:04,148: INFO/MainProcess] Training run 1594 step 12000/20000 (check 12): train=0.690906 val=0.622219
+[2026-09-25 20:42:44,753: INFO/MainProcess] Training run 1594 step 13000/20000 (check 13): train=0.653083 val=0.599515
+[2026-09-25 20:49:31,486: INFO/MainProcess] Training run 1594 step 14000/20000 (check 14): train=0.630235 val=0.599825
+[2026-09-25 20:56:18,066: INFO/MainProcess] Training run 1594 step 15000/20000 (check 15): train=0.662564 val=0.600785
+[2026-09-25 21:03:07,079: INFO/MainProcess] Training run 1594 step 16000/20000 (check 16): train=0.649221 val=0.577189
+[2026-09-25 21:09:49,765: INFO/MainProcess] Training run 1594 step 17000/20000 (check 17): train=0.569408 val=0.572963
+[2026-09-25 21:16:33,909: INFO/MainProcess] Training run 1594 step 18000/20000 (check 18): train=0.594666 val=0.604248
+[2026-09-25 21:23:14,931: INFO/MainProcess] Training run 1594 step 19000/20000 (check 19): train=0.630670 val=0.567954
+[2026-09-25 21:29:49,128: INFO/MainProcess] Training run 1594 step 20000/20000 (check 20): train=0.590770 val=0.600367
+[2026-09-25 21:29:50,066: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-25 21:29:50,081: INFO/MainProcess] Training run 1594 completed. Best epoch: 19, val_loss: 0.567954
+[2026-09-25 21:29:50,152: INFO/MainProcess] Task celery_worker.train_model[5541a288-fb13-44b7-a5a1-18a911983fb0] succeeded in 8001.460389499989s: {'best_epoch': 19, 'val_loss': 0.5679535825864426, 'artifact_path': 'models\177\training_1594\best.pt'}
+[2026-09-25 21:29:51,913: INFO/MainProcess] Task celery_worker.train_model[70af3e25-9023-4ee6-b021-c6b90228d149] received
+[2026-09-25 21:29:57,856: INFO/MainProcess] Training run 1597 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-25 21:29:58,005: INFO/MainProcess] Training run 1597 warm-started from models/178/training_1592/best.pt
+[2026-09-25 21:29:58,928: INFO/MainProcess] missed heartbeat from lyapdial2@DESKTOP-FNBU991
+[2026-09-25 21:29:58,928: INFO/MainProcess] missed heartbeat from lyapdial3@DESKTOP-FNBU991
+[2026-09-25 21:29:58,929: INFO/MainProcess] missed heartbeat from lyapdial4@DESKTOP-FNBU991
+[2026-09-25 21:37:35,382: INFO/MainProcess] Training run 1597 step 1000/20000 (check 1): train=0.789800 val=0.611967
+[2026-09-25 21:42:03,297: INFO/MainProcess] Training run 1597 step 2000/20000 (check 2): train=0.627402 val=0.584532
+[2026-09-25 21:46:10,706: INFO/MainProcess] Training run 1597 step 3000/20000 (check 3): train=0.654225 val=0.555713
+[2026-09-25 21:50:17,998: INFO/MainProcess] Training run 1597 step 4000/20000 (check 4): train=0.595642 val=0.578754
+[2026-09-25 21:54:23,347: INFO/MainProcess] Training run 1597 step 5000/20000 (check 5): train=0.581590 val=0.524881
+[2026-09-25 21:58:28,619: INFO/MainProcess] Training run 1597 step 6000/20000 (check 6): train=0.549131 val=0.527473
+[2026-09-25 22:02:37,203: INFO/MainProcess] Training run 1597 step 7000/20000 (check 7): train=0.516227 val=0.491506
+[2026-09-25 22:06:43,851: INFO/MainProcess] Training run 1597 step 8000/20000 (check 8): train=0.538487 val=0.522660
+[2026-09-25 22:10:51,384: INFO/MainProcess] Training run 1597 step 9000/20000 (check 9): train=0.469547 val=0.498215
+[2026-09-25 22:14:59,019: INFO/MainProcess] Training run 1597 step 10000/20000 (check 10): train=0.546077 val=0.493377
+[2026-09-25 22:19:07,928: INFO/MainProcess] Training run 1597 step 11000/20000 (check 11): train=0.531628 val=0.481839
+[2026-09-25 22:23:17,476: INFO/MainProcess] Training run 1597 step 12000/20000 (check 12): train=0.515765 val=0.475580
+[2026-09-25 22:27:27,004: INFO/MainProcess] Training run 1597 step 13000/20000 (check 13): train=0.500883 val=0.480971
+[2026-09-25 22:31:35,425: INFO/MainProcess] Training run 1597 step 14000/20000 (check 14): train=0.475106 val=0.466292
+[2026-09-25 22:35:42,530: INFO/MainProcess] Training run 1597 step 15000/20000 (check 15): train=0.519280 val=0.455758
+[2026-09-25 22:39:49,939: INFO/MainProcess] Training run 1597 step 16000/20000 (check 16): train=0.490352 val=0.494395
+[2026-09-25 22:43:57,277: INFO/MainProcess] Training run 1597 step 17000/20000 (check 17): train=0.436585 val=0.416739
+[2026-09-25 22:48:04,540: INFO/MainProcess] Training run 1597 step 18000/20000 (check 18): train=0.454233 val=0.430824
+[2026-09-25 22:52:11,318: INFO/MainProcess] Training run 1597 step 19000/20000 (check 19): train=0.474872 val=0.421609
+[2026-09-25 22:56:18,263: INFO/MainProcess] Training run 1597 step 20000/20000 (check 20): train=0.453133 val=0.453989
+[2026-09-25 22:56:18,967: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-25 22:56:18,974: INFO/MainProcess] Training run 1597 completed. Best epoch: 17, val_loss: 0.416739
+[2026-09-25 22:56:19,007: INFO/MainProcess] Task celery_worker.train_model[70af3e25-9023-4ee6-b021-c6b90228d149] succeeded in 5186.984943899995s: {'best_epoch': 17, 'val_loss': 0.4167392934814106, 'artifact_path': 'models\178\training_1597\best.pt'}
+[2026-09-26 08:38:36,294: INFO/MainProcess] Task celery_worker.train_model[903e5eaf-1dc5-4a7f-893d-1bb0d255f3b9] received
+[2026-09-26 08:38:36,911: INFO/MainProcess] Training run 1601 data_provenance: {'source_rows': 300000, 'effective_rows': 300000, 'max_rows': 1000000, 'first_timestamp': '2000-01-03 00:00:00+00:00', 'last_timestamp': '2000-09-15 07:11:00+00:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-26 08:38:43,259: INFO/MainProcess] missed heartbeat from lyapdial3@DESKTOP-FNBU991
+[2026-09-26 08:38:43,260: INFO/MainProcess] missed heartbeat from lyapdial4@DESKTOP-FNBU991
+[2026-09-26 08:38:43,260: INFO/MainProcess] missed heartbeat from lyapdial2@DESKTOP-FNBU991
+[2026-09-26 08:51:05,962: INFO/MainProcess] Training run 1601 step 2000/40000 (check 1): train=0.069075 val=0.007440
+[2026-09-26 09:03:10,929: INFO/MainProcess] Training run 1601 step 4000/40000 (check 2): train=0.011079 val=0.006103
+[2026-09-26 09:15:12,644: INFO/MainProcess] Training run 1601 step 6000/40000 (check 3): train=0.009132 val=0.004847
+[2026-09-26 09:26:44,818: INFO/MainProcess] Training run 1601 step 8000/40000 (check 4): train=0.007555 val=0.007376
+[2026-09-26 09:37:24,316: INFO/MainProcess] Training run 1601 step 10000/40000 (check 5): train=0.007098 val=0.005726
+[2026-09-26 09:47:39,063: INFO/MainProcess] Training run 1601 step 12000/40000 (check 6): train=0.006354 val=0.005498
+[2026-09-26 09:57:54,416: INFO/MainProcess] Training run 1601 step 14000/40000 (check 7): train=0.005990 val=0.004487
+[2026-09-26 10:06:58,266: INFO/MainProcess] Training run 1601 step 16000/40000 (check 8): train=0.005737 val=0.005637
+[2026-09-26 10:15:32,507: INFO/MainProcess] Training run 1601 step 18000/40000 (check 9): train=0.005554 val=0.004950
+[2026-09-26 10:24:04,679: INFO/MainProcess] Training run 1601 step 20000/40000 (check 10): train=0.005130 val=0.004782
+[2026-09-26 10:32:30,839: INFO/MainProcess] Training run 1601 step 22000/40000 (check 11): train=0.005000 val=0.006578
+[2026-09-26 10:40:57,341: INFO/MainProcess] Training run 1601 step 24000/40000 (check 12): train=0.004816 val=0.007910
+[2026-09-26 10:49:23,675: INFO/MainProcess] Training run 1601 step 26000/40000 (check 13): train=0.004829 val=0.004605
+[2026-09-26 10:58:06,475: INFO/MainProcess] Training run 1601 step 28000/40000 (check 14): train=0.004439 val=0.006057
+[2026-09-26 11:09:01,057: INFO/MainProcess] Training run 1601 step 30000/40000 (check 15): train=0.004431 val=0.004465
+[2026-09-26 11:19:57,820: INFO/MainProcess] Training run 1601 step 32000/40000 (check 16): train=0.004285 val=0.005947
+[2026-09-26 11:29:41,128: INFO/MainProcess] Training run 1601 step 34000/40000 (check 17): train=0.004259 val=0.005887
+[2026-09-26 11:39:51,814: INFO/MainProcess] Training run 1601 step 36000/40000 (check 18): train=0.004018 val=0.008136
+[2026-09-26 11:53:47,875: INFO/MainProcess] Training run 1601 step 38000/40000 (check 19): train=0.003958 val=0.005160
+[2026-09-26 12:09:19,492: INFO/MainProcess] Training run 1601 step 40000/40000 (check 20): train=0.003951 val=0.006335
+[2026-09-26 12:09:20,407: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-26 12:09:20,421: INFO/MainProcess] Training run 1601 completed. Best epoch: 15, val_loss: 0.004465
+[2026-09-26 12:09:20,458: INFO/MainProcess] Task celery_worker.train_model[903e5eaf-1dc5-4a7f-893d-1bb0d255f3b9] succeeded in 12643.9794101s: {'best_epoch': 15, 'val_loss': 0.004465479521905794, 'artifact_path': 'models\181\training_1601\best.pt'}
+[2026-09-26 12:09:23,421: INFO/MainProcess] Task celery_worker.train_model[0af3d280-4cb9-4b8d-8978-880d1f2c5115] received
+[2026-09-26 12:09:28,359: INFO/MainProcess] Training run 1605 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-26 12:09:28,517: INFO/MainProcess] Training run 1605 warm-started from models/180/training_1600/best.pt
+[2026-09-26 12:09:29,485: INFO/MainProcess] missed heartbeat from lyapdial2@DESKTOP-FNBU991
+[2026-09-26 12:09:29,487: INFO/MainProcess] missed heartbeat from lyapdial3@DESKTOP-FNBU991
+[2026-09-26 12:09:29,487: INFO/MainProcess] missed heartbeat from lyapdial4@DESKTOP-FNBU991
+[2026-09-26 12:17:42,896: INFO/MainProcess] Training run 1605 step 1000/20000 (check 1): train=0.833868 val=0.848916
+[2026-09-26 12:25:09,188: INFO/MainProcess] Training run 1605 step 2000/20000 (check 2): train=0.893089 val=0.837370
+[2026-09-26 12:32:28,992: INFO/MainProcess] Training run 1605 step 3000/20000 (check 3): train=0.823776 val=0.850018
+[2026-09-26 12:39:55,621: INFO/MainProcess] Training run 1605 step 4000/20000 (check 4): train=0.866080 val=0.842178
+[2026-09-26 12:47:17,639: INFO/MainProcess] Training run 1605 step 5000/20000 (check 5): train=0.866278 val=0.828954
+[2026-09-26 12:54:49,330: INFO/MainProcess] Training run 1605 step 6000/20000 (check 6): train=0.858507 val=0.832294
+[2026-09-26 13:02:06,793: INFO/MainProcess] Training run 1605 step 7000/20000 (check 7): train=0.847511 val=0.840920
+[2026-09-26 13:09:04,290: INFO/MainProcess] Training run 1605 step 8000/20000 (check 8): train=0.850433 val=0.832574
+[2026-09-26 13:15:56,374: INFO/MainProcess] Training run 1605 step 9000/20000 (check 9): train=0.817880 val=0.837343
+[2026-09-26 13:22:39,427: INFO/MainProcess] Training run 1605 step 10000/20000 (check 10): train=0.844685 val=0.848064
+[2026-09-26 13:22:39,427: INFO/MainProcess] Training run 1605 early-stopped at step 10000 (no improvement for 5 checks, best=0.828954 @ check 5)
+[2026-09-26 13:22:40,322: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-26 13:22:40,332: INFO/MainProcess] Training run 1605 completed. Best epoch: 5, val_loss: 0.828954
+[2026-09-26 13:22:40,422: INFO/MainProcess] Task celery_worker.train_model[0af3d280-4cb9-4b8d-8978-880d1f2c5115] succeeded in 4396.936611700017s: {'best_epoch': 5, 'val_loss': 0.8289536223089768, 'artifact_path': 'models\180\training_1605\best.pt'}
+[2026-09-26 13:22:41,365: INFO/MainProcess] Task celery_worker.train_model[e290e53f-9fd8-4a47-af8c-a2823eb9c325] received
+[2026-09-26 13:22:46,232: INFO/MainProcess] Training run 1607 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-26 13:22:46,363: INFO/MainProcess] Training run 1607 warm-started from models/180/training_1600/best.pt
+[2026-09-26 13:22:50,247: INFO/MainProcess] missed heartbeat from lyapdial2@DESKTOP-FNBU991
+[2026-09-26 13:22:50,249: INFO/MainProcess] missed heartbeat from lyapdial3@DESKTOP-FNBU991
+[2026-09-26 13:22:50,249: INFO/MainProcess] missed heartbeat from lyapdial4@DESKTOP-FNBU991
+[2026-09-26 13:29:40,305: INFO/MainProcess] Training run 1607 step 1000/20000 (check 1): train=0.939997 val=0.857647
+[2026-09-26 13:36:06,297: INFO/MainProcess] Training run 1607 step 2000/20000 (check 2): train=0.868175 val=0.851561
+[2026-09-26 13:42:36,747: INFO/MainProcess] Training run 1607 step 3000/20000 (check 3): train=0.879044 val=0.838938
+[2026-09-26 13:49:03,749: INFO/MainProcess] Training run 1607 step 4000/20000 (check 4): train=0.846051 val=0.842123
+[2026-09-26 13:55:23,968: INFO/MainProcess] Training run 1607 step 5000/20000 (check 5): train=0.833100 val=0.835325
+[2026-09-26 14:01:45,684: INFO/MainProcess] Training run 1607 step 6000/20000 (check 6): train=0.878059 val=0.831768
+[2026-09-26 14:08:09,751: INFO/MainProcess] Training run 1607 step 7000/20000 (check 7): train=0.822826 val=0.833910
+[2026-09-26 14:14:33,592: INFO/MainProcess] Training run 1607 step 8000/20000 (check 8): train=0.890096 val=0.828609
+[2026-09-26 14:20:57,449: INFO/MainProcess] Training run 1607 step 9000/20000 (check 9): train=0.848365 val=0.830709
+[2026-09-26 14:27:17,453: INFO/MainProcess] Training run 1607 step 10000/20000 (check 10): train=0.861488 val=0.836595
+[2026-09-26 14:33:36,242: INFO/MainProcess] Training run 1607 step 11000/20000 (check 11): train=0.863472 val=0.832498
+[2026-09-26 14:39:49,950: INFO/MainProcess] Training run 1607 step 12000/20000 (check 12): train=0.850405 val=0.828954
+[2026-09-26 14:45:44,811: INFO/MainProcess] Training run 1607 step 13000/20000 (check 13): train=0.841682 val=0.839961
+[2026-09-26 14:45:44,812: INFO/MainProcess] Training run 1607 early-stopped at step 13000 (no improvement for 5 checks, best=0.828609 @ check 8)
+[2026-09-26 14:45:45,657: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-26 14:45:45,667: INFO/MainProcess] Training run 1607 completed. Best epoch: 8, val_loss: 0.828609
+[2026-09-26 14:45:45,720: INFO/MainProcess] Task celery_worker.train_model[e290e53f-9fd8-4a47-af8c-a2823eb9c325] succeeded in 4984.280436500005s: {'best_epoch': 8, 'val_loss': 0.8286089475057771, 'artifact_path': 'models\180\training_1607\best.pt'}

@@ -1,0 +1,82 @@
+  DDM segment run 1/36: 5000 candles
+  DDM segment run 2/36: 5000 candles
+  DDM segment run 3/36: 5000 candles
+  DDM segment run 4/36: 5000 candles
+  DDM segment run 5/36: 5000 candles
+  DDM segment run 6/36: 5000 candles
+  DDM segment run 7/36: 5000 candles
+  DDM segment run 8/36: 5000 candles
+  DDM segment run 9/36: 5000 candles
+  DDM segment run 10/36: 5000 candles
+  DDM segment run 11/36: 5000 candles
+  DDM segment run 12/36: 5000 candles
+  DDM segment run 13/36: 5000 candles
+  DDM segment run 14/36: 5000 candles
+  DDM segment run 15/36: 5000 candles
+  DDM segment run 16/36: 5000 candles
+  DDM segment run 17/36: 5000 candles
+  DDM segment run 18/36: 5000 candles
+  DDM segment run 19/36: 5000 candles
+  DDM segment run 20/36: 5000 candles
+  DDM segment run 21/36: 5000 candles
+  DDM segment run 22/36: 5000 candles
+  DDM segment run 23/36: 5000 candles
+  DDM segment run 24/36: 5000 candles
+  DDM segment run 25/36: 5000 candles
+  DDM segment run 26/36: 5000 candles
+  DDM segment run 27/36: 5000 candles
+  DDM segment run 28/36: 5000 candles
+  DDM segment run 29/36: 5000 candles
+  DDM segment run 30/36: 5000 candles
+  DDM segment run 31/36: 5000 candles
+  DDM segment run 32/36: 5000 candles
+  DDM segment run 33/36: 5000 candles
+  DDM segment run 34/36: 5000 candles
+  DDM segment run 35/36: 5000 candles
+  DDM segment run 36/36: 5000 candles
+  synthetic segment 'sine': 120000 candles
+E1: DDM 180K + Sine 120K (dose-response): dataset id=58 row_count=300000 span=2000-01-03 00:00:00+00:00 .. 2000-09-03 07:23:00+00:00
+  DDM segment run 1/24: 5000 candles
+  DDM segment run 2/24: 5000 candles
+  DDM segment run 3/24: 5000 candles
+  DDM segment run 4/24: 5000 candles
+  DDM segment run 5/24: 5000 candles
+  DDM segment run 6/24: 5000 candles
+  DDM segment run 7/24: 5000 candles
+  DDM segment run 8/24: 5000 candles
+  DDM segment run 9/24: 5000 candles
+  DDM segment run 10/24: 5000 candles
+  DDM segment run 11/24: 5000 candles
+  DDM segment run 12/24: 5000 candles
+  DDM segment run 13/24: 5000 candles
+  DDM segment run 14/24: 5000 candles
+  DDM segment run 15/24: 5000 candles
+  DDM segment run 16/24: 5000 candles
+  DDM segment run 17/24: 5000 candles
+  DDM segment run 18/24: 5000 candles
+  DDM segment run 19/24: 5000 candles
+  DDM segment run 20/24: 5000 candles
+  DDM segment run 21/24: 5000 candles
+  DDM segment run 22/24: 5000 candles
+  DDM segment run 23/24: 5000 candles
+  DDM segment run 24/24: 5000 candles
+  synthetic segment 'sine': 180000 candles
+E2: DDM 120K + Sine 180K (dose-response): dataset id=59 row_count=300000 span=2000-01-03 00:00:00+00:00 .. 2000-08-22 07:35:00+00:00
+  DDM segment run 1/12: 5000 candles
+  DDM segment run 2/12: 5000 candles
+  DDM segment run 3/12: 5000 candles
+  DDM segment run 4/12: 5000 candles
+  DDM segment run 5/12: 5000 candles
+  DDM segment run 6/12: 5000 candles
+  DDM segment run 7/12: 5000 candles
+  DDM segment run 8/12: 5000 candles
+  DDM segment run 9/12: 5000 candles
+  DDM segment run 10/12: 5000 candles
+  DDM segment run 11/12: 5000 candles
+  DDM segment run 12/12: 5000 candles
+  synthetic segment 'sine': 240000 candles
+E3: DDM 60K + Sine 240K (dose-response): dataset id=60 row_count=300000 span=2000-01-03 00:00:00+00:00 .. 2000-08-10 07:47:00+00:00
+  synthetic segment 'sine': 300000 candles
+E4: Sine 300K pure (dose-response): dataset id=61 row_count=300000 span=2000-01-03 00:00:00+00:00 .. 2000-07-29 07:59:00+00:00
+
+Paste these into E1_DATASET_ID=58 / E2_DATASET_ID=59 / E3_DATASET_ID=60 / E4_DATASET_ID=61 at the top of this file.

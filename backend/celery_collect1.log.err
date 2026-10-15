@@ -1,0 +1,27 @@
+[2026-09-29 19:50:49,862: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-29 19:50:49,876: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-29 19:50:49,877: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-29 19:50:49,884: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-29 19:50:50,927: INFO/MainProcess] mingle: all alone
+[2026-09-29 19:50:51,488: INFO/MainProcess] worker registry: {'hostname': 'collect1@DESKTOP-FNBU991', 'pid': 17360, 'machine': 'DESKTOP-FNBU991', 'started_at': '2026-09-29T10:50:51.043628+00:00', 'code_revision': '1fe991c2587d19e4af965aadb82031ac9ef19001', 'code_dirty': False, 'queues': ['collection'], 'current_task': None}
+[2026-09-29 19:50:51,488: INFO/MainProcess] collect1@DESKTOP-FNBU991 ready.
+[2026-09-29 23:32:57,115: INFO/MainProcess] missed heartbeat from train2@DESKTOP-FNBU991
+[2026-09-29 23:32:57,116: INFO/MainProcess] missed heartbeat from train3@DESKTOP-FNBU991
+[2026-09-29 23:32:57,116: INFO/MainProcess] missed heartbeat from train1@DESKTOP-FNBU991
+[2026-09-29 23:32:57,356: INFO/MainProcess] sync with train1@DESKTOP-FNBU991
+[2026-09-29 23:32:57,368: INFO/MainProcess] sync with train3@DESKTOP-FNBU991
+[2026-09-29 23:32:57,441: INFO/MainProcess] sync with train2@DESKTOP-FNBU991
+[2026-09-29 23:38:26,362: INFO/MainProcess] sync with train2@DESKTOP-FNBU991
+[2026-09-29 23:38:26,455: INFO/MainProcess] sync with train3@DESKTOP-FNBU991
+[2026-09-29 23:38:26,636: INFO/MainProcess] sync with train1@DESKTOP-FNBU991
+[2026-09-29 23:38:27,142: INFO/MainProcess] missed heartbeat from train2@DESKTOP-FNBU991

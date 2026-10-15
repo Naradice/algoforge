@@ -1,0 +1,27 @@
+=== condition H1 (DDM 240K + Lorenz 60K) pretrain -> USDJPY fine-tune (finetune_max_steps=20000) ===
+Created MLModel id=140 -- paste into ML_MODEL_ID at the top of this file.
+Submitted TrainingRun id=1497 dataset_id=64 execution_target=local hyperparams={'obs_len': 60, 'pred_len': 1, 'feature_cols': ['close'], 'tgt_feature_cols': ['vol_20'], 'preprocessing': {'indicators': [{'type': 'volatility', 'period': 20, 'column': 'close'}]}, 'normalize': 'zscore', 'split_mode': 'regime_controlled', 'require_contiguous': True, 'max_rows': 1000000, 'val_split': 0.2, 'batch_size': 64, 'disable_lr_scheduler': True, 'seed': 42, 'max_steps': 40000, 'val_every_steps': 2000}
+Waiting for pretrain run 1497 to complete (requires a `local`-queue Celery worker running)...
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\submit_transfer_experiment.py", line 1022, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\submit_transfer_experiment.py", line 986, in main
+    asyncio.run(_run_condition_d(which, seeds))
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\submit_transfer_experiment.py", line 897, in _run_condition_d
+    await run_pretrain_then_finetune(
+    ...<3 lines>...
+    )
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\submit_transfer_experiment.py", line 766, in run_pretrain_then_finetune
+    raise RuntimeError(f"Pretrain run {pretrain_run_id} ended with status={run.status!r}, not proceeding to fine-tune")
+RuntimeError: Pretrain run 1497 ended with status='error', not proceeding to fine-tune

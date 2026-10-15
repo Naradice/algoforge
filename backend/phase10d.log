@@ -1,0 +1,153 @@
+dataset 158: 2000000 rows 2017-08-17 10:59:00 .. 2022-12-30 21:59:00
+future_log_rv_h20  tree_only_headroom own +0.6480 lin +0.6523 best hgb +0.6662 hgb +4.0% mlp -11.2% vol_gain +1.23% ci [0.000982, 0.001748] (97s)
+future_log_rv_h60  tree_only_headroom own +0.6572 lin +0.6624 best hgb +0.6701 hgb +2.3% mlp -9.2% vol_gain +1.54% ci [0.00082, 0.001828] (109s)
+vol_change_h20     tree_only_headroom own +0.2838 lin +0.2926 best hgb +0.3173 hgb +3.5% mlp -4.3% vol_gain +1.23% ci [0.000982, 0.001748] (69s)
+extreme_h20        no_headroom        own +0.8675 lin +0.8697 best hgb +0.8767 hgb +0.3% mlp -29.0% vol_gain +0.44% ci [-0.000211, 0.0007] (67s)
+future_return_h1   unpredictable      own -0.0020 lin -0.0017 best hgb -0.0009 hgb +0.1% mlp -1732.9% vol_gain +0.02% ci [-0.0, 0.0] (86s)
+future_return_h5   unpredictable      own -0.0027 lin -0.0040 best hgb -0.0024 hgb +0.2% mlp -0.8% vol_gain -0.13% ci [-0.0, 0.0] (211s)
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 74, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 60, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, aux=aux,
+                      n_train=200_000)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 208, in assess_target
+    preds["linear"] = RidgeCV(alphas=[0.1, 1, 10, 100, 1000]).fit(Lin_tr, ytr).predict(Lin_te)
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\base.py", line 1336, in wrapper
+    return fit_method(estimator, *args, **kwargs)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\linear_model\_ridge.py", line 2783, in fit
+    super().fit(X, y, sample_weight=sample_weight, **params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\linear_model\_ridge.py", line 2507, in fit
+    estimator.fit(
+    ~~~~~~~~~~~~~^
+        X,
+        ^^
+    ...<2 lines>...
+        score_params=routed_params.scorer.score,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\linear_model\_ridge.py", line 2243, in fit
+    G_inverse_diag, c = solve(float(alpha), y, sqrt_sw, X_mean, *decomposition)
+                        ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\linear_model\_ridge.py", line 2127, in _solve_svd_design_matrix
+    G_inverse_diag = self._decomp_diag(w, U) + (alpha**-1)
+                     ~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\linear_model\_ridge.py", line 1820, in _decomp_diag
+    return xp.sum(v_prime * Q**2, axis=1)
+                  ~~~~~~~~^~~~~~
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 427. MiB for an array with shape (200000, 280) and data type float64
+retry 1 after failure
+dataset 158: 2000000 rows 2017-08-17 10:59:00 .. 2022-12-30 21:59:00
+future_return_h20  unpredictable      own -0.0014 lin -0.0016 best linear_own -0.0014 hgb -0.2% mlp -155.9% vol_gain -0.02% ci [-0.0, 0.0] (84s)
+direction_h1       unpredictable      own +0.5178 lin +0.5219 best hgb +0.5271 hgb +0.1% mlp -4.1% vol_gain +0.05% ci [0.000163, 0.000513] (72s)
+direction_h5       unpredictable      own +0.5211 lin +0.5236 best hgb +0.5286 hgb +0.1% mlp -2.0% vol_gain +0.03% ci [4.6e-05, 0.000353] (69s)
+direction_h20      unpredictable      own +0.5173 lin +0.5181 best linear +0.5181 hgb +0.1% mlp -0.3% vol_gain +0.01% ci [-0.000106, 0.00017] (64s)
+future_aux_h20     tree_only_headroom own +0.5959 lin +0.8328 best hgb +0.8496 hgb +10.0% mlp -5.7% vol_gain +58.63% ci [0.119475, 0.167161] (66s)
+future_aux_h60     tree_only_headroom own +0.5926 lin +0.8125 best hgb +0.8294 hgb +9.0% mlp -0.3% vol_gain +53.97% ci [0.088015, 0.129902] (72s)
+dataset 158: 2000000 rows 2017-08-17 10:59:00 .. 2022-12-30 21:59:00
+future_log_rv_h20  tree_only_headroom own +0.6480 lin +0.6529 best hgb +0.6662 hgb +3.8% mlp -11.4% vol_gain +1.39% ci [0.00114, 0.001946] (97s)
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 74, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 60, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, aux=aux,
+                      n_train=200_000)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 176, in assess_target
+    Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
+                                     ~~~~~^^^^
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 222. MiB for an array with shape (100000, 291) and data type float64
+retry 1 after failure
+dataset 158: 2000000 rows 2017-08-17 10:59:00 .. 2022-12-30 21:59:00
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 74, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 60, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, aux=aux,
+                      n_train=200_000)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 176, in assess_target
+    Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
+                     ~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 51, in _std
+    mu, sd = train.mean(0), train.std(0)
+                            ~~~~~~~~~^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py", line 222, in _std
+    ret = _var(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+               keepdims=keepdims, where=where, mean=mean)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py", line 190, in _var
+    x = asanyarray(arr - arrmean)
+                   ~~~~^~~~~~~~~
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 444. MiB for an array with shape (200000, 291) and data type float64
+retry 2 after failure
+dataset 158: 2000000 rows 2017-08-17 10:59:00 .. 2022-12-30 21:59:00
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 74, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 60, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, aux=aux,
+                      n_train=200_000)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 176, in assess_target
+    Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
+                     ~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 51, in _std
+    mu, sd = train.mean(0), train.std(0)
+                            ~~~~~~~~~^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py", line 222, in _std
+    ret = _var(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+               keepdims=keepdims, where=where, mean=mean)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py", line 190, in _var
+    x = asanyarray(arr - arrmean)
+                   ~~~~^~~~~~~~~
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 444. MiB for an array with shape (200000, 291) and data type float64
+retry 3 after failure
+dataset 158: 2000000 rows 2017-08-17 10:59:00 .. 2022-12-30 21:59:00
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 74, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 60, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, aux=aux,
+                      n_train=200_000)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 175, in assess_target
+    knn_cols = np.c_[har_features(w.X), base[:, -3:], clock, trend]
+                     ~~~~~~~~~~~~^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\features.py", line 14, in har_features
+    return np.log(np.column_stack([rms(X[:, -s:]) for s in scales if s <= X.shape[1]]) + EPS)
+                                   ~~~^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\targets.py", line 16, in rms
+    return np.sqrt((a ** 2).mean(axis=1))
+                    ~~^^~~
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 137. MiB for an array with shape (300000, 60) and data type float64
+retry 1 after failure
+dataset 158: 2000000 rows 2017-08-17 10:59:00 .. 2022-12-30 21:59:00
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 74, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10d_volume_screen.py", line 60, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0, aux=aux,
+                      n_train=200_000)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 175, in assess_target
+    knn_cols = np.c_[har_features(w.X), base[:, -3:], clock, trend]
+                     ~~~~~~~~~~~~^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\features.py", line 14, in har_features
+    return np.log(np.column_stack([rms(X[:, -s:]) for s in scales if s <= X.shape[1]]) + EPS)
+                                   ~~~^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\targets.py", line 16, in rms
+    return np.sqrt((a ** 2).mean(axis=1))
+                   ~~~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py", line 134, in _mean
+    ret = umr_sum(arr, axis, dtype, out, keepdims, where=where)
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 2.29 MiB for an array with shape (300000,) and data type float64
+retry 2 after failure
+dataset 158: 2000000 rows 2017-08-17 10:59:00 .. 2022-12-30 21:59:00
+future_log_rv_h60  tree_only_headroom own +0.6572 lin +0.6628 best hgb +0.6701 hgb +2.2% mlp -9.4% vol_gain +1.65% ci [0.000853, 0.0021] (105s)
+vol_change_h20     tree_only_headroom own +0.2838 lin +0.2937 best hgb +0.3173 hgb +3.3% mlp -4.5% vol_gain +1.39% ci [0.00114, 0.001946] (59s)
+future_aux_h20     tree_only_headroom own +0.5959 lin +0.8345 best hgb +0.8496 hgb +9.1% mlp -6.6% vol_gain +59.06% ci [0.120363, 0.16866] (70s)
+future_aux_h60     tree_only_headroom own +0.5926 lin +0.8157 best hgb +0.8294 hgb +7.4% mlp -2.4% vol_gain +54.77% ci [0.090182, 0.131196] (72s)

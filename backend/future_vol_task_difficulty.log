@@ -1,0 +1,21 @@
+
+=== USDJPY: 926273 windows ===
+predictor          chronological R2 chronological R2(log)         random R2        random R2(log)
+mean                         -0.292                -0.303            -0.000                -0.098
+time_of_day                  -0.164                -0.135             0.105                 0.131
+persistence                   0.158                 0.465             0.426                 0.552
+persistence_fit               0.286                 0.520             0.495                 0.572
+har                           0.351                 0.558             0.530                 0.644
+knn                          -0.595                -1.579            -0.177                -0.563
+mlp                       -2155.419                 0.486             0.406                 0.621
+
+=== DDM: 295200 windows ===
+predictor          chronological R2 chronological R2(log)         random R2        random R2(log)
+mean                         -0.001                -0.095            -0.000                -0.108
+persistence                  -0.877                -0.832            -0.892                -0.847
+persistence_fit               0.003                -0.089             0.004                -0.102
+har                          -0.046                 0.017            -0.043                 0.014
+knn                          -0.081                -0.009            -0.087                -0.017
+mlp                          -0.053                -0.017            -0.072                -0.028
+
+Saved C:\Users\ksato\workspace\finance\algoforge\backend\future_vol_task_difficulty.json

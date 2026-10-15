@@ -1,0 +1,6 @@
+USDJPY rv20: verdict=headroom  persistence 0.601 linear 0.715 hgb 0.734(+6.4%) mlp 0.698(-6.2%) knn 0.664(-17.9%)  n=926275 (125.4s)
+   reason: hgb beats the strong linear baseline by 6.4% (95% CI of loss gain +0.0050..+0.0074)
+USDJPY rv60: verdict=headroom  persistence 0.620 linear 0.757 hgb 0.769(+5.0%) mlp 0.733(-10.1%) knn 0.698(-24.4%)  n=899958 (130.3s)
+   reason: hgb beats the strong linear baseline by 5.0% (95% CI of loss gain +0.0018..+0.0054)
+DDM rv20: verdict=no_headroom  persistence -0.726 linear 0.037 hgb 0.040(+0.3%) mlp -0.048(-8.8%) knn 0.017(-2.1%)  n=295200 (79.0s)
+   reason: best nonlinear (hgb) changes loss by +0.3% vs linear (CI -0.0011..+0.0032); threshold 2% with CI > 0

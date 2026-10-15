@@ -1,0 +1,19 @@
+  synthetic segment 'sine': 60000 candles
+  synthetic segment 'delay': 60000 candles
+  synthetic segment 'xor': 60000 candles
+  synthetic segment 'lfsr': 60000 candles
+  DDM segment run 1/12: 5000 candles
+  DDM segment run 2/12: 5000 candles
+  DDM segment run 3/12: 5000 candles
+  DDM segment run 4/12: 5000 candles
+  DDM segment run 5/12: 5000 candles
+  DDM segment run 6/12: 5000 candles
+  DDM segment run 7/12: 5000 candles
+  DDM segment run 8/12: 5000 candles
+  DDM segment run 9/12: 5000 candles
+  DDM segment run 10/12: 5000 candles
+  DDM segment run 11/12: 5000 candles
+  DDM segment run 12/12: 5000 candles
+Mixture dataset id=53 row_count=300000 span=2000-01-03 00:00:00+00:00 .. 2000-08-13 07:44:00+00:00
+
+Paste this into MIXTURE_DATASET_ID at the top of this file.

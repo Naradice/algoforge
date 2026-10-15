@@ -24,8 +24,12 @@ in AlgoForge strategy definitions so existing saved strategies keep working:
                   {id}_pos (continuous brick position: (price - last_ref) / brick_size, same as finance_client renko_BrickSize)
     streak      → {id}  integer count of consecutive bars where left op right is true (default id: streak)
     roc         → {id}                                  (default id: roc)
+    event       → {id}_near (1 inside a pre/post window of a matching release), {id}_mins_to_next, {id}_mins_since_last,
+                  {id}_surprise (last (actual-forecast), z-scored). params: calendar (event_calendar artifact path),
+                  currencies, min_impact=high, pre_minutes=60, post_minutes=60, title_contains, surprise_window=24
     carry       → {id} (annual base-quote rate differential), {id}_w (diff/scale clipped to +-cap, 0 inside +-threshold)
-                  params: base, quote, threshold=0.005, scale=0.03, cap=1.5, rates_dir (FRED CSVs)
+                  also {id}_long / {id}_short (accrual after `markup`, annual); params: base, quote, threshold=0.005, scale=0.03,
+                  cap=1.5, markup=0, rates_dir (FRED CSVs)
     rolling     → {id}  rolling aggregate (sum/mean/std/min/max/diff/pct_change) of an existing column
     derived     → {id}  result of an arbitrary pandas expression evaluated against the DataFrame
     candle      → {id}_bull_engulf, {id}_bear_engulf,  (default id: candle)
@@ -393,8 +397,25 @@ def _apply_one(df: pd.DataFrame, itype: str, iid: str, params: dict) -> pd.DataF
         from strategy.engine.carry_rates import rate_differential
         diff = rate_differential(df.index, str(params["base"]).upper(), str(params["quote"]).upper(), params.get("rates_dir"))
         thr = float(params.get("threshold", 0.005)); scale = float(params.get("scale", 0.03)); cap = float(params.get("cap", 1.5))
+        markup = float(params.get("markup", 0.0))   # broker haircut p.a. paid on both sides
         df[iid] = diff
+        df[f"{iid}_long"] = diff - markup            # annual accrual earned by a long (base) position
+        df[f"{iid}_short"] = -diff - markup          # annual accrual earned by a short position
         df[f"{iid}_w"] = (diff / scale).clip(-cap, cap).where(diff.abs() > thr, 0.0)
+
+    elif itype == "event":
+        from strategy.engine.event_features import event_features, load_events
+        feats = event_features(
+            df.index, load_events(params.get("calendar")),
+            [str(c).upper() for c in params.get("currencies", [])],
+            min_impact=str(params.get("min_impact", "high")),
+            pre_minutes=int(params.get("pre_minutes", 60)),
+            post_minutes=int(params.get("post_minutes", 60)),
+            title_contains=params.get("title_contains"),
+            surprise_window=int(params.get("surprise_window", 24)),
+        )
+        for c in feats.columns:
+            df[f"{iid}_{c}"] = feats[c].values
 
     elif itype == "roc":
         period = int(params.get("period", 10))

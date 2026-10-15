@@ -1,0 +1,49 @@
+Loaded atlas: 176 points
+
+=== ATR-proxy 20-quantile regime -> DDM candidate sets ===
+  q= 0 n=  31 real_std=0.000106 best=(-0.10,7) ratio=1.25 ok
+  q= 1 n=  35 real_std=0.000126 best=(+0.00,15) ratio=1.07 ok
+  q= 2 n=  20 real_std=0.000128 best=(+0.00,15) ratio=1.05 ok
+  q= 3 n=  48 real_std=0.000129 best=(+0.00,15) ratio=1.04 ok
+  q= 4 n=  43 real_std=0.000132 best=(+0.00,15) ratio=1.02 ok
+  q= 5 n=  45 real_std=0.000130 best=(+0.00,15) ratio=1.04 ok
+  q= 6 n=  64 real_std=0.000135 best=(+0.00,15) ratio=1.00 ok
+  q= 7 n=  55 real_std=0.000136 best=(+0.00,15) ratio=1.01 ok
+  q= 8 n=  57 real_std=0.000131 best=(+0.00,15) ratio=1.02 ok
+  q= 9 n=  59 real_std=0.000143 best=(-0.50,7) ratio=1.01 ok
+  q=10 n=  71 real_std=0.000141 best=(+0.00,15) ratio=1.05 ok
+  q=11 n=  74 real_std=0.000145 best=(-0.50,7) ratio=1.00 ok
+  q=12 n=  74 real_std=0.000141 best=(+0.00,15) ratio=1.04 ok
+  q=13 n= 100 real_std=0.000134 best=(+0.00,15) ratio=1.00 ok
+  q=14 n=  82 real_std=0.000139 best=(-0.10,7) ratio=1.05 ok
+  q=15 n= 116 real_std=0.000146 best=(-0.50,7) ratio=1.01 ok
+  q=16 n= 129 real_std=0.000148 best=(-0.50,7) ratio=1.02 ok
+  q=17 n= 139 real_std=0.000152 best=(-0.50,7) ratio=1.05 ok
+  q=18 n= 126 real_std=0.000162 best=(-0.80,7) ratio=1.05 ok
+  q=19 n= 132 real_std=0.000182 best=(-0.90,7) ratio=1.02 ok
+
+20/20 quantiles mapped; 0 flagged OUT OF RANGE
+
+=== Building ATR-regime DDM long-path ensemble (§11 decayed shock) -- takes a while ===
+  q=0: 160 successful long-path simulations
+  q=1: 160 successful long-path simulations
+  q=2: 160 successful long-path simulations
+  q=3: 160 successful long-path simulations
+  q=4: 160 successful long-path simulations
+  q=5: 160 successful long-path simulations
+  q=6: 160 successful long-path simulations
+  q=7: 160 successful long-path simulations
+  q=8: 160 successful long-path simulations
+  q=9: 160 successful long-path simulations
+  q=10: 160 successful long-path simulations
+  q=11: 160 successful long-path simulations
+  q=12: 160 successful long-path simulations
+  q=13: 160 successful long-path simulations
+  q=14: 160 successful long-path simulations
+  q=15: 160 successful long-path simulations
+  q=16: 160 successful long-path simulations
+  q=17: 160 successful long-path simulations
+  q=18: 160 successful long-path simulations
+  q=19: 159 successful long-path simulations
+
+Saved C:\Users\ksato\workspace\finance\algoforge\backend\ddm_horizon_stats_ATR_shockP0.002_S0.3_tau300.0_floor0.0.npz

@@ -1,0 +1,52 @@
+ 
+ -------------- celery@DESKTOP-FNBU991 v5.3.1 (emerald-rush)
+--- ***** ----- 
+-- ******* ---- Windows-11-10.0.26200-SP0 2026-09-12 16:32:29
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         algoforge:0x27bc094c590
+- ** ---------- .> transport:   redis://localhost:6379/0
+- ** ---------- .> results:     redis://localhost:6379/0
+- *** --- * --- .> concurrency: 20 (solo)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> training         exchange=training(direct) key=training
+                
+
+[tasks]
+  . celery_worker.colab_train_model
+  . celery_worker.compute_characteristics
+  . celery_worker.compute_preprocessed_characteristics
+  . celery_worker.execute_strategy_run
+  . celery_worker.run_collection_job
+  . celery_worker.tick_scheduler
+  . celery_worker.train_model
+  . celery_worker.validate_model
+
+[2026-09-12 16:32:29,168: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-12 16:32:29,177: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-12 16:32:29,177: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-12 16:32:29,186: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-12 16:32:30,204: INFO/MainProcess] mingle: all alone
+[2026-09-12 16:32:30,237: INFO/MainProcess] celery@DESKTOP-FNBU991 ready.
+[2026-09-12 21:35:10,715: INFO/MainProcess] Task celery_worker.train_model[980369c0-fd26-4695-a082-d3cf0bbddb9a] received
+[2026-09-12 21:35:21,740: INFO/MainProcess] Training run 1420 data_provenance: {'source_rows': 29611, 'effective_rows': 29611, 'max_rows': 50000, 'first_timestamp': '2026-08-13 23:00:00+00:00', 'last_timestamp': '2026-09-11 20:59:00+00:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-12 21:36:00,869: INFO/MainProcess] Training run 1420 step 200/1000 (check 1): train=nan val=nan
+[2026-09-12 21:36:26,149: INFO/MainProcess] Training run 1420 step 400/1000 (check 2): train=nan val=nan
+[2026-09-12 21:36:51,401: INFO/MainProcess] Training run 1420 step 600/1000 (check 3): train=nan val=nan
+[2026-09-12 21:37:16,609: INFO/MainProcess] Training run 1420 step 800/1000 (check 4): train=nan val=nan
+[2026-09-12 21:37:42,629: INFO/MainProcess] Training run 1420 step 1000/1000 (check 5): train=nan val=nan
+[2026-09-12 21:37:42,629: INFO/MainProcess] Training run 1420 early-stopped at step 1000 (no improvement for 5 checks, best=inf @ check 0)
+[2026-09-12 21:37:42,713: INFO/MainProcess] Training run 1420 completed. Best epoch: 0, val_loss: inf
+[2026-09-12 21:37:42,727: INFO/MainProcess] Task celery_worker.train_model[980369c0-fd26-4695-a082-d3cf0bbddb9a] succeeded in 152.00934629999392s: {'best_epoch': 0, 'val_loss': inf, 'artifact_path': 'models\116\training_1420\best.pt'}

@@ -1,0 +1,76 @@
+{
+  "description": "Feedback-free DDMv3 baseline, frozen before adding spread_feedback. All numbers transcribed from this session's actual script output, not recomputed.",
+  "source_scripts": ["regime_atlas_comparison.py", "ddm_horizon_analysis.py", "ddm_calibration_check.py"],
+
+  "ordinal_correspondence": {
+    "description": "Spearman(stat, delta) on DDM side vs Spearman(stat, quantile) on real side -- from regime_atlas_comparison.py, long (1000-row) characterization window version",
+    "std":          {"ddm": -0.994, "real": -0.968},
+    "acf_1":        {"ddm": -0.591, "real": -0.358},
+    "acf_5":        {"ddm": -0.329, "real": -0.018},
+    "volclust_50":  {"ddm": -0.082, "real": -0.185},
+    "acf_20":       {"ddm": -0.635, "real": 0.591},
+    "skewness":     {"ddm": 0.432,  "real": -0.853},
+    "kurtosis":     {"ddm": -0.782, "real": 0.729}
+  },
+
+  "windowed_future_volatility_correlation": {
+    "description": "Spearman(quantile, windowed future vol at t+h) -- ddm_horizon_analysis.py section A",
+    "horizons_windows": [1, 4, 12, 24],
+    "ddm":  {"1": -0.8496, "4": -0.8075, "12": -0.7143, "24": -0.8241},
+    "real": {"1": -0.9173, "4": -0.5414, "12": -0.7429, "24": -0.9053}
+  },
+
+  "cumulative_return_std_ratio": {
+    "description": "DDM/Real ratio of cumulative-return std, t -> t+h -- ddm_horizon_analysis.py section B",
+    "1": 0.800,
+    "4": 0.826,
+    "12": 0.847,
+    "24": 1.000
+  },
+
+  "interval_coverage_pooled": {
+    "description": "Empirical coverage %, DDM ensemble's [lo,hi] percentile interval vs nominal level, pooled across all 20 quantiles -- ddm_calibration_check.py section A",
+    "h1":  {"nominal_50": 28.6, "nominal_80": 53.7, "nominal_90": 67.5, "nominal_95": 82.2},
+    "h24": {"nominal_50": 19.2, "nominal_80": 43.0, "nominal_90": 62.1, "nominal_95": 77.7}
+  },
+
+  "per_quantile_90pct_coverage": {
+    "description": "Per-quantile empirical coverage %% of the DDM ensemble's 90% (5th-95th percentile) interval -- ddm_calibration_check.py section A2",
+    "h1":  [39.2, 39.6, 69.3, 79.8, 82.1, 64.5, 70.1, 61.7, 70.4, 80.0, 75.0, 73.1, 74.5, 80.4, 87.0, 77.3, 75.7, 86.4, 100.0, 94.4],
+    "h24": [70.2, 51.1, 81.1, 76.0, 81.2, 71.0, 63.2, 60.5, 63.0, 62.0, 41.7, 50.7, 55.3, 37.0, 39.1, 45.5, 37.8, 63.6, 50.0, 38.9]
+  },
+
+  "tail_probability_h24": {
+    "description": "Predicted (DDM ensemble) vs realized frequency (%) of |cumulative return| exceeding real-data percentile thresholds, horizon=24 windows -- ddm_calibration_check.py section B",
+    "thresholds": {"p50": 0.00351, "p70": 0.00519, "p85": 0.00697, "p95": 0.00931},
+    "per_quantile": {
+      "note": "rows are [pred_p50, real_p50, pred_p70, real_p70, pred_p85, real_p85, pred_p95, real_p95], indexed by quantile 0-19",
+      "q0":  [15.6, 47.4, 10.6, 29.2, 8.1, 16.4, 5.0, 8.2],
+      "q1":  [13.1, 57.6, 5.6, 37.4, 2.5, 20.9, 2.5, 5.8],
+      "q2":  [21.9, 48.0, 13.1, 26.8, 8.8, 14.2, 5.0, 3.1],
+      "q3":  [21.9, 48.1, 12.5, 26.0, 7.5, 16.3, 3.8, 4.8],
+      "q4":  [24.4, 49.1, 13.1, 33.9, 10.0, 14.3, 5.0, 3.6],
+      "q5":  [18.1, 45.8, 6.9, 24.3, 5.6, 7.5, 4.4, 1.9],
+      "q6":  [14.4, 49.4, 7.5, 28.7, 5.0, 10.3, 4.4, 4.6],
+      "q7":  [14.4, 53.1, 6.9, 25.9, 2.5, 19.8, 1.2, 7.4],
+      "q8":  [14.4, 46.9, 8.1, 27.2, 3.8, 16.0, 1.9, 4.9],
+      "q9":  [17.5, 54.0, 8.8, 34.0, 6.2, 18.0, 5.0, 6.0],
+      "q10": [7.5, 53.3, 0.6, 31.7, 0.6, 16.7, 0.0, 5.0],
+      "q11": [9.4, 52.2, 5.6, 28.4, 1.2, 14.9, 0.0, 9.0],
+      "q12": [13.1, 57.4, 3.1, 31.9, 2.5, 14.9, 1.9, 2.1],
+      "q13": [7.5, 47.8, 3.8, 41.3, 2.5, 15.2, 1.9, 8.7],
+      "q14": [10.6, 56.5, 6.2, 41.3, 3.1, 17.4, 2.5, 6.5],
+      "q15": [6.9, 47.7, 2.5, 36.4, 1.9, 13.6, 1.2, 2.3],
+      "q16": [6.2, 45.9, 2.5, 10.8, 0.6, 5.4, 0.0, 0.0],
+      "q17": [6.2, 36.4, 1.2, 13.6, 1.2, 4.5, 0.0, 4.5],
+      "q18": [6.2, 50.0, 3.8, 36.7, 0.6, 23.3, 0.6, 3.3],
+      "q19": [9.4, 44.4, 5.6, 33.3, 2.5, 5.6, 2.5, 0.0]
+    }
+  },
+
+  "ensemble_candidates_used": {
+    "description": "delta/wma per quantile as selected by ddm_ensemble_selection.py -- reused as-is for the spread-feedback experiment, not re-derived",
+    "note": "Full 8-candidate sets per quantile live in ddm_regime_atlas.csv + ddm_ensemble_selection.py's own selection logic; representative best-match points from that run",
+    "q0_best": {"delta": -0.80, "wma": 7}, "q19_best": {"delta": -0.10, "wma": 7}
+  }
+}

@@ -52,6 +52,11 @@ _FRED_SERIES: dict[str, str] = {
     "DURABLES":             "DGORDER",
     "TREASURY_YIELD":       "DGS10",
     "VIX":                  "VIXCLS",
+    # CBOE implied-volatility indices (daily): EUR/USD, gold, Nasdaq-100, crude oil. Series ids as published on FRED.
+    "EVZ":                  "EVZCLS",
+    "GVZ":                  "GVZCLS",
+    "VXN":                  "VXNCLS",
+    "OVX":                  "OVXCLS",
     # 3-month interbank rates (monthly, %), used by the FX carry indicator
     "RATE_USD": "IR3TIB01USM156N", "RATE_EUR": "IR3TIB01EZM156N", "RATE_GBP": "IR3TIB01GBM156N",
     "RATE_JPY": "IR3TIB01JPM156N", "RATE_AUD": "IR3TIB01AUM156N", "RATE_CHF": "IR3TIB01CHM156N",

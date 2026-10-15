@@ -1,0 +1,36 @@
+dataset 29: 2000000 rows 2017-04-25 02:05:00 .. 2022-08-31 17:59:00
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10a_target_screen.py", line 68, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\phase10a_target_screen.py", line 57, in main
+    r = assess_target(close, target=target, horizon=h, obs=60, with_time=True, seed=0)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 109, in assess_target
+    Lin_tr, Lin_te = _std(F_lin[tr], F_lin[te])
+                     ~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model_core\analysis\assess.py", line 46, in _std
+    mu, sd = train.mean(0), train.std(0)
+                            ~~~~~~~~~^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py", line 222, in _std
+    ret = _var(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+               keepdims=keepdims, where=where, mean=mean)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py", line 190, in _var
+    x = asanyarray(arr - arrmean)
+                   ~~~~^~~~~~~~~
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 611. MiB for an array with shape (300000, 267) and data type float64
+dataset 29: 2000000 rows 2017-04-25 02:05:00 .. 2022-08-31 17:59:00
+dataset 29: 2000000 rows 2017-04-25 02:05:00 .. 2022-08-31 17:59:00
+future_return_h1     unpredictable      R2 -0.0008 ci_vs_ref [-2.673462493735396e-11, 3.8548242529027355e-12] (201s) -- best R2 -0.000 < 0.05 (linear -0.001): no usable signal
+future_return_h5     unpredictable      R2 -0.0005 ci_vs_ref [-8.707397852146413e-11, 2.02303929756061e-11] (138s) -- best R2 -0.000 < 0.05 (linear -0.001): no usable signal
+future_return_h20    unpredictable      R2 -0.0023 ci_vs_ref [-1.1220092564996222e-09, -3.185230135291187e-11] (87s) -- best R2 -0.001 < 0.05 (linear -0.002): no usable signal
+future_return_h60    unpredictable      R2 -0.0041 ci_vs_ref [-6.383893442669788e-09, 1.2746118115735773e-09] (226s) -- best R2 -0.001 < 0.05 (linear -0.004): no usable signal
+direction_h1         unpredictable      AUC 0.5205 ci_vs_ref [0.0003387506192168309, 0.0008870048502816624] (63s) -- best AUC 0.525 < 0.55 (linear 0.521): no usable signal in the window
+direction_h5         unpredictable      AUC 0.5226 ci_vs_ref [0.00033885981032655266, 0.0011759139162987962] (55s) -- best AUC 0.529 < 0.55 (linear 0.523): no usable signal in the window
+direction_h20        unpredictable      AUC 0.5197 ci_vs_ref [-0.00044612309551765703, 0.0009180272718616097] (62s) -- best AUC 0.529 < 0.55 (linear 0.520): no usable signal in the window
+direction_h60        unpredictable      AUC 0.5127 ci_vs_ref [-0.0023997914939031797, 0.0001296040632486469] (68s) -- best AUC 0.516 < 0.55 (linear 0.513): no usable signal in the window
+extreme_h20          tree_only_headroom AUC 0.8564 ci_vs_ref [0.009796904880383648, 0.019729427253619876] (55s) -- hgb beats the strong linear baseline by 4.7% (95% CI of loss gain +0.0013..+0.0043), but the MLP changes loss by -6.0% -- only trees find it
+extreme_h60          tree_only_headroom AUC 0.8232 ci_vs_ref [0.01722356405740581, 0.034720982428381154] (65s) -- hgb beats the strong linear baseline by 2.0% (95% CI of loss gain +0.0005..+0.0048), but the MLP changes loss by -2.7% -- only trees find it
+trend_er_h20         unpredictable      R2 +0.0006 ci_vs_ref [0.025816159906739317, 0.027181901118953158] (68s) -- best R2 0.001 < 0.05 (linear 0.001): no usable signal
+trend_er_h60         unpredictable      R2 +0.0023 ci_vs_ref [0.008286426436301737, 0.009151021972341428] (77s) -- best R2 0.003 < 0.05 (linear 0.002): no usable signal
+trend_change_h20     no_headroom        R2 +0.5040 ci_vs_ref [0.025679199755280695, 0.027122898969834726] (73s) -- best nonlinear (hgb) changes loss by -0.1% vs linear (CI -0.0000..+0.0000); threshold 2% with CI > 0
+trend_change_h60     no_headroom        R2 +0.5013 ci_vs_ref [0.008286434206317512, 0.009151015756822381] (77s) -- best nonlinear (hgb) changes loss by -0.0% vs linear (CI -0.0000..+0.0000); threshold 2% with CI > 0

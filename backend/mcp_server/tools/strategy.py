@@ -530,3 +530,24 @@ async def register_webhook(url: str, events: list[str], secret: str) -> dict:
         await db.flush()
         await db.refresh(obj)
         return {"id": obj.id, "url": obj.url, "events": obj.events, "active": obj.active}
+
+
+@mcp.tool()
+async def run_portfolio_backtest(definition: dict) -> dict:
+    """
+    Backtest a multi-symbol (cross-sectional) portfolio on daily bars: carry / currency-momentum sleeves,
+    volatility targeting, monthly/weekly rebalancing and overlays (vol_guard, series_jump e.g. VIX).
+    See docs/strategy-layer.md "Portfolio engine" for the definition schema. Runs in a worker thread
+    (seconds for ~10 symbols x 25 years). Returns metrics, per-symbol contribution and a sampled equity curve.
+    """
+    import asyncio
+
+    from strategy.portfolio.engine import run_portfolio_backtest as _run
+
+    res = await asyncio.to_thread(_run, definition)
+    eq = res["equity"].resample("W").last().dropna()
+    return {
+        "metrics": res["metrics"],
+        "contribution": {k: round(float(v), 5) for k, v in res["contribution"].items()},
+        "equity_weekly": [{"t": t.strftime("%Y-%m-%d"), "equity": round(float(v), 5)} for t, v in eq.items()],
+    }

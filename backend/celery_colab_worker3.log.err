@@ -1,0 +1,55 @@
+[2026-09-03 17:48:10,880: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-03 17:48:10,902: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-03 17:48:10,904: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-03 17:48:10,916: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-03 17:48:11,980: INFO/MainProcess] mingle: sync with 1 nodes
+[2026-09-03 17:48:11,980: INFO/MainProcess] mingle: sync complete
+[2026-09-03 17:48:12,022: INFO/MainProcess] colab-worker2@DESKTOP-FNBU991 ready.
+[2026-09-03 17:48:31,380: INFO/MainProcess] Task celery_worker.colab_train_model[e76743e9-866d-40d2-a8ff-1579f6be2cce] received
+[2026-09-03 17:48:36,245: INFO/MainProcess] dataset 33: snapshot 34 created at dataset_snapshots/33/20260903T084835Z_60a1830f.parquet (1999970 rows, sha256=60a1830f)
+[2026-09-03 17:48:37,019: INFO/MainProcess] missed heartbeat from colab-worker@DESKTOP-FNBU991
+[2026-09-03 17:48:37,021: INFO/MainProcess] missed heartbeat from celery@DESKTOP-FNBU991
+[2026-09-03 17:48:54,486: INFO/MainProcess] uploaded C:\Users\ksato\workspace\finance\algoforge\artifacts\dataset_snapshots\33\20260903T084835Z_60a1830f.parquet -> gdrive file 1AavqqJjDMGjtrV7OSIrcBsys2iNjYTCI
+[2026-09-03 17:48:54,494: INFO/MainProcess] snapshot 34: uploaded to gdrive -> https://drive.google.com/uc?id=1AavqqJjDMGjtrV7OSIrcBsys2iNjYTCI&export=download
+[2026-09-03 17:48:54,659: INFO/MainProcess] colab training run 1365: generated C:\Users\ksato\workspace\finance\algoforge\notebooks\run-1365.ipynb
+[2026-09-03 17:59:20,435: INFO/MainProcess] colab training run 1365: colab exec output:
+[colab] Parsing notebook '/notebooks/run-1365.ipynb'...
+[colab] Executing cell 1/6 - 2d24944b...
+[33m  WARNING: Did not find branch or tag 'cdd0f9f', assuming revision or ref.[0m[33m
+[0m  Installing build dependencies ... [?25l[?25hdone
+  Getting requirements to build wheel ... [?25l[?25hdone
+  Preparing metadata (pyproject.toml) ... [?25l[?25hdone
+  Building wheel for algoforge-model-core (pyproject.toml) ... [?25l[?25hdone
+[colab] Executing cell 2/6 - 501b3739...
+snapshot OK: 60a1830fcd8f9cb66e9f37f42fa1f4a1a46efeb7cc7770808bf1b337099bc5b9
+[colab] Executing cell 3/6 - c4fb915a...
+device: cpu
+[colab] Executing cell 4/6 - 0378d6ac...
+num_params: 4964
+[colab] Executing cell 5/6 - 55fa0bf5...
+epoch 1/3: train=1.041842 val=1.000450
+epoch 2/3: train=1.003074 val=1.000474
+epoch 3/3: train=1.001893 val=1.000398
+best_epoch: 3 best_val_loss: 1.000398412728921
+Wrote best.pt and metrics.json
+[colab] Executing cell 6/6 - e87886a6...
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+[colab] Saving notebook with outputs to '/notebooks/run-1365_output.ipynb'...
+
+[2026-09-03 17:59:27,508: INFO/MainProcess] colab training run 1365 completed. best_epoch=3 val_loss=1.000398412728921
+[2026-09-03 17:59:27,523: INFO/MainProcess] Task celery_worker.colab_train_model[e76743e9-866d-40d2-a8ff-1579f6be2cce] succeeded in 656.133099699975s: {'best_epoch': 3, 'val_loss': 1.000398412728921, 'artifact_path': 'models/102/training_1365/best.pt'}
+[2026-09-03 17:59:27,525: WARNING/MainProcess] Substantial drift from colab-worker@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 655 seconds.  [orig: 2026-09-03 17:59:27.525740 recv: 2026-09-03 17:48:32.247007]
+[2026-09-03 17:59:27,526: WARNING/MainProcess] Substantial drift from celery@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 655 seconds.  [orig: 2026-09-03 17:59:27.526305 recv: 2026-09-03 17:48:32.343754]

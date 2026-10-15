@@ -1,0 +1,13 @@
+windows=784571  train sample=300000  test sample=90551  test days=139
+rv20    R2: persistence 0.544  linear 0.654  hgb 0.661  mlp 0.645  knn 0.645
+        gain vs linear (rel MSE, 95% CI of abs): hgb +2.0% [+0.0010,+0.0029]  mlp -2.7% [-0.0036,-0.0018]  knn -2.7% [-0.0038,-0.0017]   (133s)
+rv60    R2: persistence 0.473  linear 0.651  hgb 0.665  mlp 0.640  knn 0.642
+        gain vs linear (rel MSE, 95% CI of abs): hgb +4.0% [+0.0016,+0.0055]  mlp -3.2% [-0.0041,-0.0012]  knn -2.6% [-0.0034,-0.0012]   (115s)
+rv240   R2: persistence -0.055  linear 0.443  hgb 0.496  mlp 0.447  knn 0.443
+        gain vs linear (rel MSE, 95% CI of abs): hgb +9.6% [+0.0049,+0.0180]  mlp +0.8% [-0.0028,+0.0051]  knn +0.1% [-0.0024,+0.0029]   (104s)
+dvol20  R2: persistence -0.001  linear 0.240  hgb 0.255  mlp 0.236  knn 0.172
+        gain vs linear (rel MSE, 95% CI of abs): hgb +1.9% [+0.0010,+0.0028]  mlp -0.6% [-0.0012,+0.0001]  knn -9.0% [-0.0103,-0.0075]   (88s)
+jump20  rate 0.083  logloss/AUC: base_rate 0.2868/0.500  linear 0.2748/0.661  hgb 0.2731/0.675  mlp 0.2787/0.648  knn 0.2812/0.623
+        gain vs linear: hgb +0.6% [+0.0001,+0.0034]  mlp -1.4% [-0.0061,-0.0015]  knn -2.3% [-0.0084,-0.0047]   (77s)
+
+Saved C:\Users\ksato\workspace\finance\algoforge\backend\nonlinear_headroom_screen.json

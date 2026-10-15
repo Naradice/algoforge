@@ -1,0 +1,26 @@
+ 
+ -------------- lyapdial4@DESKTOP-FNBU991 v5.3.1 (emerald-rush)
+--- ***** ----- 
+-- ******* ---- Windows-11-10.0.26200-SP0 2026-09-25 10:55:18
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         algoforge:0x284dcc65400
+- ** ---------- .> transport:   redis://localhost:6379/0
+- ** ---------- .> results:     redis://localhost:6379/0
+- *** --- * --- .> concurrency: 20 (solo)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> training         exchange=training(direct) key=training
+                
+
+[tasks]
+  . celery_worker.colab_train_model
+  . celery_worker.compute_characteristics
+  . celery_worker.compute_preprocessed_characteristics
+  . celery_worker.execute_strategy_run
+  . celery_worker.run_collection_job
+  . celery_worker.tick_scheduler
+  . celery_worker.train_model
+  . celery_worker.validate_model
+

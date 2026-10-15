@@ -1,0 +1,212 @@
+[2026-09-03 17:36:08,258: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-03 17:36:08,273: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-03 17:36:08,274: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-03 17:36:08,280: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-03 17:36:09,312: INFO/MainProcess] mingle: all alone
+[2026-09-03 17:36:09,363: INFO/MainProcess] colab-worker@DESKTOP-FNBU991 ready.
+[2026-09-03 17:36:29,126: INFO/MainProcess] Task celery_worker.colab_train_model[6ac58457-7050-4015-8686-efd63b17b581] received
+[2026-09-03 17:36:33,857: INFO/MainProcess] dataset 33: snapshot 32 created at dataset_snapshots/33/20260903T083633Z_60a1830f.parquet (1999970 rows, sha256=60a1830f)
+[2026-09-03 17:36:34,327: INFO/MainProcess] missed heartbeat from celery@DESKTOP-FNBU991
+[2026-09-03 17:36:34,871: INFO/MainProcess] cached refresh token at secrets\gdrive-token.json
+[2026-09-03 17:36:48,411: INFO/MainProcess] uploaded C:\Users\ksato\workspace\finance\algoforge\artifacts\dataset_snapshots\33\20260903T083633Z_60a1830f.parquet -> gdrive file 1vJFRacw5zr57z9OIynPO6AeVtW0s4n3x
+[2026-09-03 17:36:48,421: INFO/MainProcess] snapshot 32: uploaded to gdrive -> https://drive.google.com/uc?id=1vJFRacw5zr57z9OIynPO6AeVtW0s4n3x&export=download
+[2026-09-03 17:36:48,588: INFO/MainProcess] colab training run 1363: generated C:\Users\ksato\workspace\finance\algoforge\notebooks\run-1363.ipynb
+[2026-09-03 17:47:17,751: INFO/MainProcess] colab training run 1363: colab exec output:
+[colab] Parsing notebook '/notebooks/run-1363.ipynb'...
+[colab] Executing cell 1/6 - 8b9ef1cc...
+[33m  WARNING: Did not find branch or tag 'cdd0f9f', assuming revision or ref.[0m[33m
+[0m  Installing build dependencies ... [?25l[?25hdone
+  Getting requirements to build wheel ... [?25l[?25hdone
+  Preparing metadata (pyproject.toml) ... [?25l[?25hdone
+  Building wheel for algoforge-model-core (pyproject.toml) ... [?25l[?25hdone
+[colab] Executing cell 2/6 - 4ba5749c...
+snapshot OK: 60a1830fcd8f9cb66e9f37f42fa1f4a1a46efeb7cc7770808bf1b337099bc5b9
+[colab] Executing cell 3/6 - 5ade550e...
+device: cpu
+[colab] Executing cell 4/6 - 0eb41f74...
+num_params: 4964
+[colab] Executing cell 5/6 - 5abe03ed...
+epoch 1/3: train=1.022183 val=1.000417
+epoch 2/3: train=1.003178 val=1.000327
+epoch 3/3: train=1.002077 val=1.000332
+best_epoch: 2 best_val_loss: 1.0003272906327858
+Wrote best.pt and metrics.json
+[colab] Executing cell 6/6 - 4757db34...
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+[colab] Saving notebook with outputs to '/notebooks/run-1363_output.ipynb'...
+
+[2026-09-03 17:47:24,962: INFO/MainProcess] colab training run 1363 completed. best_epoch=2 val_loss=1.0003272906327858
+[2026-09-03 17:47:24,972: INFO/MainProcess] Task celery_worker.colab_train_model[6ac58457-7050-4015-8686-efd63b17b581] succeeded in 655.8343739000265s: {'best_epoch': 2, 'val_loss': 1.0003272906327858, 'artifact_path': 'models/102/training_1363/best.pt'}
+[2026-09-03 17:47:24,974: WARNING/MainProcess] Substantial drift from celery@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 655 seconds.  [orig: 2026-09-03 17:47:24.974139 recv: 2026-09-03 17:36:29.460754]
+[2026-09-03 17:48:10,966: INFO/MainProcess] sync with colab-worker2@DESKTOP-FNBU991
+[2026-09-03 17:48:31,369: INFO/MainProcess] Task celery_worker.colab_train_model[78cca27b-af0a-44a3-878a-bcab6de7b6ed] received
+[2026-09-03 17:48:32,057: INFO/MainProcess] dataset 32: snapshot 33 created at dataset_snapshots/32/20260903T084831Z_d9b1a9e8.parquet (1999970 rows, sha256=d9b1a9e8)
+[2026-09-03 17:48:34,398: INFO/MainProcess] missed heartbeat from celery@DESKTOP-FNBU991
+[2026-09-03 17:48:34,399: INFO/MainProcess] missed heartbeat from colab-worker2@DESKTOP-FNBU991
+[2026-09-03 17:48:51,304: INFO/MainProcess] uploaded C:\Users\ksato\workspace\finance\algoforge\artifacts\dataset_snapshots\32\20260903T084831Z_d9b1a9e8.parquet -> gdrive file 15kfHSCKmthqbGJ6-hj1NS4wQe4tvhzp2
+[2026-09-03 17:48:51,313: INFO/MainProcess] snapshot 33: uploaded to gdrive -> https://drive.google.com/uc?id=15kfHSCKmthqbGJ6-hj1NS4wQe4tvhzp2&export=download
+[2026-09-03 17:48:51,480: INFO/MainProcess] colab training run 1364: generated C:\Users\ksato\workspace\finance\algoforge\notebooks\run-1364.ipynb
+[2026-09-03 17:58:22,987: INFO/MainProcess] colab training run 1364: colab exec output:
+[colab] Parsing notebook '/notebooks/run-1364.ipynb'...
+[colab] Executing cell 1/6 - 2563bdab...
+[33m  WARNING: Did not find branch or tag 'cdd0f9f', assuming revision or ref.[0m[33m
+[0m  Installing build dependencies ... [?25l[?25hdone
+  Getting requirements to build wheel ... [?25l[?25hdone
+  Preparing metadata (pyproject.toml) ... [?25l[?25hdone
+  Building wheel for algoforge-model-core (pyproject.toml) ... [?25l[?25hdone
+[colab] Executing cell 2/6 - 1634eb6c...
+snapshot OK: d9b1a9e857b836e25cfdb2a909621e262de4b2b540723dd8763c40dc2e051e62
+[colab] Executing cell 3/6 - 17800db8...
+device: cpu
+[colab] Executing cell 4/6 - 55cf2a14...
+num_params: 4964
+[colab] Executing cell 5/6 - 3fcc84b1...
+epoch 1/3: train=1.022104 val=1.000225
+epoch 2/3: train=1.003579 val=1.000291
+epoch 3/3: train=1.002250 val=1.000252
+best_epoch: 1 best_val_loss: 1.0002252352543366
+Wrote best.pt and metrics.json
+[colab] Executing cell 6/6 - 3f96f569...
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+[colab] Saving notebook with outputs to '/notebooks/run-1364_output.ipynb'...
+
+[2026-09-03 17:58:28,569: INFO/MainProcess] colab training run 1364 completed. best_epoch=1 val_loss=1.0002252352543366
+[2026-09-03 17:58:28,578: INFO/MainProcess] Task celery_worker.colab_train_model[78cca27b-af0a-44a3-878a-bcab6de7b6ed] succeeded in 597.1999125000439s: {'best_epoch': 1, 'val_loss': 1.0002252352543366, 'artifact_path': 'models/102/training_1364/best.pt'}
+[2026-09-03 17:58:28,580: WARNING/MainProcess] Substantial drift from colab-worker2@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 596 seconds.  [orig: 2026-09-03 17:58:28.580336 recv: 2026-09-03 17:48:32.029007]
+[2026-09-03 18:43:21,629: INFO/MainProcess] Task celery_worker.colab_train_model[d60186a5-eab6-43ac-88e9-cbab76735d95] received
+[2026-09-03 18:43:21,888: INFO/MainProcess] dataset 43: snapshot 35 created at dataset_snapshots/43/20260903T094321Z_589c5cf2.parquet (50000 rows, sha256=589c5cf2)
+[2026-09-03 18:43:22,760: INFO/MainProcess] cached refresh token at secrets\gdrive-token.json
+[2026-09-03 18:43:24,752: INFO/MainProcess] missed heartbeat from colab-worker2@DESKTOP-FNBU991
+[2026-09-03 18:43:24,753: INFO/MainProcess] missed heartbeat from celery@DESKTOP-FNBU991
+[2026-09-03 18:43:26,793: INFO/MainProcess] uploaded C:\Users\ksato\workspace\finance\algoforge\artifacts\dataset_snapshots\43\20260903T094321Z_589c5cf2.parquet -> gdrive file 1WwzOVj_xmCEZ4fJDq7YaktV604vGxJhu
+[2026-09-03 18:43:26,801: INFO/MainProcess] snapshot 35: uploaded to gdrive -> https://drive.google.com/uc?id=1WwzOVj_xmCEZ4fJDq7YaktV604vGxJhu&export=download
+[2026-09-03 18:43:26,902: INFO/MainProcess] colab training run 1367: generated C:\Users\ksato\workspace\finance\algoforge\notebooks\run-1367.ipynb
+[2026-09-03 19:50:46,873: WARNING/MainProcess] Exception in thread 
+[2026-09-03 19:50:46,874: WARNING/MainProcess] Thread-133 (_readerthread)
+[2026-09-03 19:50:46,874: WARNING/MainProcess] :
+[2026-09-03 19:50:46,909: WARNING/MainProcess] Traceback (most recent call last):
+[2026-09-03 19:50:46,911: WARNING/MainProcess]   File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1043, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+[2026-09-03 19:50:46,911: WARNING/MainProcess]   File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 994, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2026-09-03 19:50:46,911: WARNING/MainProcess]   File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 1615, in _readerthread
+    buffer.append(fh.read())
+                  ~~~~~~~^^
+[2026-09-03 19:50:46,912: WARNING/MainProcess] UnicodeDecodeError: 'cp932' codec can't decode byte 0x82 in position 173: illegal multibyte sequence
+[2026-09-03 19:50:49,988: ERROR/MainProcess] colab training run 1367 failed
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_runner.py", line 35, in _run
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 556, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 1222, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 1646, in _communicate
+    raise TimeoutExpired(self.args, orig_timeout)
+subprocess.TimeoutExpired: Command '['docker', 'compose', '-f', 'C:\\Users\\ksato\\workspace\\finance\\algoforge\\infra\\colab-cli\\docker-compose.yml', 'exec', '-T', 'colab-cli', 'colab', 'exec', '-s', 'run-1367', '-f', '/notebooks/run-1367.ipynb', '--timeout', '3600.0']' timed out after 3720.0 seconds
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_trainer.py", line 320, in run_colab_training
+    exec_stdout = await exec_task
+                  ^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_runner.py", line 56, in exec_notebook
+    result = _run(
+        "exec", "-s", session, "-f", notebook_path_in_container, "--timeout", str(timeout_seconds),
+        timeout=timeout_seconds + 120,
+    )
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_runner.py", line 37, in _run
+    raise ColabCliError(f"colab {' '.join(args)} timed out after {timeout}s") from exc
+model.colab_runner.ColabCliError: colab exec -s run-1367 -f /notebooks/run-1367.ipynb --timeout 3600.0 timed out after 3720.0s
+[2026-09-03 19:50:50,085: INFO/MainProcess] Task celery_worker.colab_train_model[d60186a5-eab6-43ac-88e9-cbab76735d95] succeeded in 4048.3950948999845s: {'error': 'colab exec -s run-1367 -f /notebooks/run-1367.ipynb --timeout 3600.0 timed out after 3720.0s'}
+[2026-09-04 04:21:34,271: INFO/MainProcess] Task celery_worker.colab_train_model[8d9e4d9b-8d47-4e90-8f2e-6bd8770c12c7] received
+[2026-09-04 04:21:34,514: INFO/MainProcess] dataset 43: snapshot 36 created at dataset_snapshots/43/20260903T192134Z_589c5cf2.parquet (50000 rows, sha256=589c5cf2)
+[2026-09-04 04:21:35,240: INFO/MainProcess] cached refresh token at secrets\gdrive-token.json
+[2026-09-04 04:21:38,221: INFO/MainProcess] missed heartbeat from colab-worker2@DESKTOP-FNBU991
+[2026-09-04 04:21:38,222: INFO/MainProcess] missed heartbeat from celery@DESKTOP-FNBU991
+[2026-09-04 04:21:39,991: INFO/MainProcess] uploaded C:\Users\ksato\workspace\finance\algoforge\artifacts\dataset_snapshots\43\20260903T192134Z_589c5cf2.parquet -> gdrive file 1UHXb4OSyA8VsUtVBOigQkAXnU2aolmnZ
+[2026-09-04 04:21:39,995: INFO/MainProcess] snapshot 36: uploaded to gdrive -> https://drive.google.com/uc?id=1UHXb4OSyA8VsUtVBOigQkAXnU2aolmnZ&export=download
+[2026-09-04 04:21:40,091: INFO/MainProcess] colab training run 1367: generated C:\Users\ksato\workspace\finance\algoforge\notebooks\run-1367.ipynb
+[2026-09-04 05:32:12,125: INFO/MainProcess] colab training run 1367: colab exec output:
+[colab] Parsing notebook '/notebooks/run-1367.ipynb'...
+[colab] Executing cell 1/6 - db9ed51c...
+[33m  WARNING: Did not find branch or tag 'cdd0f9f', assuming revision or ref.[0m[33m
+[0m  Installing build dependencies ... [?25l[?25hdone
+  Getting requirements to build wheel ... [?25l[?25hdone
+  Preparing metadata (pyproject.toml) ... [?25l[?25hdone
+  Building wheel for algoforge-model-core (pyproject.toml) ... [?25l[?25hdone
+[colab] Executing cell 2/6 - c7adfb83...
+snapshot OK: 589c5cf2f17afbc4809f6af029b27487da35a40ecbb4164747994e5e05889d12
+[colab] Executing cell 3/6 - a1265c5c...
+device: cpu
+[colab] Executing cell 4/6 - 93eeed84...
+num_params: 68972
+[colab] Executing cell 5/6 - d987be61...
+epoch 1/15: train=0.653329 val=1.462536
+epoch 2/15: train=0.935771 val=1.243744
+epoch 3/15: train=1.049428 val=1.189929
+epoch 4/15: train=1.022060 val=1.192520
+epoch 5/15: train=0.996356 val=1.204058
+epoch 6/15: train=0.984385 val=1.208427
+epoch 7/15: train=0.977149 val=1.209264
+epoch 8/15: train=0.972699 val=1.218529
+epoch 9/15: train=0.964401 val=1.222224
+epoch 10/15: train=0.942783 val=1.240183
+epoch 11/15: train=0.937976 val=1.253838
+epoch 12/15: train=0.934458 val=1.265005
+epoch 13/15: train=0.931724 val=1.274394
+epoch 14/15: train=0.929512 val=1.282415
+epoch 15/15: train=0.927632 val=1.289322
+best_epoch: 3 best_val_loss: 1.1899292775525305
+Wrote best.pt and metrics.json
+[colab] Executing cell 6/6 - edc951ac...
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+<IPython.core.display.Javascript object>
+[colab] Saving notebook with outputs to '/notebooks/run-1367_output.ipynb'...
+
+[2026-09-04 05:32:16,716: ERROR/MainProcess] colab training run 1367 failed
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_trainer.py", line 331, in run_colab_training
+    await loop.run_in_executor(None, colab_runner.download, session_name, "best.pt", best_path)
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_runner.py", line 97, in download
+    _run("download", "-s", session, remote_path, container_local_path, timeout=300)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_runner.py", line 41, in _run
+    raise ColabCliError(
+        f"colab {' '.join(args)} exited {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+model.colab_runner.ColabCliError: colab download -s run-1367 /content/best.pt /notebooks/run-1367_best.pt exited 1
+stdout: [colab] Download failed: File or directory not found: /content/best.pt
+
+stderr: 
+[2026-09-04 05:32:16,777: INFO/MainProcess] Task celery_worker.colab_train_model[8d9e4d9b-8d47-4e90-8f2e-6bd8770c12c7] succeeded in 4242.43665259995s: {'error': 'colab download -s run-1367 /content/best.pt /notebooks/run-1367_best.pt exited 1
+stdout: [colab] Download failed: File or directory not found: /content/best.pt
+
+stderr: '}

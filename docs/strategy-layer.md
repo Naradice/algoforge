@@ -79,6 +79,7 @@ The `id` becomes the column name referenced in conditions.
 | `bb` | `<id>_upper`, `<id>_middle`, `<id>_lower` | `period`, `std_dev` |
 | `slope` | `<id>` | `period`, `column` |
 | `renko` | `<id>_direction`, `<id>_flip`, `<id>_momentum` | `atr_window`, `brick_size` |
+| `event` | `<id>_near`, `<id>_mins_to_next`, `<id>_mins_since_last`, `<id>_surprise` | `calendar` (event_calendar artifact path), `currencies`, `min_impact`=high, `pre_minutes`=60, `post_minutes`=60, `title_contains`, `surprise_window`=24. Point-in-time: only events released ≤ bar time feed `surprise`. |
 | `carry` | `<id>` (annual base-quote 3m rate differential), `<id>_w` (diff/`scale` clipped to ±`cap`, 0 inside ±`threshold`) | `base`, `quote`, `threshold`=0.005, `scale`=0.03, `cap`=1.5, `rates_dir` (FRED CSVs in `$ARTIFACT_STORE_PATH/research/fx/rates`). Add `risk.swap_col: "<id>"` to accrue it as swap P&L. |
 
 All indicators also have access to the base OHLCV columns: `open`, `high`, `low`, `close`, `volume`.
@@ -271,3 +272,29 @@ Client sends: `{ "message": "Why is the win rate low?" }`
 Server streams back: `{ "role": "agent", "content": "...", "is_final": true }`
 
 The AI agent has access to: current run metrics, recent trades, and the strategy definition as context.
+
+
+---
+
+## Portfolio engine (multi-symbol, cross-sectional)
+
+`strategy/portfolio/engine.py` — `run_portfolio_backtest(definition)` (also the MCP tool `run_portfolio_backtest`).
+The single-symbol engine cannot express baskets; this one takes a universe of daily bars plus sleeves/overlays:
+
+```json
+{
+  "universe": [{"symbol": "USDJPY", "artifact_path": "research/fx/d1_merged/USDJPY.parquet",
+                "base": "USD", "quote": "JPY", "spread_pct": 0.00004}],
+  "rates":    {"dir": "research/fx/rates", "series": {"USD": "IR3TIB01USM156N", "JPY": "IR3TIB01JPM156N"}},
+  "sleeves":  [{"type": "carry", "weight": 0.65, "threshold": 0.005, "scale": 0.03, "cap": 1.5},
+               {"type": "momentum", "weight": 0.35, "lookbacks": [60, 250]}],
+  "overlays": [{"type": "vol_guard", "cap": 1.0},
+               {"type": "series_jump", "path": "research/fx/rates/VIXCLS.csv", "column": "VIXCLS",
+                "ratio": 1.3, "lookback": 20, "cut": 0.7}],
+  "risk":     {"target_vol": 0.10, "rebalance": "M", "max_leverage": 5.0, "vol_window": 60}
+}
+```
+Positions apply from t+1; carry accrues daily at (rate differential)/252 on the held position; costs are charged on
+turnover. Returns are per-instrument fractions at `target_vol`, averaged over instruments available that day.
+Reference run (9 majors, carry + VIX-jump guard, 2000→2026-10): Sharpe 0.65, 2009+ 0.50, max DD −20%
+(`backend/research/fx_search/portfolio_check.py`). Not yet persisted as Strategy/Run rows or exposed over HTTP.

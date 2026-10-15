@@ -1,0 +1,63 @@
+[2026-09-29 23:38:26,410: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-29 23:38:26,423: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-29 23:38:26,424: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-29 23:38:26,433: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-29 23:38:27,461: INFO/MainProcess] mingle: sync with 1 nodes
+[2026-09-29 23:38:27,461: INFO/MainProcess] mingle: sync complete
+[2026-09-29 23:38:27,874: INFO/MainProcess] worker registry: {'hostname': 'train3@DESKTOP-FNBU991', 'pid': 19600, 'machine': 'DESKTOP-FNBU991', 'started_at': '2026-09-29T14:38:27.570856+00:00', 'code_revision': '2021721afa80d057a71b0b8b847042e9082efb15', 'code_dirty': False, 'queues': ['training'], 'current_task': None}
+[2026-09-29 23:38:27,874: INFO/MainProcess] train3@DESKTOP-FNBU991 ready.
+[2026-09-29 23:38:57,583: INFO/MainProcess] Task celery_worker.train_model[49e94c50-f61b-4385-9992-e59b26f33cf0] received
+[2026-09-29 23:39:02,469: INFO/MainProcess] missed heartbeat from train1@DESKTOP-FNBU991
+[2026-09-29 23:39:02,469: INFO/MainProcess] missed heartbeat from train2@DESKTOP-FNBU991
+[2026-09-29 23:39:02,469: INFO/MainProcess] missed heartbeat from collect1@DESKTOP-FNBU991
+[2026-09-29 23:39:27,497: INFO/MainProcess] Training run 1629 data_provenance: {'source_rows': 2306551, 'effective_rows': 500000, 'max_rows': 500000, 'first_timestamp': '2021-11-09 03:49:00', 'last_timestamp': '2023-03-12 23:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-29 23:39:30,296: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\arraylike.py:402: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+
+[2026-09-29 23:39:30,296: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\arraylike.py:402: RuntimeWarning: invalid value encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+
+[2026-09-29 23:39:30,305: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py:134: RuntimeWarning: invalid value encountered in reduce
+  ret = umr_sum(arr, axis, dtype, out, keepdims, where=where)
+
+[2026-09-29 23:39:30,488: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\lib\_function_base_impl.py:1518: RuntimeWarning: invalid value encountered in subtract
+  a = op(a[slice1], a[slice2])
+
+[2026-09-29 23:39:30,695: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py:170: RuntimeWarning: invalid value encountered in reduce
+  arrmean = umr_sum(arr, axis, dtype, keepdims=True, where=where)
+
+[2026-09-29 23:39:30,721: WARNING/MainProcess] C:\Users\ksato\workspace\finance\algoforge\backend\data\characteristics.py:517: RuntimeWarning: invalid value encountered in subtract
+  dist = np.max(np.abs(templates[i + 1 :] - templates[i]), axis=1)
+
+[2026-09-29 23:39:32,512: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\statsmodels\tsa\_bds.py:65: RuntimeWarning: invalid value encountered in subtract
+  return np.abs(x[:, None] - x) < epsilon
+
+[2026-09-29 23:39:33,644: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\numpy\_core\_methods.py:190: RuntimeWarning: invalid value encountered in subtract
+  x = asanyarray(arr - arrmean)
+
+[2026-09-30 00:00:23,074: INFO/MainProcess] Training run 1629 step 1000/30000 (check 1): train=0.166818 val=0.127146
+[2026-09-30 00:22:40,087: INFO/MainProcess] Training run 1629 step 2000/30000 (check 2): train=0.129512 val=0.122879
+[2026-09-30 00:43:58,059: INFO/MainProcess] Training run 1629 step 3000/30000 (check 3): train=0.123312 val=0.122575
+[2026-09-30 01:05:36,188: INFO/MainProcess] Training run 1629 step 4000/30000 (check 4): train=0.119102 val=0.122366
+[2026-09-30 01:27:19,855: INFO/MainProcess] Training run 1629 step 5000/30000 (check 5): train=0.115035 val=0.124105
+[2026-09-30 01:49:52,939: INFO/MainProcess] Training run 1629 step 6000/30000 (check 6): train=0.111997 val=0.125610
+[2026-09-30 02:12:19,894: INFO/MainProcess] Training run 1629 step 7000/30000 (check 7): train=0.107508 val=0.130269
+[2026-09-30 02:26:54,761: INFO/MainProcess] Training run 1629 step 8000/30000 (check 8): train=0.104822 val=0.126545
+[2026-09-30 02:39:08,306: INFO/MainProcess] Training run 1629 step 9000/30000 (check 9): train=0.100988 val=0.136766
+[2026-09-30 02:39:08,308: INFO/MainProcess] Training run 1629 early-stopped at step 9000 (no improvement for 5 checks, best=0.122366 @ check 4)
+[2026-09-30 02:39:09,716: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-30 02:39:09,724: INFO/MainProcess] Training run 1629 completed. Best epoch: 4, val_loss: 0.122366
+[2026-09-30 02:39:09,939: INFO/MainProcess] Task celery_worker.train_model[49e94c50-f61b-4385-9992-e59b26f33cf0] succeeded in 10812.184433599934s: {'best_epoch': 4, 'val_loss': 0.12236615006909951, 'artifact_path': 'models\187\training_1629\best.pt'}
+[2026-09-30 02:39:09,954: WARNING/MainProcess] Substantial drift from collect1@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 10812 seconds.  [orig: 2026-09-30 02:39:09.954427 recv: 2026-09-29 23:38:57.840796]
+[2026-09-30 02:39:09,955: WARNING/MainProcess] Substantial drift from train1@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 10811 seconds.  [orig: 2026-09-30 02:39:09.955431 recv: 2026-09-29 23:38:58.646157]
+[2026-09-30 02:39:09,955: WARNING/MainProcess] Substantial drift from train2@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 10810 seconds.  [orig: 2026-09-30 02:39:09.955827 recv: 2026-09-29 23:38:59.444610]

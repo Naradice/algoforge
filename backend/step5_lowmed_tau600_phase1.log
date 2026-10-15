@@ -1,0 +1,53 @@
+=== Step 3 (candidate sets) ===
+Loaded atlas: 176 points, 170 with >=1 successful seed
+
+Computing real USDJPY quantile stats (this reruns the neural model + characterization)...
+
+  q   real_std   best_std   ratio  best_delta  best_wma  n_cand       status
+  0   0.000172   0.000169    1.02       -0.80         7       8           ok
+  1   0.000158   0.000169    1.07       -0.80         7       8           ok
+  2   0.000152   0.000145    1.05       -0.50         7       8           ok
+  3   0.000149   0.000145    1.03       -0.50         7       8           ok
+  4   0.000146   0.000145    1.01       -0.50         7       8           ok
+  5   0.000142   0.000145    1.02       -0.50         7       8           ok
+  6   0.000144   0.000145    1.01       -0.50         7       8           ok
+  7   0.000141   0.000135    1.05        0.00        15       8           ok
+  8   0.000140   0.000135    1.04        0.00        15       8           ok
+  9   0.000142   0.000145    1.02       -0.50         7       8           ok
+ 10   0.000134   0.000135    1.01        0.00        15       8           ok
+ 11   0.000136   0.000135    1.01        0.00        15       8           ok
+ 12   0.000136   0.000135    1.01        0.00        15       8           ok
+ 13   0.000132   0.000135    1.02        0.00        15       8           ok
+ 14   0.000136   0.000135    1.01        0.00        15       8           ok
+ 15   0.000121   0.000135    1.11        0.00        15       8           ok
+ 16   0.000128   0.000135    1.05        0.00        15       8           ok
+ 17   0.000129   0.000135    1.04        0.00        15       8           ok
+ 18   0.000121   0.000135    1.11        0.00        15       8           ok
+ 19   0.000105   0.000133    1.27       -0.10         7       8           ok
+
+Quantiles with a representable DDM ensemble: 20/20
+Quantiles flagged OUT OF RANGE (no DDM candidate within 2.0x std): 0/20
+
+=== Building DDM long-path ensemble stats (spread_feedback_a=None, window=150, shock_probability=0.002, shock_size=0.3, shock_decay_tau=600.0, shock_floor=0.0) -- this takes a while ===
+  q=0: 160 successful long-path simulations
+  q=1: 160 successful long-path simulations
+  q=2: 160 successful long-path simulations
+  q=3: 160 successful long-path simulations
+  q=4: 160 successful long-path simulations
+  q=5: 160 successful long-path simulations
+  q=6: 160 successful long-path simulations
+  q=7: 160 successful long-path simulations
+  q=8: 160 successful long-path simulations
+  q=9: 160 successful long-path simulations
+  q=10: 160 successful long-path simulations
+  q=11: 160 successful long-path simulations
+  q=12: 160 successful long-path simulations
+  q=13: 160 successful long-path simulations
+  q=14: 160 successful long-path simulations
+  q=15: 160 successful long-path simulations
+  q=16: 160 successful long-path simulations
+  q=17: 160 successful long-path simulations
+  q=18: 160 successful long-path simulations
+  q=19: 160 successful long-path simulations
+
+Saved DDM horizon stats to C:\Users\ksato\workspace\finance\algoforge\backend\ddm_horizon_stats_shockP0.002_S0.3_tau600.0_floor0.0.npz

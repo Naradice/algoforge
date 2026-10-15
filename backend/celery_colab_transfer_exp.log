@@ -1,0 +1,75 @@
+ 
+ -------------- celery@DESKTOP-FNBU991 v5.3.1 (emerald-rush)
+--- ***** ----- 
+-- ******* ---- Windows-11-10.0.26200-SP0 2026-09-12 23:39:21
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         algoforge:0x1631003c590
+- ** ---------- .> transport:   redis://localhost:6379/0
+- ** ---------- .> results:     redis://localhost:6379/0
+- *** --- * --- .> concurrency: 20 (solo)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> colab            exchange=colab(direct) key=colab
+                
+
+[tasks]
+  . celery_worker.colab_train_model
+  . celery_worker.compute_characteristics
+  . celery_worker.compute_preprocessed_characteristics
+  . celery_worker.execute_strategy_run
+  . celery_worker.run_collection_job
+  . celery_worker.tick_scheduler
+  . celery_worker.train_model
+  . celery_worker.validate_model
+
+[2026-09-12 23:39:21,107: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-12 23:39:21,116: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-12 23:39:21,117: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-12 23:39:21,124: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-12 23:39:22,146: INFO/MainProcess] mingle: all alone
+[2026-09-12 23:39:22,167: INFO/MainProcess] celery@DESKTOP-FNBU991 ready.
+[2026-09-12 23:39:32,066: INFO/MainProcess] Task celery_worker.colab_train_model[b2c99825-6642-49ab-94ac-a0823220bbfd] received
+[2026-09-12 23:39:35,090: INFO/MainProcess] dataset 52: snapshot 38 created at dataset_snapshots/52/20260912T143934Z_8328f189.parquet (300000 rows, sha256=8328f189)
+[2026-09-12 23:39:36,161: ERROR/MainProcess] colab training run 1424 failed
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\model\colab_trainer.py", line 306, in run_colab_training
+    snapshot = await snapshot_service.upload_snapshot(db, snapshot.id, provider="gdrive")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\snapshot_service.py", line 105, in upload_snapshot
+    ref = gdrive_export.upload(local_path, name=name)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\gdrive_export.py", line 107, in upload
+    creds = _get_credentials()
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\gdrive_export.py", line 79, in _get_credentials
+    creds.refresh(Request())
+    ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\oauth2\credentials.py", line 409, in refresh
+    ) = reauth.refresh_grant(
+        ~~~~~~~~~~~~~~~~~~~~^
+        request,
+        ^^^^^^^^
+    ...<6 lines>...
+        enable_reauth_refresh=self._enable_reauth_refresh,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\oauth2\reauth.py", line 366, in refresh_grant
+    _client._handle_error_response(response_data, retryable_error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\oauth2\_client.py", line 69, in _handle_error_response
+    raise exceptions.RefreshError(
+        error_details, response_data, retryable=retryable_error
+    )
+google.auth.exceptions.RefreshError: ('invalid_grant: Bad Request', {'error': 'invalid_grant', 'error_description': 'Bad Request'})
+[2026-09-12 23:39:36,241: INFO/MainProcess] Task celery_worker.colab_train_model[b2c99825-6642-49ab-94ac-a0823220bbfd] succeeded in 4.175085399998352s: {'error': '(\'invalid_grant: Bad Request\', {\'error\': \'invalid_grant\', \'error_description\': \'Bad Request\'})'}

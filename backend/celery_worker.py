@@ -409,7 +409,7 @@ async def _run_collection_job(job_id: int) -> dict:
         # produce numeric time-series data. Skip types whose artifacts are not
         # numeric parquet DataFrames (web_report stores PDFs/HTMLs; economic_calendar
         # has a non-standard schema).
-        if source.type not in ("economic_calendar", "web_report"):
+        if source.type not in ("economic_calendar", "web_report", "event_calendar", "mt5_swap"):
             compute_characteristics.apply_async(args=[dataset_id], queue="characteristics")
             logger.info(f"[job {job_id}] auto-enqueued compute_characteristics for dataset {dataset_id}")
 
@@ -473,6 +473,12 @@ def _run_collector(datasource_type: str, datasource_id: int, config: dict, incre
         return collect(datasource_id, config, force=True)
     elif datasource_type == "economic_calendar":
         from data.collectors.economic_calendar import collect
+        return collect(datasource_id, config)
+    elif datasource_type == "mt5_swap":
+        from data.collectors.mt5_swap import collect
+        return collect(datasource_id, config)
+    elif datasource_type == "event_calendar":
+        from data.collectors.event_calendar import collect
         return collect(datasource_id, config)
     elif datasource_type == "synthetic_function":
         from data.collectors.synthetic_function import collect

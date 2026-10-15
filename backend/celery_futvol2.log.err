@@ -1,0 +1,39 @@
+[2026-09-28 08:16:26,388: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-28 08:16:26,407: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-28 08:16:26,408: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-28 08:16:26,418: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-28 08:16:27,443: INFO/MainProcess] mingle: all alone
+[2026-09-28 08:16:27,467: INFO/MainProcess] futvol2@DESKTOP-FNBU991 ready.
+[2026-09-28 08:16:52,832: INFO/MainProcess] Task celery_worker.train_model[45345620-4233-4758-babd-3f52d5dfa4b8] received
+[2026-09-28 08:16:57,450: INFO/MainProcess] missed heartbeat from futvol1@DESKTOP-FNBU991
+[2026-09-28 08:16:57,451: INFO/MainProcess] missed heartbeat from futvol3@DESKTOP-FNBU991
+[2026-09-28 08:16:59,597: INFO/MainProcess] Training run 1622 data_provenance: {'source_rows': 2239284, 'effective_rows': 1000000, 'max_rows': 1000000, 'first_timestamp': '2019-12-30 04:22:00', 'last_timestamp': '2022-08-31 17:59:00', 'sampling_stride_seconds': np.float64(60.0)}
+[2026-09-28 08:34:34,579: INFO/MainProcess] Training run 1622 step 1000/20000 (check 1): train=0.383649 val=0.332598
+[2026-09-28 08:53:21,731: INFO/MainProcess] Training run 1622 step 2000/20000 (check 2): train=0.356144 val=0.329768
+[2026-09-28 09:07:37,440: INFO/MainProcess] Training run 1622 step 3000/20000 (check 3): train=0.350198 val=0.332440
+[2026-09-28 09:13:57,412: INFO/MainProcess] Training run 1622 step 4000/20000 (check 4): train=0.352286 val=0.320391
+[2026-09-28 09:20:13,884: INFO/MainProcess] Training run 1622 step 5000/20000 (check 5): train=0.348857 val=0.318187
+[2026-09-28 09:26:29,149: INFO/MainProcess] Training run 1622 step 6000/20000 (check 6): train=0.348188 val=0.321085
+[2026-09-28 09:32:48,050: INFO/MainProcess] Training run 1622 step 7000/20000 (check 7): train=0.344875 val=0.335550
+[2026-09-28 09:39:16,601: INFO/MainProcess] Training run 1622 step 8000/20000 (check 8): train=0.346845 val=0.317976
+[2026-09-28 09:45:47,883: INFO/MainProcess] Training run 1622 step 9000/20000 (check 9): train=0.338177 val=0.323421
+[2026-09-28 09:51:57,981: INFO/MainProcess] Training run 1622 step 10000/20000 (check 10): train=0.342724 val=0.326090
+[2026-09-28 09:57:12,171: INFO/MainProcess] Training run 1622 step 11000/20000 (check 11): train=0.346395 val=0.323548
+[2026-09-28 10:01:25,992: INFO/MainProcess] Training run 1622 step 12000/20000 (check 12): train=0.343086 val=0.321382
+[2026-09-28 10:05:50,356: INFO/MainProcess] Training run 1622 step 13000/20000 (check 13): train=0.336211 val=0.319078
+[2026-09-28 10:05:50,358: INFO/MainProcess] Training run 1622 early-stopped at step 13000 (no improvement for 5 checks, best=0.317976 @ check 8)
+[2026-09-28 10:05:51,631: INFO/MainProcess] HTTP Request: POST http://localhost:8100/api/v1/webhooks/algoforge "HTTP/1.1 200 OK"
+[2026-09-28 10:05:51,641: INFO/MainProcess] Training run 1622 completed. Best epoch: 8, val_loss: 0.317976
+[2026-09-28 10:05:51,696: INFO/MainProcess] Task celery_worker.train_model[45345620-4233-4758-babd-3f52d5dfa4b8] succeeded in 6538.7647765s: {'best_epoch': 8, 'val_loss': 0.31797594610213137, 'artifact_path': 'models\185\training_1622\best.pt'}
+[2026-09-28 10:05:51,704: WARNING/MainProcess] Substantial drift from futvol3@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 6538 seconds.  [orig: 2026-09-28 10:05:51.704096 recv: 2026-09-28 08:16:53.493634]
+[2026-09-28 10:05:51,705: WARNING/MainProcess] Substantial drift from futvol1@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 6537 seconds.  [orig: 2026-09-28 10:05:51.705052 recv: 2026-09-28 08:16:54.454533]

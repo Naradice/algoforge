@@ -1,0 +1,16 @@
+[2026-09-26 23:01:00,845: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-26 23:01:00,864: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2026-09-26 23:01:00,865: WARNING/MainProcess] C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\celery\worker\consumer\consumer.py:498: CPendingDeprecationWarning: The broker_connection_retry configuration setting will no longer determine
+whether broker connection retries are made during startup in Celery 6.0 and above.
+If you wish to retain the existing behavior for retrying connections on startup,
+you should set broker_connection_retry_on_startup to True.
+  warnings.warn(
+
+[2026-09-26 23:01:00,894: INFO/MainProcess] mingle: searching for neighbors
+[2026-09-26 23:01:01,921: INFO/MainProcess] mingle: all alone
+[2026-09-26 23:01:01,970: INFO/MainProcess] corrected3@DESKTOP-FNBU991 ready.
