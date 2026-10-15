@@ -100,3 +100,13 @@ tail-risk picture (2008-type crash), and the sample is only ~1.5 years.
 
 Engine check (`engine_check.py`, `risk.swap_col="carry"`): the same carry rule run through AlgoForge's own backtest engine on MT5 D1
 (2000–2025-05, fixed unit size, 9 pairs) gives positive total P&L on all 9 pairs (0.20…1.09 of starting equity per pair, incl. swap accrual).
+
+## Round 6 — the four missing mechanisms (2026-10-15)
+| Mechanism | What exists now | Honest status |
+|---|---|---|
+| Events | `event_calendar` collector (faireconomy schedule/forecast, ALFRED first-release actuals, CSV import) + `event` indicator (`near`, `mins_to_next`, `mins_since_last`, point-in-time `surprise`) | Machinery tested with unit tests. No forecast **history** is available for free; no strategy has been shown to profit from events (needs H1 data + history, not done). |
+| Real swaps | `mt5_swap` collector (read-only snapshots), `carry.markup`, `risk.swap_col_short` | First snapshot taken: broker swaps are strongly asymmetric (e.g. USDJPY long ≈ +3.6% p.a., short ≈ −20.9% p.a. as derived from MT5 points; the derivation is unverified for JPY quotes). Backtests with the rate-difference proxy therefore likely overstate shorts' carry. History must accumulate (daily cron). |
+| Implied vol | `EVZ/GVZ/VXN/OVX` aliases in the FRED collector | Series ids unverified: FRED refused connections from this machine on 2026-10-15. FX option IV (risk reversals, ATM vol) has no free source found. |
+| AI agent | `agent_risk` overlay in the portfolio engine: weekly point-in-time macro snapshot → multiplier ∈ {0, 0.5, 1}; calls only for dates ≥ `min_date` (leakage guard) | No evidence yet that it improves anything: it can only be evaluated forward (paper/live), by construction. |
+| ML | Single-symbol `ml_signal` unchanged; research GBMs showed no edge | Cross-symbol ML signals would need a portfolio sleeve type (`ml_scores`); not built because there is no signal to put in it. |
+| Portfolio execution | `strategy/portfolio/engine.py` + MCP `run_portfolio_backtest` | Reproduces the research book (SR 0.65 / 2009+ 0.50 / DD −20%). Not yet persisted as Strategy/Run rows or HTTP API; no live/paper runner for baskets. |
