@@ -298,3 +298,24 @@ Positions apply from t+1; carry accrues daily at (rate differential)/252 on the 
 turnover. Returns are per-instrument fractions at `target_vol`, averaged over instruments available that day.
 Reference run (9 majors, carry + VIX-jump guard, 2000→2026-10): Sharpe 0.65, 2009+ 0.50, max DD −20%
 (`backend/research/fx_search/portfolio_check.py`). Not yet persisted as Strategy/Run rows or exposed over HTTP.
+
+### Sleeves, overlays and risk keys (portfolio engine)
+
+| Sleeve `type` | Meaning | Keys |
+|---|---|---|
+| `carry` | sign/size ∝ (base − quote) short-rate differential | `threshold`, `scale`, `cap`, `rebalance`, `net_of_markup` (trade only the part above `risk.swap_markup`) |
+| `momentum` | currency-strength momentum from pair returns | `lookbacks`, `rebalance` (default W) |
+| `scores` | external per-symbol scores (e.g. ML predictions) from parquet | `path`, `column`, `mode` (`sign`\|`rank`), `threshold`, `k`, `ffill` |
+
+| Overlay `type` | Meaning |
+|---|---|
+| `vol_guard` | shrink when 20d book vol ≫ its 1y norm |
+| `series_jump` | cut when a series (VIX…) rose more than `ratio` over `lookback` days |
+| `series_below_ma` | cut while a series (S&P 500…) is below its `window`-day MA (risk-asset trend filter) |
+| `agent_risk` | LLM risk officer (multiplier ∈ {0, 0.5, 1}); only for dates ≥ `min_date` |
+
+`risk` keys: `target_vol`, `rebalance`, `max_leverage`, `vol_window`, `swap_markup` (annual haircut on gross exposure),
+`max_gross`, `currency_cap` (per-currency net exposure, equity units), `dd_stop`/`dd_cut` (drawdown circuit breaker).
+Result includes `stress` (book P&L in 2008, 2011, 2015 SNB, 2016 Brexit, 2020, 2024-08 windows) and `targets`
+(latest signed weights). A strategy whose definition contains `universe` runs through this engine from the normal
+`POST /strategies/{id}/runs` (modes `backtest` and `paper`; `paper` re-computes the current target book).

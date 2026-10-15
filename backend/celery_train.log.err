@@ -17,3 +17,4 @@ you should set broker_connection_retry_on_startup to True.
 [2026-10-15 12:45:31,120: INFO/MainProcess] train@DESKTOP-FNBU991 ready.
 [2026-10-15 12:45:42,316: INFO/MainProcess] sync with backtest2@DESKTOP-FNBU991
 [2026-10-15 12:47:28,540: WARNING/MainProcess] Substantial drift from backtest2@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 21 seconds.  [orig: 2026-10-15 12:47:28.540139 recv: 2026-10-15 12:47:07.493099]
+[2026-10-15 13:07:56,695: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991

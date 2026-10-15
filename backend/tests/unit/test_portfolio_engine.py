@@ -79,3 +79,15 @@ def test_series_below_ma_overlay_cuts_when_series_falls(tmp_path):
     cut = run_portfolio_backtest(d)["returns"]
     assert cut[:300].equals(base[:300]) or np.allclose(cut[:300].dropna(), base[:300].dropna())
     assert cut[500:].abs().sum() == 0.0 and base[500:].abs().sum() > 0
+
+
+def test_scores_sleeve_follows_external_signal(tmp_path):
+    d = _mk(tmp_path)
+    idx = pd.bdate_range("2015-01-01", periods=800)
+    long = pd.DataFrame({"datetime": idx.repeat(2), "symbol": ["HILO", "HILO2"] * len(idx),
+                         "score": np.tile([1.0, -1.0], len(idx))})        # long HILO, short HILO2 all the time
+    long.to_parquet(tmp_path / "scores.parquet")
+    d["sleeves"] = [{"type": "scores", "path": str(tmp_path / "scores.parquet"), "weight": 1.0, "rebalance": "M"}]
+    res = run_portfolio_backtest(d)
+    t = res["targets"]["positions"]
+    assert t["HILO"]["weight"] > 0 and t["HILO2"]["weight"] < 0

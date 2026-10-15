@@ -1036,3 +1036,14 @@ httpx.ConnectError: All connection attempts failed
 [2026-10-15 13:06:29,477: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
 [2026-10-15 13:06:29,477: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
 [2026-10-15 13:06:42,135: INFO/MainProcess] Task celery_worker.tick_scheduler[c71eba35-1dfb-42b1-a1ac-d2f28352b8a7] succeeded in 21.118647399998736s: None
+[2026-10-15 13:07:03,181: INFO/MainProcess] Task celery_worker.tick_scheduler[74f6ddfd-2486-4ec0-8ade-cbc11cd90e86] received
+[2026-10-15 13:07:09,482: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:07:09,482: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:07:09,483: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 13:07:24,278: INFO/MainProcess] Task celery_worker.tick_scheduler[74f6ddfd-2486-4ec0-8ade-cbc11cd90e86] succeeded in 21.096233499993104s: None
+[2026-10-15 13:07:45,323: INFO/MainProcess] Task celery_worker.tick_scheduler[490c1d80-8a05-4056-b789-c43ef32be132] received
+[2026-10-15 13:07:49,488: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:07:49,489: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:07:49,489: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 13:08:06,437: INFO/MainProcess] Task celery_worker.tick_scheduler[490c1d80-8a05-4056-b789-c43ef32be132] succeeded in 21.114100100006908s: None
+[2026-10-15 13:08:27,492: INFO/MainProcess] Task celery_worker.tick_scheduler[a6cce22c-5146-48fc-bf3c-1a5ad8ae7d01] received

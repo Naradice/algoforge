@@ -293,3 +293,13 @@ pyarrow.lib.ArrowInvalid: Could not open Parquet input source '<Buffer>': Parque
 [2026-10-15 13:06:37,156: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
 [2026-10-15 13:06:37,157: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
 [2026-10-15 13:06:37,157: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 13:06:52,436: INFO/MainProcess] compute_characteristics started for dataset 175
+[2026-10-15 13:06:52,478: WARNING/MainProcess] compute_characteristics: dataset 175 not found or has no artifact
+[2026-10-15 13:07:13,530: INFO/MainProcess] Task celery_worker.compute_characteristics[3380408b-609b-4827-b86b-62716c2ba6ab] succeeded in 42.142208099976415s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:07:34,588: INFO/MainProcess] Task celery_worker.compute_characteristics[6bc692b7-be1d-4950-ace3-b589955736ff] received
+[2026-10-15 13:07:42,164: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:07:42,165: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:07:42,165: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 13:07:55,634: INFO/MainProcess] compute_characteristics started for dataset 176
+[2026-10-15 13:07:55,675: WARNING/MainProcess] compute_characteristics: dataset 176 not found or has no artifact
+[2026-10-15 13:08:16,723: INFO/MainProcess] Task celery_worker.compute_characteristics[6bc692b7-be1d-4950-ace3-b589955736ff] succeeded in 42.13231519999681s: {'error': 'dataset_not_found_or_no_artifact'}

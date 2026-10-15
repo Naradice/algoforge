@@ -246,3 +246,13 @@ INFO:     127.0.0.1:54005 - "POST /api/v1/datasources/75/collect HTTP/1.1" 202 A
 INFO:     127.0.0.1:54054 - "POST /api/v1/datasources HTTP/1.1" 201 Created
 INFO:     127.0.0.1:54059 - "POST /api/v1/collection-jobs HTTP/1.1" 201 Created
 INFO:     127.0.0.1:54063 - "POST /api/v1/datasources/76/collect HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:59624 - "POST /api/v1/strategies HTTP/1.1" 201 Created
+INFO:     127.0.0.1:59627 - "POST /api/v1/strategies/2/runs HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:59633 - "POST /api/v1/strategies/2/runs HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:59658 - "GET /api/v1/strategies/2/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59713 - "GET /api/v1/strategies/2/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59714 - "GET /api/v1/strategies/2/runs/3/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59739 - "POST /api/v1/strategies/2/runs HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:59743 - "POST /api/v1/strategies/2/runs HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:59763 - "GET /api/v1/strategies/2/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59777 - "GET /api/v1/strategies/2/runs HTTP/1.1" 200 OK

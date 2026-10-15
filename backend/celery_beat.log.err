@@ -24,3 +24,5 @@
 [2026-10-15 13:04:02,451: INFO/MainProcess] Scheduler: Sending due task tick-scheduler (celery_worker.tick_scheduler)
 [2026-10-15 13:05:02,451: INFO/MainProcess] Scheduler: Sending due task tick-scheduler (celery_worker.tick_scheduler)
 [2026-10-15 13:06:02,451: INFO/MainProcess] Scheduler: Sending due task tick-scheduler (celery_worker.tick_scheduler)
+[2026-10-15 13:07:02,451: INFO/MainProcess] Scheduler: Sending due task tick-scheduler (celery_worker.tick_scheduler)
+[2026-10-15 13:08:02,451: INFO/MainProcess] Scheduler: Sending due task tick-scheduler (celery_worker.tick_scheduler)

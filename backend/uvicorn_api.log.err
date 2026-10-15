@@ -17,3 +17,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 2026-10-15 12:52:43,909 INFO  celery_app — enqueue → Redis: run_collection_job(59)  celery_task_id=5b1f3def-be4e-4faa-b6a3-5cb9b6e433d6
 2026-10-15 12:53:11,107 INFO  celery_app — enqueue → Redis: run_collection_job(60)  celery_task_id=068c37e8-353e-4a56-85f8-e2b25614e220
 2026-10-15 12:53:38,267 INFO  celery_app — enqueue → Redis: run_collection_job(61)  celery_task_id=e0c53a44-46a6-4de3-a23d-18909a386bf7
+2026-10-15 13:06:59,805 INFO  celery_app — enqueue → Redis: execute_strategy_run(3)  celery_task_id=b9822ca0-9c44-4ac5-b543-b8c7f69f1a56
+2026-10-15 13:07:01,850 INFO  celery_app — enqueue → Redis: execute_strategy_run(4)  celery_task_id=976796d2-0269-4c04-a301-2ebcbe9780a7
+2026-10-15 13:07:59,994 INFO  celery_app — enqueue → Redis: execute_strategy_run(5)  celery_task_id=0c8f0f2a-c72e-40bf-8e33-8fb6e0b4c741
+2026-10-15 13:08:02,084 INFO  celery_app — enqueue → Redis: execute_strategy_run(6)  celery_task_id=ee5cef2d-f060-495e-b2ea-9c474cd87e9e

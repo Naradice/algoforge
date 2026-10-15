@@ -14,7 +14,9 @@ Definition:
   "rates":   {"dir": "research/fx/rates", "series": {"USD": "IR3TIB01USM156N", ...}},   # for carry sleeves
   "sleeves": [
      {"type": "carry",    "weight": 0.65, "threshold": 0.005, "scale": 0.03, "cap": 1.5},
-     {"type": "momentum", "weight": 0.35, "lookbacks": [60, 250]}               # currency-strength momentum
+     {"type": "momentum", "weight": 0.35, "lookbacks": [60, 250]},              # currency-strength momentum
+     {"type": "scores", "weight": 0.2, "path": "research/fx/ml_scores.parquet", # external/ML scores
+      "mode": "sign" | "rank", "threshold": 0.0, "k": 2}
   ],
   "overlays": [
      {"type": "vol_guard", "cap": 1.0},                                         # shrink when book vol >> its 1y norm
@@ -123,6 +125,26 @@ def run_portfolio_backtest(definition: dict) -> dict:
                     score[quote[s]] -= r[s]
                 sig += pd.DataFrame({s: np.sign(score[base[s]] - score[quote[s]]) for s in syms})
             sig = sig / max(len(sl.get("lookbacks", [60, 250])), 1)
+        elif sl["type"] == "scores":
+            # externally produced per-symbol scores (e.g. ML model predictions): parquet wide (date x symbol) or
+            # long (datetime, symbol, score). Decisions use the score known at t (shifted by the rebalance logic).
+            sc_df = _load_scores(sl["path"], sl.get("column", "score")).reindex(closes.index).ffill(limit=int(sl.get("ffill", 5)))
+            for c in syms:
+                if c not in sc_df.columns:
+                    sc_df[c] = np.nan
+            sc_df = sc_df[syms]
+            mode = sl.get("mode", "sign")
+            thr = float(sl.get("threshold", 0.0))
+            if mode == "sign":
+                sig = np.sign(sc_df) * (sc_df.abs() > thr)
+            elif mode == "rank":                                # cross-sectional: long top-k, short bottom-k
+                k = int(sl.get("k", 2))
+                r_ = sc_df.rank(axis=1)
+                n_ = sc_df.notna().sum(axis=1)
+                sig = (r_.gt(n_ - k, axis=0)).astype(float) - (r_ <= k).astype(float)
+            else:
+                raise ValueError(f"unknown scores mode {mode!r}")
+            sig = sig.fillna(0.0)
         else:
             raise ValueError(f"unknown sleeve type {sl['type']!r}")
         desired += w * _rebalance(sig, sl.get("rebalance", "W" if sl["type"] == "momentum" else freq))
@@ -198,6 +220,17 @@ def run_portfolio_backtest(definition: dict) -> dict:
     return {"returns": book, "equity": equity, "metrics": portfolio_metrics(book),
             "contribution": (pnl.sum() / avail.sum().clip(lower=1)), "stress": stress_report(book),
             "targets": _targets(pos, n_avail, closes)}
+
+
+def _load_scores(path: str, column: str) -> pd.DataFrame:
+    p = Path(path)
+    p = p if p.is_absolute() else _store() / p
+    df = pd.read_parquet(p)
+    if {"symbol"} <= set(df.columns):
+        tcol = "datetime" if "datetime" in df.columns else df.columns[0]
+        df = df.pivot_table(index=tcol, columns="symbol", values=column, aggfunc="last")
+    df.index = pd.DatetimeIndex(pd.to_datetime(df.index)).tz_localize(None).normalize()
+    return df[~df.index.duplicated(keep="last")].sort_index()
 
 
 def _targets(pos: pd.DataFrame, n_avail: pd.Series, closes: pd.DataFrame) -> dict:
