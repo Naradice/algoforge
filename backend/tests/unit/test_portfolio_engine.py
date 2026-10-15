@@ -51,3 +51,19 @@ def test_unknown_sleeve_raises(tmp_path):
     d["sleeves"] = [{"type": "nope"}]
     with pytest.raises(ValueError):
         run_portfolio_backtest(d)
+
+
+def test_exposure_caps_and_drawdown_breaker(tmp_path):
+    d = _mk(tmp_path)
+    base_book = run_portfolio_backtest(d)["returns"]
+    d["risk"]["max_gross"] = 0.05
+    capped = run_portfolio_backtest(d)["returns"]
+    assert capped.abs().sum() < base_book.abs().sum()
+    d["risk"].pop("max_gross"); d["risk"]["dd_stop"] = 0.0005; d["risk"]["dd_cut"] = 0.0
+    stopped = run_portfolio_backtest(d)["returns"]
+    assert stopped.abs().sum() < base_book.abs().sum()
+
+
+def test_stress_report_shape(tmp_path):
+    res = run_portfolio_backtest(_mk(tmp_path))
+    assert "2008 GFC (Sep-Dec 2008)" in res["stress"] and res["stress"]["2008 GFC (Sep-Dec 2008)"] is None

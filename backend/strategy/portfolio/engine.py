@@ -22,7 +22,11 @@ Definition:
       "lookback": 20, "cut": 0.7},                                             # e.g. VIX/VIX[-20] > 1.3 -> size x0.3
      {"type": "agent_risk", "min_date": "2026-01-01", ...}                      # LLM risk officer (agent_overlay.py)
   ],
-  "risk": {"target_vol": 0.10, "rebalance": "M", "max_leverage": 5.0, "vol_window": 60}
+  "risk": {"target_vol": 0.10, "rebalance": "M", "max_leverage": 5.0, "vol_window": 60,
+           "swap_markup": 0.0,      # annual haircut on |position| (broker swap spread vs interbank differential)
+           "max_gross": 0.0,        # >0: cap on sum|position| / N (equity units)
+           "currency_cap": 0.0,     # >0: cap on |net exposure| per currency / N
+           "dd_stop": 0.0, "dd_cut": 0.5}   # >0: after drawdown > dd_stop scale book by dd_cut until DD < dd_stop/2
 }
 
 Conventions: decisions use information up to day t, positions apply from t+1; carry accrual is earned daily on
@@ -102,7 +106,11 @@ def run_portfolio_backtest(definition: dict) -> dict:
             rates = _load_rates(definition["rates"], closes.index)
             carry = pd.DataFrame({s: rates[base[s]] - rates[quote[s]] for s in syms})
             thr, sc, cap = float(sl.get("threshold", 0.005)), float(sl.get("scale", 0.03)), float(sl.get("cap", 1.5))
-            sig = (carry / sc).clip(-cap, cap).where(carry.abs() > thr, 0.0)
+            edge = carry
+            if sl.get("net_of_markup", False):            # trade only the part of the differential exceeding the haircut
+                m = float(risk.get("swap_markup", 0.0))
+                edge = np.sign(carry) * (carry.abs() - m).clip(lower=0.0)
+            sig = (edge / sc).clip(-cap, cap).where(edge.abs() > thr, 0.0)
         elif sl["type"] == "momentum":
             ccys = sorted({c for c in list(base.values()) + list(quote.values()) if c})
             sig = pd.DataFrame(0.0, index=closes.index, columns=syms)
@@ -124,9 +132,26 @@ def run_portfolio_backtest(definition: dict) -> dict:
     if carry is None:
         carry = pd.DataFrame(0.0, index=closes.index, columns=syms)
     pos = desired * scale * avail
+    n_avail = avail.sum(axis=1).clip(lower=1)
+    # ---- exposure limits (in equity units after the 1/N averaging): gross leverage and per-currency net
+    max_gross = float(risk.get("max_gross", 0.0))
+    if max_gross > 0:
+        gross = pos.abs().sum(axis=1).div(n_avail)
+        pos = pos.mul((max_gross / gross).clip(upper=1.0).fillna(1.0), axis=0)
+    ccy_cap = float(risk.get("currency_cap", 0.0))
+    if ccy_cap > 0:
+        net = pd.DataFrame(0.0, index=pos.index, columns=sorted({c for c in list(base.values()) + list(quote.values()) if c}))
+        for s_ in syms:
+            net[base[s_]] += pos[s_]
+            net[quote[s_]] -= pos[s_]
+        net = net.div(n_avail, axis=0).abs()
+        for s_ in syms:
+            f = pd.concat([(ccy_cap / net[base[s_]]).clip(upper=1.0), (ccy_cap / net[quote[s_]]).clip(upper=1.0)], axis=1).min(axis=1)
+            pos[s_] = pos[s_] * f.fillna(1.0)
     spread = pd.Series({u["symbol"]: float(u.get("spread_pct", 0.0)) for u in uni})
     cost = pos.diff().abs().fillna(0.0) * spread
-    pnl = pos * lr.fillna(0.0) + pos * carry / 252.0 - cost
+    markup = float(risk.get("swap_markup", 0.0))      # broker haircut p.a. on gross exposure (both sides)
+    pnl = pos * lr.fillna(0.0) + pos * carry / 252.0 - pos.abs() * markup / 252.0 - cost
     book = pnl.sum(axis=1) / avail.sum(axis=1).clip(lower=1)
 
     # ---- overlays on the aggregated book
@@ -158,10 +183,52 @@ def run_portfolio_backtest(definition: dict) -> dict:
         else:
             raise ValueError(f"unknown overlay type {ov['type']!r}")
 
+    dd_stop = float(risk.get("dd_stop", 0.0))
+    if dd_stop > 0:
+        book = _drawdown_breaker(book, dd_stop, float(risk.get("dd_cut", 0.5)))
+
     book = book[avail.any(axis=1)]
     equity = (1.0 + book.fillna(0.0)).cumprod()
     return {"returns": book, "equity": equity, "metrics": portfolio_metrics(book),
-            "contribution": (pnl.sum() / avail.sum().clip(lower=1))}
+            "contribution": (pnl.sum() / avail.sum().clip(lower=1)), "stress": stress_report(book)}
+
+
+def _drawdown_breaker(r: pd.Series, limit: float, cut: float) -> pd.Series:
+    """Scale the book by `cut` after its drawdown exceeds `limit` (log-sum equity); restore at half the limit."""
+    out = r.copy().fillna(0.0)
+    peak = eq = 0.0
+    active = False
+    vals = out.to_numpy().copy()
+    for i in range(len(vals)):
+        if active:
+            vals[i] *= cut
+        eq += vals[i]
+        peak = max(peak, eq)
+        dd = eq - peak
+        if not active and dd < -limit:
+            active = True
+        elif active and dd > -limit / 2:
+            active = False
+    return pd.Series(vals, index=r.index)
+
+
+STRESS_WINDOWS = {
+    "2008 GFC (Sep-Dec 2008)": ("2008-09-01", "2008-12-31"),
+    "2011 Euro crisis / CHF cap (Aug-Sep 2011)": ("2011-08-01", "2011-09-30"),
+    "2015 SNB shock (Jan 12-Feb 28 2015)": ("2015-01-12", "2015-02-28"),
+    "2016 Brexit (Jun 20-Jul 15 2016)": ("2016-06-20", "2016-07-15"),
+    "2020 COVID (Feb 20-Apr 15 2020)": ("2020-02-20", "2020-04-15"),
+    "2024 carry unwind (Jul 25-Aug 15 2024)": ("2024-07-25", "2024-08-15"),
+}
+
+
+def stress_report(r: pd.Series) -> dict:
+    """Sum of book returns inside named historical stress windows (None when the window is outside the data)."""
+    out = {}
+    for name, (a, b) in STRESS_WINDOWS.items():
+        seg = r[a:b]
+        out[name] = round(float(seg.sum()), 4) if len(seg) > 3 else None
+    return out
 
 
 def _load_series(path: str, column: str, indicator: str | None) -> pd.Series:

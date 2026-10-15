@@ -246,6 +246,7 @@ The `docs/` directory is the authoritative human-readable reference for the plat
 |--------|---------|
 | `test-all.bat` | Run the full test suite (backend unit + integration + frontend). Pass `unit`, `integration`, or `frontend` to run one suite. Exits non-zero on any failure — use as release gate. |
 | `cleanup-data.bat` | Delete all datasources, datasets, collection jobs, strategies, and models via the API; remove artifact files. Run from the `scripts/` directory. Requires the API to be running. |
+| `start-stack.bat` | Start Docker infra (Postgres/Redis), the API, one solo Celery worker per queue (`collection`, `characteristics`, `training`, `backtest`+`portfolio`) and Beat after a reboot. Run once; it does not stop existing workers. |
 | `clear-stuck-jobs.bat` | Clear orphaned Celery task keys from Redis. Run when workers show tasks stuck in `STARTED` state after an ungraceful shutdown (Ctrl+C on Windows). |
 
 To add a new script: create a `.bat` file in `scripts/`, add a row to this table.

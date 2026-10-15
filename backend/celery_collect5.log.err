@@ -105,3 +105,4 @@ Traceback (most recent call last):
 httpx.ConnectError: All connection attempts failed
 [2026-10-15 12:34:54,707: INFO/MainProcess] Collection job 49 completed: dataset 190, 116 rows
 [2026-10-15 12:35:15,769: INFO/MainProcess] Task celery_worker.run_collection_job[02394275-c2d7-4ffa-9a67-84fbb73bbe91] succeeded in 69.36010330001591s: {'dataset_id': 190, 'row_count': 116}
+[2026-10-15 12:43:02,451: INFO/MainProcess] Task celery_worker.tick_scheduler[9e22add0-4b68-4b2a-a69b-f5f71e1db510] received
