@@ -256,3 +256,5 @@ INFO:     127.0.0.1:59739 - "POST /api/v1/strategies/2/runs HTTP/1.1" 202 Accept
 INFO:     127.0.0.1:59743 - "POST /api/v1/strategies/2/runs HTTP/1.1" 202 Accepted
 INFO:     127.0.0.1:59763 - "GET /api/v1/strategies/2/runs HTTP/1.1" 200 OK
 INFO:     127.0.0.1:59777 - "GET /api/v1/strategies/2/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59796 - "GET /api/v1/strategies/2/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59809 - "GET /api/v1/strategies/2/runs HTTP/1.1" 200 OK

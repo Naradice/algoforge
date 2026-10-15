@@ -303,3 +303,4 @@ pyarrow.lib.ArrowInvalid: Could not open Parquet input source '<Buffer>': Parque
 [2026-10-15 13:07:55,634: INFO/MainProcess] compute_characteristics started for dataset 176
 [2026-10-15 13:07:55,675: WARNING/MainProcess] compute_characteristics: dataset 176 not found or has no artifact
 [2026-10-15 13:08:16,723: INFO/MainProcess] Task celery_worker.compute_characteristics[6bc692b7-be1d-4950-ace3-b589955736ff] succeeded in 42.13231519999681s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:08:37,750: INFO/MainProcess] Task celery_worker.compute_characteristics[0e8d7013-be71-482a-87aa-d21afa8bb6e8] received

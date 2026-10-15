@@ -1047,3 +1047,17 @@ httpx.ConnectError: All connection attempts failed
 [2026-10-15 13:07:49,489: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
 [2026-10-15 13:08:06,437: INFO/MainProcess] Task celery_worker.tick_scheduler[490c1d80-8a05-4056-b789-c43ef32be132] succeeded in 21.114100100006908s: None
 [2026-10-15 13:08:27,492: INFO/MainProcess] Task celery_worker.tick_scheduler[a6cce22c-5146-48fc-bf3c-1a5ad8ae7d01] received
+[2026-10-15 13:08:34,493: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:08:34,494: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:08:34,494: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 13:08:48,590: INFO/MainProcess] Task celery_worker.tick_scheduler[a6cce22c-5146-48fc-bf3c-1a5ad8ae7d01] succeeded in 21.09681499999715s: None
+[2026-10-15 13:09:09,637: WARNING/MainProcess] Substantial drift from backtest3@DESKTOP-FNBU991 may mean clocks are out of sync.  Current drift is 33 seconds.  [orig: 2026-10-15 13:09:09.637711 recv: 2026-10-15 13:08:36.118828]
+[2026-10-15 13:09:09,640: INFO/MainProcess] Task celery_worker.tick_scheduler[0706b6e8-852f-4c68-a9e9-1fcadfe256e9] received
+[2026-10-15 13:09:14,513: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:09:14,514: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 13:09:14,514: INFO/MainProcess] missed heartbeat from backtest3@DESKTOP-FNBU991
+[2026-10-15 13:09:30,746: INFO/MainProcess] Task celery_worker.tick_scheduler[0706b6e8-852f-4c68-a9e9-1fcadfe256e9] succeeded in 21.104825199989136s: None
+[2026-10-15 13:09:51,808: INFO/MainProcess] Task celery_worker.tick_scheduler[b06d62ac-c073-4c6d-8c3d-7a54ecf78ae0] received
+[2026-10-15 13:09:59,519: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:09:59,520: INFO/MainProcess] missed heartbeat from chars@DESKTOP-FNBU991
+[2026-10-15 13:09:59,520: INFO/MainProcess] missed heartbeat from backtest3@DESKTOP-FNBU991

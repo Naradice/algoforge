@@ -31,3 +31,6 @@ If you wish to retain the existing behavior for retrying connections on startup,
 you should set broker_connection_retry_on_startup to True.
   warnings.warn(
 
+[2026-10-15 13:08:57,148: INFO/MainProcess] mingle: searching for neighbors
+[2026-10-15 13:10:01,267: INFO/MainProcess] mingle: sync with 1 nodes
+[2026-10-15 13:10:01,268: INFO/MainProcess] mingle: sync complete

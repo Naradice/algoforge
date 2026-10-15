@@ -110,3 +110,33 @@ Engine check (`engine_check.py`, `risk.swap_col="carry"`): the same carry rule r
 | AI agent | `agent_risk` overlay in the portfolio engine: weekly point-in-time macro snapshot → multiplier ∈ {0, 0.5, 1}; calls only for dates ≥ `min_date` (leakage guard) | No evidence yet that it improves anything: it can only be evaluated forward (paper/live), by construction. |
 | ML | Single-symbol `ml_signal` unchanged; research GBMs showed no edge | Cross-symbol ML signals would need a portfolio sleeve type (`ml_scores`); not built because there is no signal to put in it. |
 | Portfolio execution | `strategy/portfolio/engine.py` + MCP `run_portfolio_backtest` | Reproduces the research book (SR 0.65 / 2009+ 0.50 / DD −20%). Not yet persisted as Strategy/Run rows or HTTP API; no live/paper runner for baskets. |
+
+## Round 7 — automated search, risk controls, persistence (2026-10-15)
+**Swap markup sensitivity** (9 majors, diff-weighted carry, `risk.swap_markup` = annual haircut on gross exposure):
+SR(all/2009+) 0.65/0.50 at 0%, 0.52/0.36 at 1%, 0.38/0.23 at 2%, 0.25/0.10 at 3%, −0.02/−0.17 at 5% — each 1% of broker markup costs
+≈ 0.13 Sharpe. First measured MT5 swaps imply 0.6–3% on USD-quoted pairs; JPY/CHF-quoted pairs look mis-scaled (unverified).
+A 2% differential threshold (trade only when the edge exceeds the haircut) recovers a little (2009+ 0.30 → 0.37 at 1.5%).
+
+**Automated grid** (`auto_search.py`, 4,320 configurations of threshold/scale/cap/rebalance/VIX cut+ratio/vol window/momentum weight, 1.5% markup):
+OOS (2016+) SR median 0.37 [p10 0.28, p90 0.44]; IS-best 0.68 IS → 0.50 OOS; corr(IS,OOS) 0.66; Deflated Sharpe of the IS-best 0.95;
+PBO 1/2 folds. Interpretation: the carry sleeve is insensitive to parameters (little to overfit), but the level (~0.4) is what the
+swap markup leaves; nothing in the grid reaches a robustly high Sharpe.
+
+**Crash guards** (cross-asset, yfinance; selected from 9 fixed rules, so a post-hoc choice): S&P 500 below its 200d MA → ×0.3 turns
+the markup-1.5% book (2007-06+) from SR −0.12/DD −30% (2008: −21%) to 0.09/−13% (2008: −6%); plus VIX-jump: 0.19/−12%.
+Stable across 50…250d windows and across sub-periods (SR 07–14: −0.50 → −0.22…0.0; 15–26: 0.31 → 0.36…0.45). Flipping carry in
+risk-off is not better than going flat. MOVE/HYG-LQD/Nikkei/DXY guards were weaker. GMM regime scaling: no gain.
+
+**Persisted strategy** (`POST /strategies` + runs; strategies 1–2): v2 = carry (thr 2%) + VIX-jump + S&P-200d filter + ccy cap 0.3 +
+DD stop 5%, markup 1.5%: SR 0.48, 2009+ 0.25, DD −6.4%, annual return 0.9% at 1.8% vol (levered ×3 ≈ 2.7% / 5.4% vol / DD −19%);
+stress windows all within −2% (2008 −2.0%). It is a small, low-risk carry sleeve, not a high-return strategy.
+
+**Other negatives this round:** NFP release-bar follow-through (reconstructed schedule, 2001–22, 5 USD pairs): net ≈ +1–2 bp/event, t < 2
+→ not tradable; fade is negative. `rvol` indicator (realised-vol proxy for implied vol) and proxy surprise (`surprise_basis=previous`)
+are implemented but no profitable use was found with the data that exists.
+
+**Operations:** yfinance H1 collections for 9 pairs (daily cron 22:30 Mon–Fri) accumulate hourly history; event calendar and MT5 swap
+snapshots run daily 21:15; `scripts/start-stack.bat` restarts the whole local stack after a reboot.
+
+**Needs the user:** FRED API key (ALFRED first releases); consensus/forecast history (paid feed or own scraper CSV); FX option implied
+vol (paid); broker swap-unit confirmation; any decision about live trading (not implemented, deliberately).
