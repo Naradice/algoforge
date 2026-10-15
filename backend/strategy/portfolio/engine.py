@@ -19,7 +19,8 @@ Definition:
   "overlays": [
      {"type": "vol_guard", "cap": 1.0},                                         # shrink when book vol >> its 1y norm
      {"type": "series_jump", "path": "datasets/src_65/...parquet", "column": "value", "ratio": 1.3,
-      "lookback": 20, "cut": 0.7}                                              # e.g. VIX/VIX[-20] > 1.3 -> size x0.3
+      "lookback": 20, "cut": 0.7},                                             # e.g. VIX/VIX[-20] > 1.3 -> size x0.3
+     {"type": "agent_risk", "min_date": "2026-01-01", ...}                      # LLM risk officer (agent_overlay.py)
   ],
   "risk": {"target_vol": 0.10, "rebalance": "M", "max_leverage": 5.0, "vol_window": 60}
 }
@@ -139,6 +140,21 @@ def run_portfolio_backtest(definition: dict) -> dict:
             lb = int(ov.get("lookback", 20))
             jump = (s / s.shift(lb) > float(ov.get("ratio", 1.3))).astype(float).shift(1).fillna(0.0)
             book = book * (1.0 - float(ov.get("cut", 0.7)) * jump)
+        elif ov["type"] == "agent_risk":
+            from strategy.portfolio.agent_overlay import agent_multipliers
+
+            series = {name: _load_series(path, ov.get("column", "value"), None) for name, path in
+                      (ov.get("series") or {}).items()}
+            events = None
+            if ov.get("events"):
+                from strategy.engine.event_features import load_events
+                events = load_events(ov["events"])
+            swaps = None
+            if ov.get("swaps"):
+                swaps = pd.read_parquet(Path(ov["swaps"]) if Path(ov["swaps"]).is_absolute() else _store() / ov["swaps"])
+                swaps["datetime"] = pd.to_datetime(swaps["datetime"], utc=True)
+            mult = agent_multipliers(book.index, ov, carry, series, events, swaps, llm=definition.get("_llm"))
+            book = book * mult
         else:
             raise ValueError(f"unknown overlay type {ov['type']!r}")
 

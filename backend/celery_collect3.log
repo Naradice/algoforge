@@ -1,0 +1,27 @@
+ 
+ -------------- collect3@DESKTOP-FNBU991 v5.3.1 (emerald-rush)
+--- ***** ----- 
+-- ******* ---- Windows-11-10.0.26200-SP0 2026-10-15 12:21:07
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         algoforge:0x1c7090f5550
+- ** ---------- .> transport:   redis://localhost:6379/0
+- ** ---------- .> results:     redis://localhost:6379/0
+- *** --- * --- .> concurrency: 20 (solo)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> collection       exchange=collection(direct) key=collection
+                
+
+[tasks]
+  . celery_worker.assess_target
+  . celery_worker.colab_train_model
+  . celery_worker.compute_characteristics
+  . celery_worker.compute_preprocessed_characteristics
+  . celery_worker.execute_strategy_run
+  . celery_worker.run_collection_job
+  . celery_worker.tick_scheduler
+  . celery_worker.train_model
+  . celery_worker.validate_model
+
