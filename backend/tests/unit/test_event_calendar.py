@@ -62,3 +62,11 @@ def test_alfred_first_release_transform():
     # first releases: Jan=100 (Feb 2), Feb=110 (Mar 8), Mar=125 (Apr 5) -> diffs 10, 15 (first has no diff)
     assert list(ev["actual"]) == [10.0, 15.0]
     assert list(ev["previous"].fillna(-1)) == [-1.0, 10.0]
+
+
+def test_parquet_roundtrip_with_mixed_raw_types(tmp_path):
+    df = ec._norm_frame(pd.DataFrame({"datetime": ["2024-01-05T13:30:00Z", "2024-01-06T13:30:00Z"],
+                                      "currency": ["USD", "USD"], "title": ["a", "b"], "impact": ["High", "High"],
+                                      "forecast": [1.5, None], "previous": ["1.2%", 0.9], "actual": [None, None]}), "t")
+    df.to_parquet(tmp_path / "e.parquet")
+    assert len(pd.read_parquet(tmp_path / "e.parquet")) == 2

@@ -83,7 +83,7 @@ def _norm_frame(df: pd.DataFrame, source: str) -> pd.DataFrame:
     df["currency"] = df["currency"].astype(str).str.upper()
     for c in ("forecast", "previous", "actual"):
         raw = df[c].astype("object")
-        df[c + "_raw"] = raw.where(raw.notna(), None)
+        df[c + "_raw"] = raw.map(lambda v: None if v is None or (isinstance(v, float) and v != v) else str(v))
         df[c] = raw.map(parse_number)
     df["source"] = df["source"].fillna(source)
     keep = COLUMNS + ["forecast_raw", "previous_raw", "actual_raw"]
