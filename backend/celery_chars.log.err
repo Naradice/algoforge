@@ -163,3 +163,133 @@ Traceback (most recent call last):
   File "pyarrow/error.pxi", line 155, in pyarrow.lib.pyarrow_internal_check_status
   File "pyarrow/error.pxi", line 92, in pyarrow.lib.check_status
 pyarrow.lib.ArrowInvalid: Could not open Parquet input source '<Buffer>': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+[2026-10-15 12:49:45,842: INFO/MainProcess] Task celery_worker.compute_characteristics[18410dba-20e6-4ee6-a5f4-37dc2a2137fd] succeeded in 42.15258639998501s: {'error': 'Could not open Parquet input source \'<Buffer>\': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.'}
+[2026-10-15 12:50:06,900: INFO/MainProcess] Task celery_worker.compute_characteristics[6c002bdb-1c7b-41c2-8d40-94bec7f084ff] received
+[2026-10-15 12:50:11,608: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:50:11,608: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:50:11,608: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 12:50:27,930: INFO/MainProcess] compute_characteristics started for dataset 73
+[2026-10-15 12:50:27,982: ERROR/MainProcess] Failed to load dataset 73
+Traceback (most recent call last):
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\celery_worker.py", line 527, in _compute_characteristics
+    df = await asyncio.to_thread(load_df_for_dataset, artifact_path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\asyncio\threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ksato\workspace\finance\algoforge\backend\data\characteristics.py", line 702, in load_df_for_dataset
+    return pd.read_parquet(full_path)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 671, in read_parquet
+    return impl.read(
+           ~~~~~~~~~^
+        path,
+        ^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\io\parquet.py", line 260, in read
+    pa_table = self.api.parquet.read_table(
+        path_or_handle,
+    ...<3 lines>...
+        **kwargs,
+    )
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pyarrow\parquet\core.py", line 1858, in read_table
+    dataset = ParquetDataset(
+        source,
+    ...<16 lines>...
+        arrow_extensions_enabled=arrow_extensions_enabled,
+    )
+  File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\pyarrow\parquet\core.py", line 1427, in __init__
+    [fragment], schema=schema or fragment.physical_schema,
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pyarrow/_dataset.pyx", line 1477, in pyarrow._dataset.Fragment.physical_schema.__get__
+  File "pyarrow/error.pxi", line 155, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 92, in pyarrow.lib.check_status
+pyarrow.lib.ArrowInvalid: Could not open Parquet input source '<Buffer>': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+[2026-10-15 12:50:49,035: INFO/MainProcess] Task celery_worker.compute_characteristics[6c002bdb-1c7b-41c2-8d40-94bec7f084ff] succeeded in 42.13310909998836s: {'error': 'Could not open Parquet input source \'<Buffer>\': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.'}
+[2026-10-15 12:51:10,101: INFO/MainProcess] Task celery_worker.compute_characteristics[7c476f6e-6f90-4775-82b2-4fafd0fd1363] received
+[2026-10-15 12:51:16,614: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 12:51:16,615: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:51:16,615: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:51:31,136: INFO/MainProcess] compute_characteristics started for dataset 164
+[2026-10-15 12:53:24,007: INFO/MainProcess] compute_characteristics done for dataset 164 in 112.9s → id=26
+[2026-10-15 12:53:45,064: INFO/MainProcess] Task celery_worker.compute_characteristics[7c476f6e-6f90-4775-82b2-4fafd0fd1363] succeeded in 154.9601013000065s: {'characteristics_id': 26}
+[2026-10-15 12:54:06,136: INFO/MainProcess] Task celery_worker.compute_characteristics[e079497b-f294-4ee0-b18c-90de1e342178] received
+[2026-10-15 12:54:11,852: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:54:11,853: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:54:11,853: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 12:54:27,190: INFO/MainProcess] compute_characteristics started for dataset 165
+[2026-10-15 12:56:20,526: INFO/MainProcess] compute_characteristics done for dataset 165 in 113.3s → id=27
+[2026-10-15 12:56:41,582: INFO/MainProcess] Task celery_worker.compute_characteristics[e079497b-f294-4ee0-b18c-90de1e342178] succeeded in 155.4432082999847s: {'characteristics_id': 27}
+[2026-10-15 12:57:02,668: INFO/MainProcess] Task celery_worker.compute_characteristics[d3eb562f-3b35-407f-b39e-f062a4076a00] received
+[2026-10-15 12:57:07,090: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:57:07,091: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:57:07,091: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 12:57:23,713: INFO/MainProcess] compute_characteristics started for dataset 166
+[2026-10-15 12:57:23,755: WARNING/MainProcess] compute_characteristics: dataset 166 not found or has no artifact
+[2026-10-15 12:57:44,802: INFO/MainProcess] Task celery_worker.compute_characteristics[d3eb562f-3b35-407f-b39e-f062a4076a00] succeeded in 42.133748399995966s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 12:58:05,845: INFO/MainProcess] Task celery_worker.compute_characteristics[d06fd0d8-4e21-4598-88eb-fc3eebcb6008] received
+[2026-10-15 12:58:12,097: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:58:12,098: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:58:12,099: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 12:58:26,894: INFO/MainProcess] compute_characteristics started for dataset 167
+[2026-10-15 12:58:26,952: WARNING/MainProcess] compute_characteristics: dataset 167 not found or has no artifact
+[2026-10-15 12:58:47,988: INFO/MainProcess] Task celery_worker.compute_characteristics[d06fd0d8-4e21-4598-88eb-fc3eebcb6008] succeeded in 42.141975000005914s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 12:59:09,030: INFO/MainProcess] Task celery_worker.compute_characteristics[31c23b09-623c-41c9-b1c5-0880579f2637] received
+[2026-10-15 12:59:17,104: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 12:59:17,105: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 12:59:17,106: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 12:59:30,095: INFO/MainProcess] compute_characteristics started for dataset 168
+[2026-10-15 12:59:30,135: WARNING/MainProcess] compute_characteristics: dataset 168 not found or has no artifact
+[2026-10-15 12:59:51,207: INFO/MainProcess] Task celery_worker.compute_characteristics[31c23b09-623c-41c9-b1c5-0880579f2637] succeeded in 42.17540249999729s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:00:12,252: INFO/MainProcess] Task celery_worker.compute_characteristics[4a4527da-4b9e-44f9-af90-b899b6a6ff9e] received
+[2026-10-15 13:00:17,111: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:00:17,112: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:00:17,113: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 13:00:33,309: INFO/MainProcess] compute_characteristics started for dataset 169
+[2026-10-15 13:00:33,351: WARNING/MainProcess] compute_characteristics: dataset 169 not found or has no artifact
+[2026-10-15 13:00:54,395: INFO/MainProcess] Task celery_worker.compute_characteristics[4a4527da-4b9e-44f9-af90-b899b6a6ff9e] succeeded in 42.14157579999301s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:01:15,427: INFO/MainProcess] Task celery_worker.compute_characteristics[64847a8a-1348-43cf-a12d-2ed57b011822] received
+[2026-10-15 13:01:22,119: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:01:22,120: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:01:22,120: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 13:01:36,476: INFO/MainProcess] compute_characteristics started for dataset 170
+[2026-10-15 13:01:36,520: WARNING/MainProcess] compute_characteristics: dataset 170 not found or has no artifact
+[2026-10-15 13:01:57,558: INFO/MainProcess] Task celery_worker.compute_characteristics[64847a8a-1348-43cf-a12d-2ed57b011822] succeeded in 42.129885100002866s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:02:18,629: INFO/MainProcess] Task celery_worker.compute_characteristics[5c31b796-3e57-4394-ae15-59ec1bc1b4d9] received
+[2026-10-15 13:02:27,126: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:02:27,127: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 13:02:27,127: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:02:39,681: INFO/MainProcess] compute_characteristics started for dataset 171
+[2026-10-15 13:02:39,725: WARNING/MainProcess] compute_characteristics: dataset 171 not found or has no artifact
+[2026-10-15 13:03:00,768: INFO/MainProcess] Task celery_worker.compute_characteristics[5c31b796-3e57-4394-ae15-59ec1bc1b4d9] succeeded in 42.137384999979986s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:03:21,795: INFO/MainProcess] Task celery_worker.compute_characteristics[e9c15636-ce8f-49a5-8e86-741a6f54d037] received
+[2026-10-15 13:03:27,133: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:03:27,134: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:03:27,134: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 13:03:42,851: INFO/MainProcess] compute_characteristics started for dataset 172
+[2026-10-15 13:03:42,891: WARNING/MainProcess] compute_characteristics: dataset 172 not found or has no artifact
+[2026-10-15 13:04:03,956: INFO/MainProcess] Task celery_worker.compute_characteristics[e9c15636-ce8f-49a5-8e86-741a6f54d037] succeeded in 42.160235199989984s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:04:25,000: INFO/MainProcess] Task celery_worker.compute_characteristics[9c48acb3-f734-48ab-957d-899e11a282e5] received
+[2026-10-15 13:04:32,142: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:04:32,143: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:04:32,143: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 13:04:46,055: INFO/MainProcess] compute_characteristics started for dataset 173
+[2026-10-15 13:04:46,096: WARNING/MainProcess] compute_characteristics: dataset 173 not found or has no artifact
+[2026-10-15 13:05:07,146: INFO/MainProcess] Task celery_worker.compute_characteristics[9c48acb3-f734-48ab-957d-899e11a282e5] succeeded in 42.14400959998602s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:05:28,203: INFO/MainProcess] Task celery_worker.compute_characteristics[d279e8d7-72db-45bd-9ea9-120a7a63b6db] received
+[2026-10-15 13:05:37,150: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:05:37,151: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:05:37,151: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991
+[2026-10-15 13:05:49,243: INFO/MainProcess] compute_characteristics started for dataset 174
+[2026-10-15 13:05:49,282: WARNING/MainProcess] compute_characteristics: dataset 174 not found or has no artifact
+[2026-10-15 13:06:10,331: INFO/MainProcess] Task celery_worker.compute_characteristics[d279e8d7-72db-45bd-9ea9-120a7a63b6db] succeeded in 42.126702999987174s: {'error': 'dataset_not_found_or_no_artifact'}
+[2026-10-15 13:06:31,387: INFO/MainProcess] Task celery_worker.compute_characteristics[3380408b-609b-4827-b86b-62716c2ba6ab] received
+[2026-10-15 13:06:37,156: INFO/MainProcess] missed heartbeat from backtest2@DESKTOP-FNBU991
+[2026-10-15 13:06:37,157: INFO/MainProcess] missed heartbeat from train@DESKTOP-FNBU991
+[2026-10-15 13:06:37,157: INFO/MainProcess] missed heartbeat from collect5@DESKTOP-FNBU991

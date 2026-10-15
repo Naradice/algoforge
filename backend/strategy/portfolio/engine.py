@@ -20,6 +20,7 @@ Definition:
      {"type": "vol_guard", "cap": 1.0},                                         # shrink when book vol >> its 1y norm
      {"type": "series_jump", "path": "datasets/src_65/...parquet", "column": "value", "ratio": 1.3,
       "lookback": 20, "cut": 0.7},                                             # e.g. VIX/VIX[-20] > 1.3 -> size x0.3
+     {"type": "series_below_ma", "path": "research/fx/spx.parquet", "column": "close", "window": 200, "cut": 0.7},
      {"type": "agent_risk", "min_date": "2026-01-01", ...}                      # LLM risk officer (agent_overlay.py)
   ],
   "risk": {"target_vol": 0.10, "rebalance": "M", "max_leverage": 5.0, "vol_window": 60,
@@ -165,6 +166,11 @@ def run_portfolio_backtest(definition: dict) -> dict:
             lb = int(ov.get("lookback", 20))
             jump = (s / s.shift(lb) > float(ov.get("ratio", 1.3))).astype(float).shift(1).fillna(0.0)
             book = book * (1.0 - float(ov.get("cut", 0.7)) * jump)
+        elif ov["type"] == "series_below_ma":
+            # risk-asset trend filter: cut exposure while the series (e.g. S&P 500) is below its moving average
+            s_ = _load_series(ov["path"], ov.get("column", "close"), ov.get("indicator")).reindex(book.index).ffill()
+            below = (s_ < s_.rolling(int(ov.get("window", 200))).mean()).astype(float).shift(1).fillna(0.0)
+            book = book * (1.0 - float(ov.get("cut", 0.7)) * below)
         elif ov["type"] == "agent_risk":
             from strategy.portfolio.agent_overlay import agent_multipliers
 

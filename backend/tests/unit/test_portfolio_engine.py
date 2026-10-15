@@ -67,3 +67,15 @@ def test_exposure_caps_and_drawdown_breaker(tmp_path):
 def test_stress_report_shape(tmp_path):
     res = run_portfolio_backtest(_mk(tmp_path))
     assert "2008 GFC (Sep-Dec 2008)" in res["stress"] and res["stress"]["2008 GFC (Sep-Dec 2008)"] is None
+
+
+def test_series_below_ma_overlay_cuts_when_series_falls(tmp_path):
+    d = _mk(tmp_path)
+    idx = pd.bdate_range("2015-01-01", periods=800)
+    px = np.r_[np.linspace(100, 200, 400), np.linspace(200, 80, 400)]       # up then down: below 50d MA in 2nd half
+    pd.DataFrame({"close": px}, index=idx).to_parquet(tmp_path / "risk.parquet")
+    base = run_portfolio_backtest(d)["returns"]
+    d["overlays"] = [{"type": "series_below_ma", "path": str(tmp_path / "risk.parquet"), "window": 50, "cut": 1.0}]
+    cut = run_portfolio_backtest(d)["returns"]
+    assert cut[:300].equals(base[:300]) or np.allclose(cut[:300].dropna(), base[:300].dropna())
+    assert cut[500:].abs().sum() == 0.0 and base[500:].abs().sum() > 0

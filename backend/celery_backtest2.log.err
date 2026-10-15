@@ -195,3 +195,4 @@ Traceback (most recent call last):
   File "C:\Users\ksato\AppData\Local\Programs\Python\Python313\Lib\site-packages\httpx\_transports\default.py", line 118, in map_httpcore_exceptions
     raise mapped_exc(message) from exc
 httpx.ConnectError: All connection attempts failed
+[2026-10-15 12:49:43,657: INFO/MainProcess] Task celery_worker.execute_strategy_run[501a43fc-812b-4ca7-a3e3-8217ce24545b] succeeded in 45.02377860000706s: {'metrics': {'sharpe': 0.5357622701109949, 'sharpe_2009_plus': 0.3252308896799458, 'annual_return': 0.010645372449053309, 'annual_vol': 0.019869582169061453, 'max_drawdown': -0.09714785397673156, 'days': 6958.0}, 'targets': {'asof': '2026-10-09', 'positions': {'USDJPY': {...}, 'USDCHF': {...}, 'GBPJPY': {...}, 'AUDJPY': {...}}}}
