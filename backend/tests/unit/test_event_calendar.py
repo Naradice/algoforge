@@ -70,3 +70,11 @@ def test_parquet_roundtrip_with_mixed_raw_types(tmp_path):
                                       "forecast": [1.5, None], "previous": ["1.2%", 0.9], "actual": [None, None]}), "t")
     df.to_parquet(tmp_path / "e.parquet")
     assert len(pd.read_parquet(tmp_path / "e.parquet")) == 2
+
+
+def test_alfred_keyless_single_vintage_is_rejected(monkeypatch):
+    from unittest.mock import MagicMock
+    resp = MagicMock(text="observation_date,PAYEMS_20261014\n2024-01-01,157032\n"); resp.raise_for_status = lambda: None
+    monkeypatch.setattr("requests.get", lambda *a, **k: resp)
+    with pytest.raises(RuntimeError, match="API key"):
+        ec.fetch_alfred_series("PAYEMS", "USD", "NFP", "diff", pd.Timestamp("2024-01-01", tz="UTC"))

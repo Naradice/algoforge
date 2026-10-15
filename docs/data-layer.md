@@ -379,7 +379,7 @@ Sources are merged by `(datetime, currency, title)`, keeping the row with most f
 | source | gives | history | notes |
 |---|---|---|---|
 | `faireconomy` | schedule + forecast + previous (+ impact) for the **current week** | forward only — re-run (e.g. daily cron) to accumulate | public JSON, rate-limited; no `actual` |
-| `alfred` | **first-release actual + release date** for FRED series (NFP, CPI, UNRATE, retail sales, IP by default) | full | keyless `alfredgraph.csv` or `fred_api_key`; no forecast (consensus is not free) |
+| `alfred` | **first-release actual + release date** for FRED series (NFP, CPI, UNRATE, retail sales, IP by default) | full | **requires a (free) FRED API key** (`fred_api_key` / `FRED_API_KEY`): the keyless CSV only returns the latest vintage and is rejected; no forecast (consensus is not free) |
 | `csv` | any user history (`datetime,currency,title,[impact,forecast,previous,actual]`) | whatever you supply | e.g. output of your own scrapers / cyclic_downloader |
 
 `actual` from ALFRED is the *first release* (not later revisions), so using it in a backtest is point-in-time correct.

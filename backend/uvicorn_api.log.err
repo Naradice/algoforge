@@ -5,3 +5,4 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 2026-10-15 12:24:13,317 INFO  celery_app — enqueue → Redis: run_collection_job(49)  celery_task_id=dc3a2ddd-c3ab-4230-918a-79847f1f3f11
 2026-10-15 12:25:41,701 INFO  celery_app — enqueue → Redis: run_collection_job(50)  celery_task_id=37550168-83ed-4ce0-9086-55e6df2f50d7
+2026-10-15 12:34:06,399 INFO  celery_app — enqueue → Redis: run_collection_job(49)  celery_task_id=02394275-c2d7-4ffa-9a67-84fbb73bbe91

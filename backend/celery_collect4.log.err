@@ -239,3 +239,4 @@ Traceback (most recent call last):
     raise mapped_exc(message) from exc
 httpx.ConnectError: All connection attempts failed
 [2026-10-15 12:29:24,099: INFO/MainProcess] Collection job 50 completed: dataset 189, 9 rows
+[2026-10-15 12:29:45,125: INFO/MainProcess] Task celery_worker.run_collection_job[37550168-83ed-4ce0-9086-55e6df2f50d7] succeeded in 45.59610090000206s: {'dataset_id': 189, 'row_count': 9}

@@ -147,6 +147,10 @@ def fetch_alfred_series(series_id: str, currency: str, title: str, mode: str, fr
                                  "realtime_start": "1990-01-01", "realtime_end": "9999-12-31"}, timeout=120)
         r.raise_for_status()
         wide = pd.read_csv(io.StringIO(r.text))      # observation_date, <ID>_YYYYMMDD (one column per vintage)
+        if wide.shape[1] < 3:       # a single vintage column = only the latest vintage: no release history
+            raise RuntimeError(
+                f"ALFRED keyless CSV returned a single vintage for {series_id}; first-release history needs a "
+                "FRED API key (free registration) in config.fred_api_key or the FRED_API_KEY env var")
         long = wide.melt(id_vars=wide.columns[0], var_name="vintage", value_name="value").dropna(subset=["value"])
         long["rt"] = pd.to_datetime(long["vintage"].str.extract(r"_(\d{8})$")[0], format="%Y%m%d", errors="coerce")
         obs = long.rename(columns={wide.columns[0]: "obs"})[["obs", "rt", "value"]]
