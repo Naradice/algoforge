@@ -66,3 +66,6 @@ scipy
 pyarrow
 PyWavelets
 ruptures
+
+# F1 statistical baselines (docs/research-f1-statistical-baselines.md)
+arch==8.0.0
