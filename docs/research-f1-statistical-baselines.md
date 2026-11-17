@@ -164,6 +164,22 @@ mean; the final report must repeat them next to the classification.
 7. **Atlas versus real windows.** The atlas statistics are computed with the same function on 1 000 simulated candles (999
    returns); a real forward window has 1 001 closes (1 000 returns). The numerical consistency of definition, units and
    order is checked in `test_f1_atlas_consistency.py`; the one-return difference is immaterial and not corrected.
+8. **DDM path start = forecast origin; initial transient not removed (Stage C finding 2).** Every DDM path starts the model from
+   its initial state (agents drawn around `initial_price`, empty WMA history) and `closes[0]`, the close of the first 20-trade
+   candle, plays the role of the forecast origin; no burn-in is dropped. This is the same construction as the atlas
+   (`calibrate_ddm.simulate_ohlc`, characterised on the first 1 000 simulated candles) that the mapping selects candidates from,
+   and as the earlier ensemble generator (`ddm_horizon_analysis.simulate_long_path`, section-11 shock), so the ensembles stay
+   comparable with the earlier tail-risk and CRPS experiments (the only change: one extra candle, so the horizon spans exactly
+   60h candles). A burn-in would change what the atlas calibration means and would remove the decayed shock (probability
+   `0.002 * exp(-step/300)`, about 0.6 expected shocks per path, >99% inside the first 60 candles), so it was not applied.
+   A read-only probe (60 paths per cell, three atlas candidates, with and without shock; not a pipeline stage and not used for
+   any F1 result) showed: the shock raises the root-mean-square 1-candle return in candles 0-10 by about 1.4x for (0.0, 15)
+   (1.8e-4 vs 1.3e-4); without the shock the first-window (h = 1) return std from the path start is lower than late in the
+   path by about 18% for (0.0, 15) (2.7e-4 vs 3.3e-4) and with the shock it matches (3.5e-4 vs 3.4e-4); for wma = 7 the
+   estimates are dominated by a few heavy-tailed paths and no start effect can be told from noise at this sample size. So a
+   start transient exists, is partly offset by the shock by design, and its effect on the h > 1 horizons was not resolved.
+   Consequence for interpretation: the DDM forecast is "a fresh simulation started at the origin, shocked as in section 11",
+   not a continuation of a simulated market that has been running; a DDM deficit at h = 1 may partly reflect this start.
 
 ## Execution procedure (run guard)
 

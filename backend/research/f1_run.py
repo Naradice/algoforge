@@ -98,11 +98,66 @@ def aggregate_scores(results):
     return save
 
 
+class ScoreIntegrityError(RuntimeError):
+    """The scored results are not comparable (failures, missing items, differing origin sets, non-finite scores)."""
+
+
+SCORE_FIELDS_FINITE = ("crps", "crps_plain", "pit", "pit_lo", "pit_w")
+
+
+def validate_scores(results, fails, models=None):
+    """Pre-save integrity check (Stage C finding 3). Returns (problems, diagnostics); problems == [] means the scores may be saved.
+
+    The plan allows no dropped item: any sampler failure or non-finite sample ('fails'), any missing (model, horizon), any
+    duplicated or differing origin set between models for the same horizon, and any non-finite score is a problem."""
+    models = list(models) if models is not None else STAT_MODELS + [f"DDM{i + 1}" for i in range(N_DDM_SEEDS)]
+    problems, diag = [], {"origins": {}, "failures": {}}
+    n_fail = {m: list(v) for m, v in fails.items() if v}
+    if n_fail:
+        diag["failures"] = n_fail
+        problems.append(f"{sum(len(v) for v in n_fail.values())} failed or non-finite sampler outputs in months {sorted(n_fail)}")
+    sets = {}
+    for h in fc.HORIZONS:
+        for name in models:
+            parts = results.get((name, h))
+            if not parts:
+                problems.append(f"missing results for {name} h={h}")
+                continue
+            j = np.concatenate([p["j"] for p in parts])
+            if len(np.unique(j)) != len(j):
+                problems.append(f"duplicated origins for {name} h={h}")
+            sets[(name, h)] = np.unique(j)
+            diag["origins"][f"{name}|h{h}"] = int(len(j))
+            for field in SCORE_FIELDS_FINITE:
+                if field in parts[0]:
+                    v = np.concatenate([p[field] for p in parts])
+                    if not np.all(np.isfinite(v)):
+                        problems.append(f"non-finite {field} for {name} h={h} ({int((~np.isfinite(v)).sum())} values)")
+        ref = next((sets[(m, h)] for m in models if (m, h) in sets), None)
+        if ref is not None and len(ref) == 0:
+            problems.append(f"no origins at h={h}")
+        for name in models:
+            s = sets.get((name, h))
+            if s is not None and ref is not None and not np.array_equal(s, ref):
+                diff = len(np.setxor1d(s, ref))
+                problems.append(f"origin set of {name} differs from the others at h={h} ({diff} origins differ)")
+    return problems, diag
+
+
 def write_scores(workdir, period, results, fails):
-    """Aggregate per-month results and persist scores_<period>.npz and failures_<period>.json. Returns the flat dict."""
+    """Validate, then persist scores_<period>.npz and failures_<period>.json. Returns the flat dict.
+
+    On any integrity problem nothing is written to scores_<period>.npz: diagnostics go to score_integrity_<period>.json and
+    ScoreIntegrityError is raised (the run stops)."""
+    nonempty = {k: v for k, v in fails.items() if v}
+    json.dump(nonempty, open(os.path.join(workdir, f"failures_{period}.json"), "w"), default=str)
+    problems, diag = validate_scores(results, fails)
+    diag["problems"] = problems
+    json.dump(diag, open(os.path.join(workdir, f"score_integrity_{period}.json"), "w"), indent=1, default=str)
+    if problems:
+        raise ScoreIntegrityError(f"scores for {period} not saved: " + "; ".join(problems[:5]) + (" ..." if len(problems) > 5 else ""))
     save = aggregate_scores(results)
     np.savez(os.path.join(workdir, f"scores_{period}.npz"), **save)
-    json.dump({k: v for k, v in fails.items() if v}, open(os.path.join(workdir, f"failures_{period}.json"), "w"), default=str)
     return save
 
 
