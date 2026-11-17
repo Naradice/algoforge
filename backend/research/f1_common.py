@@ -153,6 +153,8 @@ def score_samples(samples: np.ndarray, y: np.ndarray, rng: np.random.Generator) 
     eq = (x == y[:, None]).sum(axis=1)
     u = rng.random(n)
     out["pit"] = (lt + u * eq) / m                                   # randomised PIT (ties)
+    out["pit_lo"] = lt / m                                           # PIT = pit_lo + U * pit_w; kept so that the
+    out["pit_w"] = eq / m                                            # randomisation can be repeated (uncertainty of the PIT)
     out["tie"] = (eq > 0).astype(float)                              # share of origins where randomisation matters
     for c in COVER_LEVELS:
         lo = np.quantile(x, (1 - c) / 2, axis=1)

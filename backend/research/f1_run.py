@@ -44,7 +44,11 @@ def ddm_samples(ens_list, ctx, j, seed_i):
 def month_job(args):
     workdir, period, month_start = args
     ctx, _ = load_ctx(workdir)
-    ens = load_ens(workdir)
+    return score_month(ctx, load_ens(workdir), period, month_start)
+
+
+def score_month(ctx, ens, period, month_start):
+    """Score every model for every origin of one month (state built from data before the month start)."""
     st = fm.build_state(ctx, month_start, None)
     m0 = month_start
     m1 = month_start + pd.offsets.MonthBegin(1)
@@ -74,11 +78,31 @@ def month_job(args):
             if not js[h]:
                 continue
             y = ctx.targets[h][np.array(js[h])]
-            rng = np.random.default_rng([99, fm.MODEL_IDS.get(name, 20 + int(name[3:]) if name.startswith("DDM") else 0), h, month_start.month, month_start.year])
+            model_id = 20 + int(name[3:]) if name.startswith("DDM") else fm.MODEL_IDS[name]
+            rng = np.random.default_rng([99, model_id, h, month_start.month, month_start.year])
             sc = fc.score_samples(np.array(samp[h]), y, rng)
             sc["j"] = np.array(js[h])
             out[(name, h)] = sc
     return str(month_start.date()), out, fails
+
+
+def aggregate_scores(results):
+    """{(model, h): [per-month score dicts]} -> flat dict with keys 'model|h<h>|<field>' sorted by origin block."""
+    save = {}
+    for (name, h), parts in results.items():
+        cat = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
+        order = np.argsort(cat["j"])
+        for k, v in cat.items():
+            save[f"{name}|h{h}|{k}"] = v[order]
+    return save
+
+
+def write_scores(workdir, period, results, fails):
+    """Aggregate per-month results and persist scores_<period>.npz and failures_<period>.json. Returns the flat dict."""
+    save = aggregate_scores(results)
+    np.savez(os.path.join(workdir, f"scores_{period}.npz"), **save)
+    json.dump({k: v for k, v in fails.items() if v}, open(os.path.join(workdir, f"failures_{period}.json"), "w"), default=str)
+    return save
 
 
 def stage_score(workdir, period):
@@ -92,15 +116,7 @@ def stage_score(workdir, period):
             for k, sc in out.items():
                 results.setdefault(k, []).append(sc)
             print(f"{period} {mstr} done ({time.time() - t0:.0f}s) failures={len(f)}", flush=True)
-    ctx, _ = load_ctx(workdir)
-    save = {}
-    for (name, h), parts in results.items():
-        cat = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
-        order = np.argsort(cat["j"])
-        for k, v in cat.items():
-            save[f"{name}|h{h}|{k}"] = v[order]
-    np.savez(os.path.join(workdir, f"scores_{period}.npz"), **save)
-    json.dump({k: v for k, v in fails.items() if v}, open(os.path.join(workdir, f"failures_{period}.json"), "w"), default=str)
+    save = write_scores(workdir, period, results, fails)
     # headline
     print("mean fair CRPS (x1e4):")
     for name in STAT_MODELS + [f"DDM{i + 1}" for i in range(N_DDM_SEEDS)]:

@@ -31,6 +31,22 @@ def load_scores(workdir, period):
     return {k: z[k] for k in z.files}
 
 
+PIT_REPEATS = 100
+
+
+def pit_randomisation_spread(lo, w, seed=0):
+    """Repeat the tie randomisation PIT = lo + U*w PIT_REPEATS times; return mean/sd of the KS distance to uniform and the
+    sd of each of the 20 histogram bins. With no ties the spread is exactly 0."""
+    rng = np.random.default_rng(seed)
+    ks, hists = [], []
+    for _ in range(PIT_REPEATS):
+        pit = lo + rng.random(len(lo)) * w
+        ks.append(stats.kstest(pit, "uniform").statistic)
+        hists.append(np.histogram(pit, bins=20, range=(0, 1))[0] / len(pit))
+    return {"ks_mean": float(np.mean(ks)), "ks_sd": float(np.std(ks)), "hist_bin_sd_max": float(np.std(hists, axis=0).max()),
+            "tie_share": float(np.mean(w > 0))}
+
+
 def assert_same_origins(sc, models, h):
     ref = sc[f"{models[0]}|h{h}|j"]
     for m in models[1:]:
@@ -163,6 +179,7 @@ def stage_final(workdir):
                            "hit50": float(sc[f"{m}|h{h}|hit50"].mean()), "hit80": float(sc[f"{m}|h{h}|hit80"].mean()),
                            "hit90": float(sc[f"{m}|h{h}|hit90"].mean()), "hit95": float(sc[f"{m}|h{h}|hit95"].mean()),
                            "ks_pit": ks, "pit_hist": hist.tolist(),
+                           "pit_mc": pit_randomisation_spread(sc[f"{m}|h{h}|pit_lo"], sc[f"{m}|h{h}|pit_w"]),
                            "ql": {q: float(sc[f"{m}|h{h}|ql{q}"].mean()) for q in fc.TAIL_LEVELS}}
         out["models_final_crps"][m] = row
     ddm_row = {}
@@ -175,6 +192,8 @@ def stage_final(workdir):
                            "hit95": float(np.mean([sc[f'{d}|h{h}|hit95'].mean() for d in DDM_SEEDS])),
                            "ks_pit": float(stats.kstest(pits, "uniform").statistic),
                            "pit_hist": (np.histogram(pits, bins=20, range=(0, 1))[0] / len(pits)).tolist(),
+                           "pit_mc": pit_randomisation_spread(np.concatenate([sc[f"{d}|h{h}|pit_lo"] for d in DDM_SEEDS]),
+                                                              np.concatenate([sc[f"{d}|h{h}|pit_w"] for d in DDM_SEEDS])),
                            "ql": {q: float(np.mean([sc[f'{d}|h{h}|ql{q}'].mean() for d in DDM_SEEDS])) for q in fc.TAIL_LEVELS}}
     out["models_final_crps"]["DDM"] = ddm_row
     json.dump(out, open(os.path.join(workdir, "final_result.json"), "w"), indent=1)

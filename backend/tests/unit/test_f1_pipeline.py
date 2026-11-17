@@ -266,6 +266,8 @@ def _fake_scores(path, period_blocks, ddm_factor, rng):
             sc[f"{m}|h{h}|crps"] = base[h] * (1.0 + 0.02 * k) if m != "B1" else base[h]
             sc[f"{m}|h{h}|crps_plain"] = sc[f"{m}|h{h}|crps"] * 1.001
             sc[f"{m}|h{h}|pit"] = rng.random(n)
+            sc[f"{m}|h{h}|pit_lo"] = sc[f"{m}|h{h}|pit"]
+            sc[f"{m}|h{h}|pit_w"] = np.zeros(n)
             for c in (50, 80, 90, 95):
                 sc[f"{m}|h{h}|hit{c}"] = (rng.random(n) < c / 100).astype(float)
             for q in fc.TAIL_LEVELS:
@@ -275,6 +277,8 @@ def _fake_scores(path, period_blocks, ddm_factor, rng):
             sc[f"{d}|h{h}|crps"] = base[h] * ddm_factor * (1 + 0.001 * rng.standard_normal(n))
             sc[f"{d}|h{h}|crps_plain"] = sc[f"{d}|h{h}|crps"]
             sc[f"{d}|h{h}|pit"] = rng.random(n)
+            sc[f"{d}|h{h}|pit_lo"] = sc[f"{d}|h{h}|pit"]
+            sc[f"{d}|h{h}|pit_w"] = np.zeros(n)
             for c in (50, 80, 90, 95):
                 sc[f"{d}|h{h}|hit{c}"] = (rng.random(n) < c / 100).astype(float)
             for q in fc.TAIL_LEVELS:

@@ -79,12 +79,10 @@ def bucket_job(args):
     return q, np.array(out), attempts
 
 
-def stage_map(workdir):
-    os.makedirs(workdir, exist_ok=True)
-    from ddm_regime_atlas import full_characterize
-    from ddm_ensemble_selection import select_ensemble, TOP_K
-    atlas = pd.read_csv(os.path.join(os.path.dirname(HERE), "ddm_regime_atlas.csv"))
-    s = fc.load_series()
+def build_mapping(s, atlas, characterize, select, max_per_bucket=MAX_PER_BUCKET, seed=MAP_SEED):
+    """Pure construction of the bucket edges and the bucket -> candidate mapping from ESTIMATION-period windows only.
+    `characterize(df) -> dict` and `select(real_row, atlas) -> dict` are injected (the real functions in stage_map, fakes in
+    the tests). Returns the mapping dict; the windows that were used are listed so the run can be audited."""
     atr = s.atr_window()
     est = s.period_mask("estimation") & s.atr_valid() & np.isfinite(atr)
     j_all = np.flatnonzero(est)
@@ -96,28 +94,39 @@ def stage_map(workdir):
     ok = s.contiguous(a, b)
     est_hi = pd.Timestamp(fc.PERIODS["estimation"][1]) + pd.Timedelta(days=1)
     ok &= np.asarray(s.index[np.minimum(b, len(s.close) - 1)] < est_hi)
-    rng = np.random.default_rng(MAP_SEED)
+    rng = np.random.default_rng(seed)
     results = []
-    t0 = time.time()
+    names = ["std", "skewness", "kurtosis", "acf_1", "acf_5", "acf_20", "volclust_50"]
     for q in range(fc.N_QUANTILES):
         idx = np.flatnonzero((bucket == q) & ok)
         n_avail = len(idx)
-        if n_avail > MAX_PER_BUCKET:
-            idx = rng.choice(idx, size=MAX_PER_BUCKET, replace=False)
+        if n_avail > max_per_bucket:
+            idx = rng.choice(idx, size=max_per_bucket, replace=False)
         stats = []
         for i in idx:
             wc = s.close[a[i]:a[i] + CHAR_WINDOW + 1]
-            stats.append(full_characterize(pd.DataFrame({"close": wc})))
-        names = ["std", "skewness", "kurtosis", "acf_1", "acf_5", "acf_20", "volclust_50"]
+            stats.append(characterize(pd.DataFrame({"close": wc})))
         avg = {nm: float(np.nanmean([x[nm] for x in stats])) for nm in names}
-        sel = select_ensemble(pd.Series(avg), atlas)
+        sel = select(pd.Series(avg), atlas)
         cands = [(float(r["delta"]), int(r["wma"])) for _, r in sel["candidates"].iterrows()]
-        results.append({"q": q, "n_windows_available": int(n_avail), "n_windows_used": int(len(idx)), "real_stats": avg,
-                        "candidates": cands, "best_std_ratio": float(sel["best_std_ratio"]),
-                        "out_of_range": bool(sel["out_of_range"])})
-        print(f"q={q:2d} n={len(idx):3d}/{n_avail:4d} real_std={avg['std']:.6f} best={cands[0]} ratio={sel['best_std_ratio']:.2f} "
-              f"OOR={sel['out_of_range']}  ({time.time() - t0:.0f}s)", flush=True)
-    json.dump({"edges": edges.tolist(), "buckets": results, "top_k": TOP_K}, open(os.path.join(workdir, "ddm_mapping.json"), "w"), indent=1)
+        results.append({"q": q, "n_windows_available": int(n_avail), "n_windows_used": int(len(idx)),
+                        "used_blocks": [int(j_all[i]) for i in idx], "real_stats": avg, "candidates": cands,
+                        "best_std_ratio": float(sel["best_std_ratio"]), "out_of_range": bool(sel["out_of_range"])})
+    return {"edges": edges.tolist(), "buckets": results}
+
+
+def stage_map(workdir):
+    os.makedirs(workdir, exist_ok=True)
+    from ddm_regime_atlas import full_characterize
+    from ddm_ensemble_selection import select_ensemble, TOP_K
+    atlas = pd.read_csv(os.path.join(os.path.dirname(HERE), "ddm_regime_atlas.csv"))
+    t0 = time.time()
+    mp = build_mapping(fc.load_series(), atlas, full_characterize, select_ensemble)
+    mp["top_k"] = TOP_K
+    for r in mp["buckets"]:
+        print(f"q={r['q']:2d} n={r['n_windows_used']:3d}/{r['n_windows_available']:4d} real_std={r['real_stats']['std']:.6f} "
+              f"best={r['candidates'][0]} ratio={r['best_std_ratio']:.2f} OOR={r['out_of_range']}  ({time.time() - t0:.0f}s)", flush=True)
+    json.dump(mp, open(os.path.join(workdir, "ddm_mapping.json"), "w"), indent=1)
 
 
 def stage_ens(workdir, seed_id):
