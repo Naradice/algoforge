@@ -254,3 +254,54 @@ but a single excerpt cannot discriminate.
 Open: the paper's dt / c_i to seconds conversion; whether the Model-4 results (volatility clustering, Fig.5) depend on
 the interval clustering; whether the initial level of the paper's run was above its long-run level; the effect of
 replacing the repository's i.i.d. clock by M2-S2 on OHLC-based results (class C, T1).
+
+## 9. T0-F: seconds conversion of dt and c_i (Study Manager #886)
+
+Script `backend/research/tdm_fig3_time_scale.py` (PDF read-out; `--sweep` for the Model-1 parameter sweep).
+
+**What the paper's own time axes say** (pixel read-out of the vector drawings, no data tables):
+
+| source | mean interval | CV | ACF1 |
+|---|---|---|---|
+| Fig.2 real USD/JPY, 62 ticks in a 460 s excerpt | 7.5 s | 1.18 | +0.23 |
+| Fig.5F real data (area under the complementary CDF) | ~8.0 s | - | - |
+| Fig.3 model-1 excerpt (t' axis) | 7.3 s | 0.75 | -0.15 |
+| Fig.3 model-2 excerpt | 9.2 s | 1.43 | +0.31 |
+| Fig.5F model-4 | ~6.7 s | - | - |
+
+All of them sit at the real-data scale of about 7-9 s.
+
+**Literal reading** (dt = seconds per step, c_i per second, `Delta b = sigma c dt`, c_i signed), Model-1 of
+`tdm_fig3_audit.model1_intervals`, mean of 3 seeds x 6000 trades:
+
+| N | c_max | dt | mean T' | CV | ACF1 |
+|---|---|---|---|---|---|
+| 100 | 0.010 | 0.01 | **8.3 s** | 0.67 | -0.03 |
+| 100 | 0.015 | 0.01 | 5.5 s | 0.66 | -0.04 |
+| 150 | 0.010 | 0.01 | 5.6 s | 0.68 | -0.03 |
+| 200 | 0.010 | 0.01 | 4.0 s | 0.68 | -0.02 |
+| **500** | **0.010** | 0.01 | **1.65 s** (Fig.3 caption) | 0.69 | -0.01 |
+| 100 | 0.02 | 1.0 | 4.3 s (2 seeds, 4000 trades, earlier run) | - | - |
+
+Findings:
+1. The mean interval scales as `T' ~ 8.3 s / (N c_max)` at dt = 0.01 (and as `steps x dt` in general; the number of
+   steps per trade scales as `1/(N c dt)`: 8.2 vs 8.6 for the Fig.3 and Fig.5 parameter sets). So **the seconds scale
+   is fixed by N x c_max, and dt only converts steps to seconds**.
+2. With the Fig.3 caption (N = 500) the literal reading gives 1.65 s, 4.4x faster than the 7.3 s drawn in the figure
+   (9x if c_i is read as |c|). The literal reading reproduces the drawn 7.3 s and the real-data scale for
+   **N x c_max ~ 1.1, e.g. N = 100, c = 0.01 (8.3 s)** - the N of Fig.1 and Fig.5. Either the Fig.3 caption's N = 500
+   is wrong (N = 100 would fit) or the figure's time axis was calibrated to the real data (mean ~7.5 s) rather than
+   given by the stated dt. The text cannot distinguish the two; both give the same practical rule below.
+3. CV (0.66-0.69) and ACF1 (about -0.03) of Model-1 do not depend on N or c_max (the drawn excerpt: 0.75 / -0.15, within
+   the sampling error of 69 events), so the time-scale choice does not change the statistics of T', only their unit.
+4. Model-2/4 intervals cannot be used for this calibration: the level of the modulated clock is not fixed by the
+   dynamics (section 8-C), so the 9.2 s / 6.7 s of model-2/4 only show that the authors' level is near the real data.
+
+**Practical rule used from here on:** keep dt = 0.01 and c_i signed U[-0.01, 0.01], but take N = 100 (mean T' ~ 8 s, the
+paper's real-data scale) as the Fig.3 setting for time-scale-sensitive work, or equivalently rescale a Model-1 series to a
+mean of 7.3 s (what sections 7-8 did; their conclusions do not depend on N because CV and ACF1 of T' are N-independent).
+A literal N = 500 run must not be combined with tau = 150 s without this rescaling (it puts ~90 events in the window and
+removes the clustering, which is the T0-A null result).
+
+Not resolved: whether the caption N = 500 is a typo; the paper does not give the initial b_i distribution or the number
+of steps.
