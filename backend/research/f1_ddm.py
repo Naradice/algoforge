@@ -24,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 import f1_common as fc  # noqa: E402
+import f1_guard as fg  # noqa: E402
 
 TRADES_PER_CANDLE = 20
 CHAR_WINDOW = 1000
@@ -149,6 +150,7 @@ def stage_ens(workdir, seed_id):
 
 if __name__ == "__main__":
     stage = sys.argv[1]
+    fg.start_run(sys.argv[2], f"ddm_{stage}", inputs=[str(fc.artifact_path()), os.path.join(os.path.dirname(HERE), "ddm_regime_atlas.csv")])
     if stage == "map":
         stage_map(sys.argv[2])
     else:

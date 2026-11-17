@@ -17,6 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 import f1_common as fc  # noqa: E402
+import f1_guard as fg  # noqa: E402
 
 SELECT_POOL = ["B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7N", "B7T"]
 TIE_ORDER = ["B1", "B2", "B3", "B4", "B7N", "B5", "B6", "B7T", "B0"]     # fewer free parameters first
@@ -208,4 +209,6 @@ def stage_final(workdir):
 
 
 if __name__ == "__main__":
+    fg.start_run(sys.argv[2], f"analyze_{sys.argv[1]}",
+                 inputs=[os.path.join(sys.argv[2], f) for f in ("scores_validation.npz", "scores_final.npz", "selection.json")])
     {"select": stage_select, "final": stage_final}[sys.argv[1]](sys.argv[2])

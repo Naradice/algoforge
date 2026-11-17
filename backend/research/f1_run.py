@@ -19,6 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 import f1_common as fc  # noqa: E402
+import f1_guard as fg  # noqa: E402
 import f1_models as fm  # noqa: E402
 
 STAT_MODELS = ["B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7N", "B7T", "B8", "B4s"]
@@ -180,6 +181,9 @@ def stage_leak(workdir):
 
 
 if __name__ == "__main__":
+    fg.start_run(sys.argv[2], "run_" + "_".join(sys.argv[1:2] + sys.argv[3:4]),
+                 inputs=[str(fc.artifact_path()), os.path.join(sys.argv[2], "ddm_mapping.json")] +
+                        [os.path.join(sys.argv[2], f"ddm_ens_seed{i}.npy") for i in range(1, N_DDM_SEEDS + 1)])
     if sys.argv[1] == "score":
         stage_score(sys.argv[2], sys.argv[3])
     else:
