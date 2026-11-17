@@ -8,7 +8,7 @@ commit) is still required before the experiment is run. Revision 2 answered the 
 | item | value |
 |---|---|
 | Repository | https://github.com/Naradice/algoforge |
-| **Code commit under review (pinned)** | `bf1ebc66cc29c54d13aae6faedab1722b981cbaa` (revision 2 was `d5cedc77dd445fae403840afa13c961a6c8f59f7`, revision 1 `5ecf3b262924d42f098b8422c336872b1b188a66`; both are superseded) |
+| **Code commit under review (pinned)** | `579d767e9d9f64120ddd7bd7e87556b04bea14cc` (superseded: `886f413bef2a6f515ffe383f5b7377adc3269b93`, `bf1ebc66cc29c54d13aae6faedab1722b981cbaa`, `d5cedc77dd445fae403840afa13c961a6c8f59f7`, `5ecf3b262924d42f098b8422c336872b1b188a66`) |
 | **Audit document commit** | the commit that contains this file (the code commit above does not contain it; the document commit only adds documentation) |
 | Plan of record | `docs/research-f1-statistical-baselines.md` (spec committed at `4c88e81` / `ac1d444` before any score) and Study Manager #889 v0.3 |
 | Entry points | `backend/research/f1_ddm.py` (`map`, `ens`), `f1_run.py` (`score`, `leak`), `f1_analyze.py` (`select`, `final`) |
@@ -149,3 +149,33 @@ The code commit is `bf1ebc66cc29c54d13aae6faedab1722b981cbaa`; this document and
   verification{tests}]`), but with `auto_register=true` the server returned `name 'timezone' is not defined`, so the audit state of
   #889 is still `none` and `check_execution_gate` correctly reports that Stage C is not completed. The execution gate has
   therefore not been passed; the experiment has not been run.
+
+## 10. Revisions 4 and 5 (code commit 579d767e9d9f64120ddd7bd7e87556b04bea14cc)
+
+The identification table at the top of this file refers to the code commit under review; revisions 3-5 changed the code as follows.
+
+* **Run guard (R-15), revision 4.** `f1_guard.py` measures the real state (HEAD, hash of every repository module loaded by the
+  run, input hashes -> `state_hash`), refuses modified or untracked loaded repository files, and refuses unless a Study Manager
+  gate approval for this node, this HEAD and this `state_hash` is present and passing. There is no environment variable or flag
+  bypass. Every stage script calls `guard_main` first (`--preflight` prints the state) and `end_run` last. See the module
+  docstring for the procedure and its stated limit (the approval file is evidence written by the caller; the Study Manager gate
+  record is the authority).
+* **Atlas / characterisation consistency (R-19), revision 4.** `test_f1_atlas_consistency.py` (5 tests): `full_characterize` equals
+  independent numpy definitions on a fixed series and a real window; an atlas row is reproduced; `select_ensemble` maps statistics
+  to the right columns and flags out-of-range volatility. No mismatch was found.
+* **Interpretation limits (R-20), revision 4.** Documented in `docs/research-f1-statistical-baselines.md`.
+* **Leak test before any score (R-10b), revision 5.** `stage_score` calls `require_leak_pass` first: it refuses unless
+  `leak_test.json` passed on the same HEAD and on exactly the same mapping/ensemble files (sha256). The requirement is registered
+  in the Study Manager with `gate_stage = post_run`; running it on the real ensembles is still pending.
+* **Requirement ids in the tests.** Every F1 test carries `# R-xx` comment lines.
+* **Tests:** 54 passed (`test_f1_pipeline.py`, `test_f1_stage_map_and_run.py`, `test_f1_wiring_and_guard.py`,
+  `test_f1_guard.py`, `test_f1_atlas_consistency.py`), from `backend/`.
+* **Machine-readable requirements:** `docs/audit/f1_requirements.json` (22 requirements; statuses in the Study Manager schema
+  `passed / failed / pending / not_applicable`).
+
+Reviewer entry point for revision 5: the diff https://github.com/Naradice/algoforge/compare/bf1ebc66cc29c54d13aae6faedab1722b981cbaa...579d767e9d9f64120ddd7bd7e87556b04bea14cc
+(code changes since revision 3) and, for the whole F1 implementation,
+https://github.com/Naradice/algoforge/compare/704d6f6...579d767e9d9f64120ddd7bd7e87556b04bea14cc
+restricted to `backend/research/f1_*.py` and `backend/tests/unit/test_f1_*.py`.
+Two plain notes: commit `f99223b` contains 15 unrelated scripts added by mistake (untracked again in `d0b7a03`; the repository is
+private and the owner accepted this); the Study Manager `test_files` cross-matching could not be used because of a server error.
