@@ -1,499 +1,516 @@
 {
-  "repository": "https://github.com/Naradice/algoforge",
-  "commit": "579d767e9d9f64120ddd7bd7e87556b04bea14cc",
-  "experiment": "Study Manager #889 (F1 statistical baselines vs frozen DDM), plan v0.3",
-  "entrypoints": [
-    "backend/research/f1_ddm.py",
-    "backend/research/f1_run.py",
-    "backend/research/f1_analyze.py"
-  ],
-  "requirements": [
+ "repository": "https://github.com/Naradice/algoforge",
+ "commit": "db0926f1afd6353339a90abeeac9717a400afe4b",
+ "experiment": "Study Manager #889 (F1 statistical baselines vs frozen DDM), plan v0.3",
+ "entrypoints": [
+  "backend/research/f1_ddm.py",
+  "backend/research/f1_run.py",
+  "backend/research/f1_analyze.py"
+ ],
+ "requirements": [
+  {
+   "id": "R-01",
+   "title": "Periods and purge",
+   "severity": "critical",
+   "status": "passed",
+   "description": "Estimation / validation / final periods; origin time and target end must both lie inside the period.",
+   "implementation": [
     {
-      "id": "R-01",
-      "title": "Periods and purge",
-      "severity": "critical",
-      "status": "passed",
-      "description": "Estimation / validation / final periods; origin time and target end must both lie inside the period.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_common.py",
-          "function": "Series.period_mask",
-          "lines": "103-118"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_period_mask_purges_targets_crossing_the_period_end"
-        ]
-      }
-    },
-    {
-      "id": "R-02",
-      "title": "Blocks, gap rule, target definition",
-      "severity": "critical",
-      "status": "passed",
-      "description": "60-candle blocks, origin = last row, a step > 5 minutes is a gap, target = log C[t+60h]/C[t]; the origin set is also checked against an independent brute-force construction.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_common.py",
-          "function": "Series.contiguous/target/atr_valid",
-          "lines": "50-101"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_gap_rule_and_targets",
-          "backend/tests/unit/test_f1_pipeline.py::test_missing_quiet_minutes_do_not_break_blocks",
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_origin_sets_equal_an_independent_brute_force_construction"
-        ]
-      }
-    },
-    {
-      "id": "R-03",
-      "title": "Information at the origin uses rows <= t only",
-      "severity": "critical",
-      "status": "passed",
-      "description": "ATR, block return, block RV and HAR features at block j depend only on rows up to t_j.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_common.py",
-          "function": "Series.atr_window/block_returns/block_rv",
-          "lines": "59-88"
-        },
-        {
-          "path": "backend/research/f1_models.py",
-          "function": "har_features",
-          "lines": "140-154"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_derived_arrays_depend_only_on_rows_up_to_origin"
-        ]
-      }
-    },
-    {
-      "id": "R-04",
-      "title": "Learned state uses data before the month start",
-      "severity": "critical",
-      "status": "passed",
-      "description": "Monthly learned state (completed targets, GARCH/HAR parameters, residual pools, hour factors) is built only from data strictly before the month start.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_models.py",
-          "function": "build_state",
-          "lines": "85-138"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_state_depends_only_on_data_before_month_start"
-        ]
-      }
-    },
-    {
-      "id": "R-05",
-      "title": "Model samplers",
-      "severity": "critical",
-      "status": "passed",
-      "description": "B0-B8 and B4s: per-path sequential simulation, standardised t, HAR with separate residual and innovation laws; no read of data after the origin; deterministic.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_models.py",
-          "function": "sample_B0/B1/B2/B8/sample_arch/sample_har",
-          "lines": "160-240"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_samplers_are_deterministic_and_ignore_the_future",
-          "backend/tests/unit/test_f1_pipeline.py::test_gaussian_baseline_crps_close_to_analytic",
-          "backend/tests/unit/test_f1_pipeline.py::test_origin_set_excludes_zero_realised_variance"
-        ]
-      }
-    },
-    {
-      "id": "R-06",
-      "title": "CRPS, PIT, coverage, pinball",
-      "severity": "critical",
-      "status": "passed",
-      "description": "Fair CRPS (M=1000), plain CRPS, randomised PIT, central-interval hits, pinball losses; checked against brute force, analytic values and an independent recomputation.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_common.py",
-          "function": "fair_crps/plain_crps/score_samples",
-          "lines": "120-175"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_fair_crps_matches_bruteforce",
-          "backend/tests/unit/test_f1_pipeline.py::test_plain_crps_matches_bruteforce",
-          "backend/tests/unit/test_f1_pipeline.py::test_fair_crps_is_unbiased_for_small_ensembles",
-          "backend/tests/unit/test_f1_pipeline.py::test_crps_quantile_grid_matches_analytic",
-          "backend/tests/unit/test_f1_pipeline.py::test_pit_uniform_for_calibrated_samples_and_ties_randomised",
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_scores_recomputed_by_brute_force"
-        ]
-      }
-    },
-    {
-      "id": "R-07",
-      "title": "Per-horizon validation selection",
-      "severity": "critical",
-      "status": "passed",
-      "description": "Best statistical model per horizon from B0-B7 on validation CRPS, 0.5% tie rule with complexity order; B8 and B4s excluded.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_analyze.py",
-          "function": "stage_select",
-          "lines": "62-85"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_stage_select_and_final_on_synthetic_scores"
-        ]
-      }
-    },
-    {
-      "id": "R-08",
-      "title": "Delta_h, simultaneous band, labels, DM, Holm",
-      "severity": "critical",
-      "status": "passed",
-      "description": "Delta_h = (CRPS_DDM - CRPS_Stat)/CRPS_Stat (negative = DDM better); week-block joint bootstrap, max-t simultaneous band, label rules, Newey-West lag h+23, Holm as secondary.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_analyze.py",
-          "function": "stage_final/newey_west_dm",
-          "lines": "87-190"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_newey_west_matches_naive_for_iid_and_holm_is_monotone",
-          "backend/tests/unit/test_f1_pipeline.py::test_simultaneous_band_label_rules",
-          "backend/tests/unit/test_f1_pipeline.py::test_stage_select_and_final_on_synthetic_scores"
-        ]
-      }
-    },
-    {
-      "id": "R-09",
-      "title": "DDM mapping from estimation windows only",
-      "severity": "critical",
-      "status": "passed",
-      "description": "Bucket edges and bucket->candidate mapping from estimation-period windows; forward 1001 closes gap-free and inside the estimation period; production stage_map calls build_mapping with the production characterise/select functions and defaults.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_ddm.py",
-          "function": "build_mapping",
-          "lines": "83-118"
-        },
-        {
-          "path": "backend/research/f1_ddm.py",
-          "function": "stage_map",
-          "lines": "119-133"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_stage_map_and_run.py::test_stage_map_windows_edges_and_forward_range",
-          "backend/tests/unit/test_f1_stage_map_and_run.py::test_stage_map_ignores_data_after_the_estimation_period_and_is_reproducible",
-          "backend/tests/unit/test_f1_stage_map_and_run.py::test_stage_map_excludes_windows_with_gaps_and_windows_running_past_the_period_end",
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_map_calls_build_mapping_with_the_production_functions"
-        ]
-      }
-    },
-    {
-      "id": "R-09b",
-      "title": "DDM horizon definition",
-      "severity": "critical",
-      "status": "passed",
-      "description": "DDM cumulative return spans exactly 60h candle steps like the real target (audit defect D1 fixed).",
-      "implementation": [
-        {
-          "path": "backend/research/f1_ddm.py",
-          "function": "simulate_long_path/cum_returns",
-          "lines": "40-69"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_pipeline.py::test_ddm_cumulative_return_covers_exactly_60h_candle_steps"
-        ]
-      }
-    },
-    {
-      "id": "R-10",
-      "title": "Leak test implementation, perturbation method, pass condition",
-      "severity": "critical",
-      "status": "passed",
-      "description": "leak_job replaces all data after the origin by random numbers, rebuilds every derived array, keeps the learned state fixed, and requires bit-identical samples for all statistical models and DDM seeds; the test shows a deliberately leaky sampler is detected.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_run.py",
-          "function": "leak_job/stage_leak",
-          "lines": "135-205"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_leak_job_passes_for_the_real_samplers",
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_leak_job_detects_a_sampler_that_reads_the_future"
-        ]
-      }
-    },
-    {
-      "id": "R-10b",
-      "title": "Leak test on the real ensembles (execution-time gate)",
-      "severity": "critical",
-      "status": "pending",
-      "description": "Leak test on the real ensembles: run after ensemble generation and before any score; failure stops the study. Enforced in code: stage_score refuses unless leak_test.json passed on this commit and on exactly these mapping/ensemble files (require_leak_pass). Post-run gate: must be passed before results are approved.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_run.py",
-          "function": "stage_leak/leak_bound_files/require_leak_pass/stage_score",
-          "lines": "109-205"
-        }
-      ],
-      "verification": {
-        "status": "pending",
-        "tests": [
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_score_requires_a_passing_leak_test_on_this_commit_and_these_files",
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_leak_records_the_commit_and_the_bound_files"
-        ]
-      },
-      "gate_stage": "post_run"
-    },
-    {
-      "id": "R-11",
-      "title": "Seeds and determinism",
-      "severity": "high",
-      "status": "passed",
-      "description": "Samplers seeded by (model, block); determinism of the whole scored month; fixed DDM, mapping, PIT and bootstrap seeds.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_models.py",
-          "function": "rng_for",
-          "lines": "156-158"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_stage_map_and_run.py::test_score_month_to_saved_results_end_to_end"
-        ]
-      }
-    },
-    {
-      "id": "R-12",
-      "title": "Scoring chain and persistence on the production path",
-      "severity": "critical",
-      "status": "passed",
-      "description": "month_job calls score_month with the loaded objects; stage_score aggregates and writes with write_scores; identical origin sets across models; result files re-loadable and analysed.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_run.py",
-          "function": "month_job/score_month/aggregate_scores/write_scores/stage_score",
-          "lines": "45-132"
-        },
-        {
-          "path": "backend/research/f1_analyze.py",
-          "function": "assert_same_origins",
-          "lines": "51-58"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_stage_map_and_run.py::test_score_month_to_saved_results_end_to_end",
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_month_job_passes_the_loaded_objects_to_score_month",
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_score_writes_what_write_scores_aggregates",
-          "backend/tests/unit/test_f1_wiring_and_guard.py::test_origin_sets_equal_an_independent_brute_force_construction"
-        ]
-      }
-    },
-    {
-      "id": "R-13",
-      "title": "Environment pinned",
-      "severity": "medium",
-      "status": "passed",
-      "description": "arch==8.0.0 in requirements; installation changed no other package (pip dry run).",
-      "implementation": [
-        {
-          "path": "backend/requirements.txt",
-          "function": "arch pin",
-          "lines": "last lines"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "pip install --dry-run arch==8.0.0 showed only arch added (manual check recorded in the audit report)"
-        ]
-      }
-    },
-    {
-      "id": "R-14",
-      "title": "PIT uncertainty by 100 re-randomisations",
-      "severity": "high",
-      "status": "passed",
-      "description": "pit_lo/pit_w stored per origin; the final analysis reports mean/SD of the KS distance and the largest histogram-bin SD over 100 repeats; exactly 0 without ties.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_analyze.py",
-          "function": "pit_randomisation_spread",
-          "lines": "38-49"
-        },
-        {
-          "path": "backend/research/f1_common.py",
-          "function": "score_samples",
-          "lines": "147-175"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_stage_map_and_run.py::test_pit_randomisation_spread_is_zero_without_ties_and_positive_with_ties"
-        ]
-      }
-    },
-    {
-      "id": "R-15",
-      "title": "Executed state equals the audited commit; no bypass",
-      "severity": "critical",
-      "status": "passed",
-      "description": "Every stage script calls guard_main first (measures HEAD, every loaded repository module, input hashes -> state_hash; --preflight prints it) and end_run last. It refuses unless a Study Manager gate approval for this node, HEAD and state_hash is present and passing (Stage C approved, commit match, clean workspace, no unresolved critical), and always refuses modified or untracked loaded repository files. No environment variable or flag bypasses it.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_guard.py",
-          "function": "measure_state/start_run/guard_main/end_run",
-          "lines": "1-230"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_guard.py (16 tests incl. wrong-approval matrix, environment variables cannot bypass, untracked loaded module, preload of lazy modules, end_run detects change, stage scripts route through the guard)",
-          "manual: preflight and refused run without approval on the real repository"
-        ]
-      }
-    },
-    {
-      "id": "R-16",
-      "title": "Old versus rebuilt mapping effect",
-      "severity": "medium",
-      "status": "pending",
-      "description": "Sensitivity/secondary evaluation of the look-ahead mapping versus the rebuilt mapping. Not a blocker for the primary analysis; must be done or declared not done before the study is reported as complete.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_ddm.py",
-          "function": "not implemented",
-          "lines": "-"
-        }
-      ],
-      "verification": {
-        "status": "pending",
-        "tests": []
-      }
-    },
-    {
-      "id": "R-17",
-      "title": "Supplementary period 2022-09..12",
-      "severity": "medium",
-      "status": "pending",
-      "description": "Auxiliary evaluation on HistData (source alignment unchecked). Not a blocker for the primary analysis; must be done or declared not done before completion.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_run.py",
-          "function": "not implemented",
-          "lines": "-"
-        }
-      ],
-      "verification": {
-        "status": "pending",
-        "tests": []
-      }
-    },
-    {
-      "id": "R-18",
-      "title": "M1-based GARCH comparison",
-      "severity": "low",
-      "status": "pending",
-      "description": "Separate additional comparison declared not run in the plan.",
-      "implementation": [
-        {
-          "path": "backend/research/f1_models.py",
-          "function": "not implemented",
-          "lines": "-"
-        }
-      ],
-      "verification": {
-        "status": "pending",
-        "tests": []
-      }
-    },
-    {
-      "id": "R-19",
-      "title": "full_characterize, atlas and select_ensemble use the same statistics",
-      "severity": "high",
-      "status": "passed",
-      "description": "The statistics computed for a real window equal independent numpy definitions (log returns, population moments, Pearson kurtosis, unadjusted ACF); an atlas row is reproduced by the current code; select_ensemble maps the statistics to the right atlas columns and flags out-of-range volatility.",
-      "implementation": [
-        {
-          "path": "backend/ddm_regime_atlas.py",
-          "function": "full_characterize",
-          "lines": "30-39"
-        },
-        {
-          "path": "backend/ddm_ensemble_selection.py",
-          "function": "select_ensemble",
-          "lines": "108-143"
-        }
-      ],
-      "verification": {
-        "status": "passed",
-        "tests": [
-          "backend/tests/unit/test_f1_atlas_consistency.py (5 tests)"
-        ]
-      }
-    },
-    {
-      "id": "R-20",
-      "title": "Statistical limitations stated",
-      "severity": "medium",
-      "status": "passed",
-      "description": "Weekly bootstrap does not model adjacent-week dependence; HAR independence assumption; DDM-only frozen mapping asymmetry; partially known final period; provisional margin; ATR definition; atlas 999 vs 1000 returns. Documented as interpretation limits to be repeated with every result.",
-      "implementation": [
-        {
-          "path": "docs/research-f1-statistical-baselines.md",
-          "function": "Interpretation limits",
-          "lines": "end of file"
-        }
-      ],
-      "verification": {
-        "status": "not_applicable",
-        "tests": []
-      }
+     "path": "backend/research/f1_common.py",
+     "function": "Series.period_mask",
+     "lines": "103-118"
     }
-  ],
-  "known_limitations": [
-    "DDM ensemble frozen on the estimation period while the other models are re-estimated monthly (declared asymmetry).",
-    "ATR uses 59 absolute differences of the 60 closes (earlier code used 60 including one future close).",
-    "Week-block bootstrap does not model dependence across adjacent weeks.",
-    "HAR-RV assumes independence of log-RV residual and return innovation.",
-    "stage_map with the real atlas and the real full_characterize is covered by a wiring test (functions passed) and by an earlier real run, not by a numerical test of full_characterize.",
-    "Stopped earlier ensemble job may still have worker processes running (kill was denied); its old work directory is not used.",
-    "15 unrelated research scripts were pushed by mistake in f99223b and untracked in d0b7a03; pattern search found no credentials; remote visibility not checked."
-  ]
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_period_mask_purges_targets_crossing_the_period_end"
+    ]
+   }
+  },
+  {
+   "id": "R-02",
+   "title": "Blocks, gap rule, target definition",
+   "severity": "critical",
+   "status": "passed",
+   "description": "60-candle blocks, origin = last row, a step > 5 minutes is a gap, target = log C[t+60h]/C[t]; the origin set is also checked against an independent brute-force construction.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_common.py",
+     "function": "Series.contiguous/target/atr_valid",
+     "lines": "50-101"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_gap_rule_and_targets",
+     "backend/tests/unit/test_f1_pipeline.py::test_missing_quiet_minutes_do_not_break_blocks",
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_origin_sets_equal_an_independent_brute_force_construction"
+    ]
+   }
+  },
+  {
+   "id": "R-03",
+   "title": "Information at the origin uses rows <= t only",
+   "severity": "critical",
+   "status": "passed",
+   "description": "ATR, block return, block RV and HAR features at block j depend only on rows up to t_j.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_common.py",
+     "function": "Series.atr_window/block_returns/block_rv",
+     "lines": "59-88"
+    },
+    {
+     "path": "backend/research/f1_models.py",
+     "function": "har_features",
+     "lines": "140-154"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_derived_arrays_depend_only_on_rows_up_to_origin"
+    ]
+   }
+  },
+  {
+   "id": "R-04",
+   "title": "Learned state uses data before the month start",
+   "severity": "critical",
+   "status": "passed",
+   "description": "Monthly learned state (completed targets, GARCH/HAR parameters, residual pools, hour factors) is built only from data strictly before the month start.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_models.py",
+     "function": "build_state",
+     "lines": "85-138"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_state_depends_only_on_data_before_month_start"
+    ]
+   }
+  },
+  {
+   "id": "R-05",
+   "title": "Model samplers",
+   "severity": "critical",
+   "status": "passed",
+   "description": "B0-B8 and B4s: per-path sequential simulation, standardised t, HAR with separate residual and innovation laws; no read of data after the origin; deterministic. GARCH-family forecast start state is checked against an independent fixed-parameter variance recursion (step 1 contains the origin block).",
+   "implementation": [
+    {
+     "path": "backend/research/f1_models.py",
+     "function": "sample_B0/B1/B2/B8/sample_arch/sample_har",
+     "lines": "160-240"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_samplers_are_deterministic_and_ignore_the_future",
+     "backend/tests/unit/test_f1_pipeline.py::test_gaussian_baseline_crps_close_to_analytic",
+     "backend/tests/unit/test_f1_pipeline.py::test_origin_set_excludes_zero_realised_variance",
+     "backend/tests/unit/test_f1_garch_alignment.py::test_arch_conditional_variance_equals_the_independent_recursion",
+     "backend/tests/unit/test_f1_garch_alignment.py::test_arch_forecast_start_is_the_variance_through_the_origin",
+     "backend/tests/unit/test_f1_garch_alignment.py::test_forecast_uses_only_data_up_to_the_origin",
+     "backend/tests/unit/test_f1_garch_alignment.py::test_production_sampler_starts_from_the_variance_through_the_origin"
+    ]
+   }
+  },
+  {
+   "id": "R-06",
+   "title": "CRPS, PIT, coverage, pinball",
+   "severity": "critical",
+   "status": "passed",
+   "description": "Fair CRPS (M=1000), plain CRPS, randomised PIT, central-interval hits, pinball losses; checked against brute force, analytic values and an independent recomputation.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_common.py",
+     "function": "fair_crps/plain_crps/score_samples",
+     "lines": "120-175"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_fair_crps_matches_bruteforce",
+     "backend/tests/unit/test_f1_pipeline.py::test_plain_crps_matches_bruteforce",
+     "backend/tests/unit/test_f1_pipeline.py::test_fair_crps_is_unbiased_for_small_ensembles",
+     "backend/tests/unit/test_f1_pipeline.py::test_crps_quantile_grid_matches_analytic",
+     "backend/tests/unit/test_f1_pipeline.py::test_pit_uniform_for_calibrated_samples_and_ties_randomised",
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_scores_recomputed_by_brute_force"
+    ]
+   }
+  },
+  {
+   "id": "R-07",
+   "title": "Per-horizon validation selection",
+   "severity": "critical",
+   "status": "passed",
+   "description": "Best statistical model per horizon from B0-B7 on validation CRPS, 0.5% tie rule with complexity order; B8 and B4s excluded.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_analyze.py",
+     "function": "stage_select",
+     "lines": "62-85"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_stage_select_and_final_on_synthetic_scores"
+    ]
+   }
+  },
+  {
+   "id": "R-08",
+   "title": "Delta_h, simultaneous band, labels, DM, Holm",
+   "severity": "critical",
+   "status": "passed",
+   "description": "Delta_h = (CRPS_DDM - CRPS_Stat)/CRPS_Stat (negative = DDM better); week-block joint bootstrap, max-t simultaneous band, label rules, Newey-West lag h+23, Holm as secondary.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_analyze.py",
+     "function": "stage_final/newey_west_dm",
+     "lines": "87-190"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_newey_west_matches_naive_for_iid_and_holm_is_monotone",
+     "backend/tests/unit/test_f1_pipeline.py::test_simultaneous_band_label_rules",
+     "backend/tests/unit/test_f1_pipeline.py::test_stage_select_and_final_on_synthetic_scores"
+    ]
+   }
+  },
+  {
+   "id": "R-09",
+   "title": "DDM mapping from estimation windows only",
+   "severity": "critical",
+   "status": "passed",
+   "description": "Bucket edges and bucket->candidate mapping from estimation-period windows; forward 1001 closes gap-free and inside the estimation period; production stage_map calls build_mapping with the production characterise/select functions and defaults.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_ddm.py",
+     "function": "build_mapping",
+     "lines": "83-118"
+    },
+    {
+     "path": "backend/research/f1_ddm.py",
+     "function": "stage_map",
+     "lines": "119-133"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_stage_map_and_run.py::test_stage_map_windows_edges_and_forward_range",
+     "backend/tests/unit/test_f1_stage_map_and_run.py::test_stage_map_ignores_data_after_the_estimation_period_and_is_reproducible",
+     "backend/tests/unit/test_f1_stage_map_and_run.py::test_stage_map_excludes_windows_with_gaps_and_windows_running_past_the_period_end",
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_map_calls_build_mapping_with_the_production_functions"
+    ]
+   }
+  },
+  {
+   "id": "R-09b",
+   "title": "DDM horizon definition",
+   "severity": "critical",
+   "status": "passed",
+   "description": "DDM cumulative return spans exactly 60h candle steps like the real target (audit defect D1 fixed). Start state: path start = origin, no burn-in, same construction as the atlas and the earlier ensemble generator (documented limit 8).",
+   "implementation": [
+    {
+     "path": "backend/research/f1_ddm.py",
+     "function": "simulate_long_path/cum_returns",
+     "lines": "40-69"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_pipeline.py::test_ddm_cumulative_return_covers_exactly_60h_candle_steps",
+     "backend/tests/unit/test_f1_ddm_time_axis.py::test_candles_are_twenty_trades_and_closes_are_the_last_trade_of_each_group",
+     "backend/tests/unit/test_f1_ddm_time_axis.py::test_horizon_returns_span_exactly_sixty_h_candles_from_the_origin",
+     "backend/tests/unit/test_f1_ddm_time_axis.py::test_model_is_built_with_the_frozen_configuration",
+     "backend/tests/unit/test_f1_ddm_time_axis.py::test_configuration_equals_the_earlier_ensemble_generator",
+     "backend/tests/unit/test_f1_ddm_time_axis.py::test_decayed_shock_schedule_is_concentrated_at_the_path_start"
+    ]
+   }
+  },
+  {
+   "id": "R-10",
+   "title": "Leak test implementation, perturbation method, pass condition",
+   "severity": "critical",
+   "status": "passed",
+   "description": "leak_job replaces all data after the origin by random numbers, rebuilds every derived array, keeps the learned state fixed, and requires bit-identical samples for all statistical models and DDM seeds; the test shows a deliberately leaky sampler is detected.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_run.py",
+     "function": "leak_job/stage_leak",
+     "lines": "135-205"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_leak_job_passes_for_the_real_samplers",
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_leak_job_detects_a_sampler_that_reads_the_future"
+    ]
+   }
+  },
+  {
+   "id": "R-10b",
+   "title": "Leak test on the real ensembles (execution-time gate)",
+   "severity": "critical",
+   "status": "pending",
+   "description": "Leak test on the real ensembles: run after ensemble generation and before any score; failure stops the study. Enforced in code: stage_score refuses unless leak_test.json passed on this commit and on exactly these mapping/ensemble files (require_leak_pass). Post-run gate: must be passed before results are approved.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_run.py",
+     "function": "stage_leak/leak_bound_files/require_leak_pass/stage_score",
+     "lines": "109-205"
+    }
+   ],
+   "verification": {
+    "status": "pending",
+    "tests": [
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_score_requires_a_passing_leak_test_on_this_commit_and_these_files",
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_leak_records_the_commit_and_the_bound_files"
+    ]
+   },
+   "gate_stage": "post_run"
+  },
+  {
+   "id": "R-11",
+   "title": "Seeds and determinism",
+   "severity": "high",
+   "status": "passed",
+   "description": "Samplers seeded by (model, block); determinism of the whole scored month; fixed DDM, mapping, PIT and bootstrap seeds.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_models.py",
+     "function": "rng_for",
+     "lines": "156-158"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_stage_map_and_run.py::test_score_month_to_saved_results_end_to_end"
+    ]
+   }
+  },
+  {
+   "id": "R-12",
+   "title": "Scoring chain and persistence on the production path",
+   "severity": "critical",
+   "status": "passed",
+   "description": "month_job calls score_month with the loaded objects; stage_score aggregates and writes with write_scores; identical origin sets across models; result files re-loadable and analysed. Before saving, validate_scores requires no failures, all (model, horizon) present, identical non-duplicated origin sets and finite scores; otherwise nothing is written (score_integrity_<period>.json holds the diagnostics).",
+   "implementation": [
+    {
+     "path": "backend/research/f1_run.py",
+     "function": "month_job/score_month/aggregate_scores/write_scores/stage_score/validate_scores",
+     "lines": "45-132"
+    },
+    {
+     "path": "backend/research/f1_analyze.py",
+     "function": "assert_same_origins",
+     "lines": "51-58"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_stage_map_and_run.py::test_score_month_to_saved_results_end_to_end",
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_month_job_passes_the_loaded_objects_to_score_month",
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_score_writes_what_write_scores_aggregates",
+     "backend/tests/unit/test_f1_wiring_and_guard.py::test_origin_sets_equal_an_independent_brute_force_construction",
+     "backend/tests/unit/test_f1_score_integrity.py::test_clean_results_are_saved_and_the_diagnostics_say_so",
+     "backend/tests/unit/test_f1_score_integrity.py::test_a_sampler_failure_stops_the_run_and_nothing_is_saved",
+     "backend/tests/unit/test_f1_score_integrity.py::test_a_model_with_a_different_origin_set_stops_the_run",
+     "backend/tests/unit/test_f1_score_integrity.py::test_a_month_missing_for_one_model_changes_the_origin_set",
+     "backend/tests/unit/test_f1_score_integrity.py::test_a_missing_model_or_horizon_stops_the_run",
+     "backend/tests/unit/test_f1_score_integrity.py::test_non_finite_scores_and_duplicate_origins_stop_the_run",
+     "backend/tests/unit/test_f1_score_integrity.py::test_stage_score_stops_on_a_failed_month_and_writes_no_scores",
+     "backend/tests/unit/test_f1_score_integrity.py::test_score_month_reports_a_non_converged_garch_state_as_a_failure"
+    ]
+   }
+  },
+  {
+   "id": "R-13",
+   "title": "Environment pinned",
+   "severity": "medium",
+   "status": "passed",
+   "description": "arch==8.0.0 in requirements; installation changed no other package (pip dry run).",
+   "implementation": [
+    {
+     "path": "backend/requirements.txt",
+     "function": "arch pin",
+     "lines": "last lines"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "pip install --dry-run arch==8.0.0 showed only arch added (manual check recorded in the audit report)"
+    ]
+   }
+  },
+  {
+   "id": "R-14",
+   "title": "PIT uncertainty by 100 re-randomisations",
+   "severity": "high",
+   "status": "passed",
+   "description": "pit_lo/pit_w stored per origin; the final analysis reports mean/SD of the KS distance and the largest histogram-bin SD over 100 repeats; exactly 0 without ties.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_analyze.py",
+     "function": "pit_randomisation_spread",
+     "lines": "38-49"
+    },
+    {
+     "path": "backend/research/f1_common.py",
+     "function": "score_samples",
+     "lines": "147-175"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_stage_map_and_run.py::test_pit_randomisation_spread_is_zero_without_ties_and_positive_with_ties"
+    ]
+   }
+  },
+  {
+   "id": "R-15",
+   "title": "Executed state equals the audited commit; no bypass",
+   "severity": "critical",
+   "status": "passed",
+   "description": "Every stage script calls guard_main first (measures HEAD, every loaded repository module, input hashes -> state_hash; --preflight prints it) and end_run last. It refuses unless a Study Manager gate approval for this node, HEAD and state_hash is present and passing (Stage C approved, commit match, clean workspace, no unresolved critical), and always refuses modified or untracked loaded repository files. No environment variable or flag bypasses it.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_guard.py",
+     "function": "measure_state/start_run/guard_main/end_run",
+     "lines": "1-230"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_guard.py (16 tests incl. wrong-approval matrix, environment variables cannot bypass, untracked loaded module, preload of lazy modules, end_run detects change, stage scripts route through the guard)",
+     "manual: preflight and refused run without approval on the real repository"
+    ]
+   }
+  },
+  {
+   "id": "R-16",
+   "title": "Old versus rebuilt mapping effect",
+   "severity": "medium",
+   "status": "pending",
+   "description": "Sensitivity/secondary evaluation of the look-ahead mapping versus the rebuilt mapping. Not a blocker for the primary analysis; must be done or declared not done before the study is reported as complete.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_ddm.py",
+     "function": "not implemented",
+     "lines": "-"
+    }
+   ],
+   "verification": {
+    "status": "pending",
+    "tests": []
+   }
+  },
+  {
+   "id": "R-17",
+   "title": "Supplementary period 2022-09..12",
+   "severity": "medium",
+   "status": "pending",
+   "description": "Auxiliary evaluation on HistData (source alignment unchecked). Not a blocker for the primary analysis; must be done or declared not done before completion.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_run.py",
+     "function": "not implemented",
+     "lines": "-"
+    }
+   ],
+   "verification": {
+    "status": "pending",
+    "tests": []
+   }
+  },
+  {
+   "id": "R-18",
+   "title": "M1-based GARCH comparison",
+   "severity": "low",
+   "status": "pending",
+   "description": "Separate additional comparison declared not run in the plan.",
+   "implementation": [
+    {
+     "path": "backend/research/f1_models.py",
+     "function": "not implemented",
+     "lines": "-"
+    }
+   ],
+   "verification": {
+    "status": "pending",
+    "tests": []
+   }
+  },
+  {
+   "id": "R-19",
+   "title": "full_characterize, atlas and select_ensemble use the same statistics",
+   "severity": "high",
+   "status": "passed",
+   "description": "The statistics computed for a real window equal independent numpy definitions (log returns, population moments, Pearson kurtosis, unadjusted ACF); an atlas row is reproduced by the current code; select_ensemble maps the statistics to the right atlas columns and flags out-of-range volatility.",
+   "implementation": [
+    {
+     "path": "backend/ddm_regime_atlas.py",
+     "function": "full_characterize",
+     "lines": "30-39"
+    },
+    {
+     "path": "backend/ddm_ensemble_selection.py",
+     "function": "select_ensemble",
+     "lines": "108-143"
+    }
+   ],
+   "verification": {
+    "status": "passed",
+    "tests": [
+     "backend/tests/unit/test_f1_atlas_consistency.py (5 tests)"
+    ]
+   }
+  },
+  {
+   "id": "R-20",
+   "title": "Statistical limitations stated",
+   "severity": "medium",
+   "status": "passed",
+   "description": "Weekly bootstrap does not model adjacent-week dependence; HAR independence assumption; DDM-only frozen mapping asymmetry; partially known final period; provisional margin; ATR definition; atlas 999 vs 1000 returns. Documented as interpretation limits to be repeated with every result.",
+   "implementation": [
+    {
+     "path": "docs/research-f1-statistical-baselines.md",
+     "function": "Interpretation limits",
+     "lines": "end of file"
+    }
+   ],
+   "verification": {
+    "status": "not_applicable",
+    "tests": []
+   }
+  }
+ ],
+ "known_limitations": [
+  "DDM ensemble frozen on the estimation period while the other models are re-estimated monthly (declared asymmetry).",
+  "ATR uses 59 absolute differences of the 60 closes (earlier code used 60 including one future close).",
+  "Week-block bootstrap does not model dependence across adjacent weeks.",
+  "HAR-RV assumes independence of log-RV residual and return innovation.",
+  "stage_map with the real atlas and the real full_characterize is covered by a wiring test (functions passed) and by an earlier real run, not by a numerical test of full_characterize.",
+  "Stopped earlier ensemble job may still have worker processes running (kill was denied); its old work directory is not used.",
+  "15 unrelated research scripts were pushed by mistake in f99223b and untracked in d0b7a03; pattern search found no credentials; remote visibility not checked."
+ ]
 }

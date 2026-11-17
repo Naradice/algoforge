@@ -8,7 +8,7 @@ commit) is still required before the experiment is run. Revision 2 answered the 
 | item | value |
 |---|---|
 | Repository | https://github.com/Naradice/algoforge |
-| **Code commit under review (pinned)** | `579d767e9d9f64120ddd7bd7e87556b04bea14cc` (superseded: `886f413bef2a6f515ffe383f5b7377adc3269b93`, `bf1ebc66cc29c54d13aae6faedab1722b981cbaa`, `d5cedc77dd445fae403840afa13c961a6c8f59f7`, `5ecf3b262924d42f098b8422c336872b1b188a66`) |
+| **Code commit under review (pinned)** | `db0926f1afd6353339a90abeeac9717a400afe4b` (superseded: `579d767e9d9f64120ddd7bd7e87556b04bea14cc`, `886f413bef2a6f515ffe383f5b7377adc3269b93`, `bf1ebc66cc29c54d13aae6faedab1722b981cbaa`, `d5cedc77dd445fae403840afa13c961a6c8f59f7`, `5ecf3b262924d42f098b8422c336872b1b188a66`) |
 | **Audit document commit** | the commit that contains this file (the code commit above does not contain it; the document commit only adds documentation) |
 | Plan of record | `docs/research-f1-statistical-baselines.md` (spec committed at `4c88e81` / `ac1d444` before any score) and Study Manager #889 v0.3 |
 | Entry points | `backend/research/f1_ddm.py` (`map`, `ens`), `f1_run.py` (`score`, `leak`), `f1_analyze.py` (`select`, `final`) |
@@ -179,3 +179,49 @@ https://github.com/Naradice/algoforge/compare/704d6f6...579d767e9d9f64120ddd7bd7
 restricted to `backend/research/f1_*.py` and `backend/tests/unit/test_f1_*.py`.
 Two plain notes: commit `f99223b` contains 15 unrelated scripts added by mistake (untracked again in `d0b7a03`; the repository is
 private and the owner accepted this); the Study Manager `test_files` cross-matching could not be used because of a server error.
+
+## 11. Revision 6: answers to the Stage C review (code commit db0926f1afd6353339a90abeeac9717a400afe4b)
+
+The code under review is now `db0926f1afd6353339a90abeeac9717a400afe4b` (previous pin `579d767e9d9f64120ddd7bd7e87556b04bea14cc`).
+Diff of the code change: https://github.com/Naradice/algoforge/compare/579d767e9d9f64120ddd7bd7e87556b04bea14cc...db0926f1afd6353339a90abeeac9717a400afe4b
+(`backend/research/f1_run.py` only; the rest is new tests and the spec document). Only requirements R-05, R-09b and R-12 are affected;
+the other 19 requirements and their 54 tests are unchanged and were re-run (all 77 F1 tests pass, 1 skipped by design).
+
+**Finding 1 (GARCH start state), R-05: no defect found, no production change.** `test_f1_garch_alignment.py` fixes parameters on a
+deterministic 260-point series and compares, for GARCH-N, GARCH-t, GJR-t and EGARCH-t, (a) arch 8.0.0 `conditional_volatility**2`
+with an independent numpy recursion (arch's back-cast: 75-point 0.94-weighted mean of squares, log for EGARCH; the half-weighted
+leverage term and the `sqrt(2/pi)` constant of EGARCH written out), equal to 1e-9; (b) for GARCH/GJR the arch analytic one-step
+`forecast(start=len(y)-1)` with the recursion's variance *including* the origin block (and it is not the one-block-earlier
+value); (c) forecasts from a truncated series equal those from the long series (no later data used); (d) the production
+`sample_arch`, with all standardised innovations replaced by +1 so the simulated 24-step path is deterministic, equal to the
+recursion continued past the origin for the four horizons, for all four models, with a row offset between the origin row and the
+position in the valid-return array, and unchanged when later observations are replaced. So step 1 of the simulation uses
+`sigma2[origin+1]`, which already contains the origin block's return. The EGARCH analytic multi-step forecast does not exist in arch,
+so EGARCH is covered by (a) and (d).
+
+**Finding 2 (DDM start state and time axis), R-09b: no production change; limit documented as limit 8 of the spec.**
+`test_f1_ddm_time_axis.py` (stand-in simulator with a known price per trade index): a candle is 20 trades, its close is the last
+trade of the group; 1 441 closes; `closes[0]` is the first candle's close and is the origin; the h-window return spans exactly 60h
+candles = 1 200h trades; the model is built with N = 300, the section-11 shock (0.002, 0.3, tau 300, floor 0) and no spread feedback,
+equal to the earlier generator `ddm_horizon_analysis.simulate_long_path` (the one-candle offset is the only difference); the decayed
+shock gives about 0.6 expected shocks per path with >99% inside the first window. The model starts from its initial state at the
+origin and no burn-in is removed; the atlas (`calibrate_ddm.simulate_ohlc`) and the earlier ensembles are built the same way, so the
+mapping stays consistent with the atlas and with the earlier experiments, and F1 is comparable with them except for the one-candle
+fix. A burn-in was not applied because it would change the atlas calibration and remove the decayed shock. A read-only probe
+(60 paths per cell, not part of any F1 result; script and output kept outside the repository) shows a start effect: without the
+shock the first-window return std from the path start is about 18% below the late-path value for (0.0, 15), the shock offsets it, and
+for wma = 7 the sample is too small and heavy-tailed to tell. The effect on h > 1 was not resolved. This is recorded as an
+interpretation limit (spec "Interpretation limits" 8), not as a fixed defect; if the reviewer requires a burn-in variant it would be an
+additional pre-registered sensitivity analysis, not a change to the primary ensemble.
+
+**Finding 3 (origin-set equality and failures before saving), R-12: fixed.** `f1_run.write_scores` now calls `validate_scores`
+before writing: any sampler failure or non-finite sample reported by `score_month` (including a GARCH state that did not
+converge), any missing (model, horizon), a duplicated origin, a differing origin set for the same horizon between any two of the 14
+models, an empty horizon, or a non-finite CRPS/PIT field raises `ScoreIntegrityError`. In that case `scores_<period>.npz` is **not**
+written; `failures_<period>.json` and `score_integrity_<period>.json` (problems, per-model origin counts, failures) are written for
+diagnosis. The plan allows no dropped item ("a failure stops the run"), so no failure is tolerated. Tests:
+`test_f1_score_integrity.py` (8). A stale `scores_<period>.npz` from an earlier run in the same working directory is not removed; use
+a fresh working directory per run (as the procedure already states).
+
+Not done / unchanged: R-10b (leak test on the real ensembles) remains a post-run gate; R-16-R-18 remain optional; nothing was run
+on validation or final data.
