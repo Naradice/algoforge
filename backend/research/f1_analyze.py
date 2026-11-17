@@ -209,6 +209,8 @@ def stage_final(workdir):
 
 
 if __name__ == "__main__":
-    fg.start_run(sys.argv[2], f"analyze_{sys.argv[1]}",
-                 inputs=[os.path.join(sys.argv[2], f) for f in ("scores_validation.npz", "scores_final.npz", "selection.json")])
+    _stage = f"analyze_{sys.argv[1]}"
+    _inputs = [os.path.join(sys.argv[2], f) for f in ("scores_validation.npz", "scores_final.npz", "selection.json")]
+    _state = fg.guard_main(sys.argv[2], _stage, inputs=_inputs)
     {"select": stage_select, "final": stage_final}[sys.argv[1]](sys.argv[2])
+    fg.end_run(sys.argv[2], _stage, _state, inputs=_inputs)

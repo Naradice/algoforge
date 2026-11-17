@@ -150,8 +150,11 @@ def stage_ens(workdir, seed_id):
 
 if __name__ == "__main__":
     stage = sys.argv[1]
-    fg.start_run(sys.argv[2], f"ddm_{stage}", inputs=[str(fc.artifact_path()), os.path.join(os.path.dirname(HERE), "ddm_regime_atlas.csv")])
+    _inputs = [str(fc.artifact_path()), os.path.join(os.path.dirname(HERE), "ddm_regime_atlas.csv")]
+    _preload = ["data.collectors.ddm_simulator"] + (["ddm_regime_atlas", "ddm_ensemble_selection"] if stage == "map" else [])
+    _state = fg.guard_main(sys.argv[2], f"ddm_{stage}", inputs=_inputs, preload=_preload)
     if stage == "map":
         stage_map(sys.argv[2])
     else:
         stage_ens(sys.argv[2], int(sys.argv[3]))
+    fg.end_run(sys.argv[2], f"ddm_{stage}", _state, inputs=_inputs)

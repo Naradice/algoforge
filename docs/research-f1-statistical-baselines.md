@@ -134,3 +134,44 @@ pandas 3.0.1, statsmodels 0.14.6, Python 3.13.17.
    code did not check contiguity; forward statistics that include a weekend jump would be inconsistent with gap-free targets).
 3. Simulation size: statistical models draw 1 000 independent paths per origin directly (M = 1 000), instead of 10 000 paths
    followed by sub-sampling.
+
+## Interpretation limits (to be stated with every F1 result; consistent with the approved plan v0.2/v0.3)
+
+These are not implementation defects. Each one is a property of the approved design that limits what the result may be taken to
+mean; the final report must repeat them next to the classification.
+
+1. **Weekly block bootstrap.** Whole calendar weeks are resampled jointly for all four horizons, so dependence inside a week
+   (about 120 origins, longer than the 24-origin target overlap at h = 24) and across horizons is preserved. Dependence
+   **between adjacent weeks** (volatility clustering that spans a week boundary) is not preserved, so the standard errors and the
+   simultaneous band may be somewhat too narrow in persistent-volatility periods. The Newey-West Diebold-Mariano p-values
+   (lag h + 23) are reported as a cross-check, not as a correction.
+2. **HAR-RV independence assumption.** The log-RV residual and the return innovation are drawn independently, so any leverage
+   or sign-volatility dependence is absent from B7 (the GJR/EGARCH models carry asymmetry). If B7 loses to an asymmetric model
+   this cannot be attributed to the HAR mean structure alone.
+3. **DDM-only frozen mapping (declared asymmetry).** The DDM bucket-to-candidate mapping and its ensembles are frozen on the
+   estimation period (to 2020-08-31), while B0-B8 are re-estimated every month with an expanding window. A statistical model
+   can therefore follow the 2021-2022 regime change, the DDM cannot. A statistical advantage in the final period may reflect
+   this updating and not a better structure; a DDM advantage, if it appears, is not helped by it. The comparison measures
+   "frozen DDM versus continuously updated baselines" and must not be described as a comparison of model structures alone. A
+   sensitivity analysis with the baselines also frozen at 2020-08-31 would separate the two effects; it is not part of the
+   approved plan and is recorded as an optional follow-up.
+4. **Partially known final period and regime.** 2021-09..2022-08 is a high-volatility, regime-changing year that earlier
+   work has looked at (volatility screening); labels are classifications under the pre-specified rule for this period only.
+5. **Margin and equivalence.** The +-2% margin is provisional and was not derived from statistical-versus-DDM differences;
+   a band that straddles a margin is reported as inconclusive.
+6. **ATR definition.** The block ATR uses 59 absolute differences (leak-free) and is not identical to the 60-difference
+   definition of earlier work; DDM and B8 share it, so their comparison is internally consistent.
+7. **Atlas versus real windows.** The atlas statistics are computed with the same function on 1 000 simulated candles (999
+   returns); a real forward window has 1 001 closes (1 000 returns). The numerical consistency of definition, units and
+   order is checked in `test_f1_atlas_consistency.py`; the one-return difference is immaterial and not corrected.
+
+## Execution procedure (run guard)
+
+Each stage script first runs `f1_guard.guard_main`: with `--preflight` it prints HEAD, dirty files and the `state_hash`
+(HEAD + hash of every loaded repository module + input hashes) and exits. The caller passes exactly these values to the Study
+Manager `check_execution_gate` and saves the response as `gate_approval_<stage>.json`. Without an approval that belongs to this
+node, this HEAD and this state hash, and a passing response (Stage C approved, audited commit matches, clean workspace, no
+unresolved critical), the stage refuses to run; modified or untracked loaded repository files always refuse. There is no
+environment variable or flag that bypasses it. `end_run` re-measures after the run and marks the run invalid if anything
+differs. The approval file is evidence written by the caller; the Study Manager record of the gate call is the authority in the
+post-run audit.

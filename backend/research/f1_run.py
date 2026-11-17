@@ -181,10 +181,13 @@ def stage_leak(workdir):
 
 
 if __name__ == "__main__":
-    fg.start_run(sys.argv[2], "run_" + "_".join(sys.argv[1:2] + sys.argv[3:4]),
-                 inputs=[str(fc.artifact_path()), os.path.join(sys.argv[2], "ddm_mapping.json")] +
-                        [os.path.join(sys.argv[2], f"ddm_ens_seed{i}.npy") for i in range(1, N_DDM_SEEDS + 1)])
+    _pos = [a for a in sys.argv[1:] if not a.startswith("--")]
+    _stage = "run_" + "_".join(_pos[:1] + _pos[2:3])
+    _inputs = ([str(fc.artifact_path()), os.path.join(sys.argv[2], "ddm_mapping.json")] +
+               [os.path.join(sys.argv[2], f"ddm_ens_seed{i}.npy") for i in range(1, N_DDM_SEEDS + 1)])
+    _state = fg.guard_main(sys.argv[2], _stage, inputs=_inputs)
     if sys.argv[1] == "score":
         stage_score(sys.argv[2], sys.argv[3])
     else:
         stage_leak(sys.argv[2])
+    fg.end_run(sys.argv[2], _stage, _state, inputs=_inputs)
