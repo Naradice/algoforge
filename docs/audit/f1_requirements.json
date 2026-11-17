@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/Naradice/algoforge",
-  "commit": "886f413bef2a6f515ffe383f5b7377adc3269b93",
+  "commit": "579d767e9d9f64120ddd7bd7e87556b04bea14cc",
   "experiment": "Study Manager #889 (F1 statistical baselines vs frozen DDM), plan v0.3",
   "entrypoints": [
     "backend/research/f1_ddm.py",
@@ -242,7 +242,7 @@
         {
           "path": "backend/research/f1_run.py",
           "function": "leak_job/stage_leak",
-          "lines": "134-185"
+          "lines": "135-205"
         }
       ],
       "verification": {
@@ -258,18 +258,22 @@
       "title": "Leak test on the real ensembles (execution-time gate)",
       "severity": "critical",
       "status": "pending",
-      "description": "Cannot be run before the real ensembles exist. To be run after ensemble generation and before any score computation or final evaluation; the final evaluation must not start if it fails.",
+      "description": "Leak test on the real ensembles: run after ensemble generation and before any score; failure stops the study. Enforced in code: stage_score refuses unless leak_test.json passed on this commit and on exactly these mapping/ensemble files (require_leak_pass). Post-run gate: must be passed before results are approved.",
       "implementation": [
         {
           "path": "backend/research/f1_run.py",
-          "function": "stage_leak",
-          "lines": "167-185"
+          "function": "stage_leak/leak_bound_files/require_leak_pass/stage_score",
+          "lines": "109-205"
         }
       ],
       "verification": {
         "status": "pending",
-        "tests": []
-      }
+        "tests": [
+          "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_score_requires_a_passing_leak_test_on_this_commit_and_these_files",
+          "backend/tests/unit/test_f1_wiring_and_guard.py::test_stage_leak_records_the_commit_and_the_bound_files"
+        ]
+      },
+      "gate_stage": "post_run"
     },
     {
       "id": "R-11",
@@ -374,22 +378,7 @@
         {
           "path": "backend/research/f1_guard.py",
           "function": "measure_state/start_run/guard_main/end_run",
-          "lines": "1-215"
-        },
-        {
-          "path": "backend/research/f1_run.py",
-          "function": "__main__",
-          "lines": "last block"
-        },
-        {
-          "path": "backend/research/f1_ddm.py",
-          "function": "__main__",
-          "lines": "last block"
-        },
-        {
-          "path": "backend/research/f1_analyze.py",
-          "function": "__main__",
-          "lines": "last block"
+          "lines": "1-230"
         }
       ],
       "verification": {
