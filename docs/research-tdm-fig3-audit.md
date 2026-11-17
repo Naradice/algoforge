@@ -148,3 +148,109 @@ Findings:
    tested here.
 5. Numerical note: a running-sum moving average goes negative once T collapses by ~14 orders of magnitude; the script
    re-sums short windows exactly.
+
+## 8. T0-C/D/E: stationarity of the self-modulation clock, Fig.3 time scale, stabilised extension
+
+Scripts: `backend/research/tdm_fig3_pdf_extract.py` (Fig.3 read-out), `tdm_fig3_t0c.py` (stationarity),
+`tdm_fig3_t0c_excerpt.py` (excerpt plausibility). Model-1 intervals are rescaled to the paper's Fig.3 time scale and
+bootstrapped (they are ~white) into iid `F_k = T'^1.25 / E[T'^1.25]`; `E[log F] = -0.389`, `Var(log F) = 0.957`, `CV(F) = 0.87`.
+
+**Correction to section 3 / T0-A finding 3.** The "level frozen at an arbitrary start-up value" reading was wrong:
+the 0.024x-1.7x level spread of T0-A is an early collapse (within the first quarter) combined with different Model-1
+time scales per (c mode, seed), not a frozen initial value. Section 8 supersedes it.
+
+### D. Which time scale is tau = 150 s? (Fig.3 read from the PDF drawing)
+
+Fig.3 left draws each transaction as a vertical tick on a 0-500 s axis; the tick positions were read from the vector
+drawing (`tdm_fig3_pdf_extract.py`, pixel read-out, no data table in the paper):
+
+| | n | mean interval | CV | max/mean | ACF1 |
+|---|---|---|---|---|---|
+| paper model-1 excerpt | 69 | 7.3 s | 0.75 | 4.6 | -0.15 |
+| paper model-2 excerpt | 50 | 9.2 s | 1.43 | 7.6 | +0.31 |
+
+So tau = 150 s holds about **16 events**, inside the clustering regime of T0-B (<= ~30 events). My Model-1 intervals
+(mean 0.8-1.7 in the unit dt = 0.01) were 4-9 times faster than the paper's 7.3 s, which put tau = 150 s at ~90 events
+and explains the null result of T0-A as a **time-scale mismatch**, not a different equation. The unit conversion of the
+paper's dt = 0.01 / c_i to seconds is not stated and is not resolved here. Caveats: one 450-500 s excerpt, 50-69 events,
+pixel read-out; the 49-interval excerpt has an ACF1 standard error of ~0.14.
+
+### C. Does the clock have a stationary interval level?
+
+Decomposition: `log T_k = log F_k + log A_k`. `A` is the window mean of past T, and because `E F = 1` it is a
+conditional martingale: it has no restoring force, so its fluctuations are permanent and its log drifts down (Jensen).
+Measured on the paper model with a fixed n-event window (60 000 events, median of 6 runs; E1 in the JSON):
+
+| n | ACF1 | log level change Q1 to Q4 |
+|---|---|---|
+| 8 / 16 / 40 | 0.62 / 0.60 / 0.53 | collapse to underflow in every run |
+| 80 | 0.38 | -10.4 |
+| 150 | 0.21 | -3.0 |
+| 300 | 0.09 | -0.8 |
+
+For n >= 80 the collapse scales as ~n^-1.9 while the clustering (ACF1) scales as ~n^-1, i.e. the per-event log drift is
+about **-1.6e-3 x ACF1^2** (n = 80/150/300 give 1.6/1.5/2.2e-3). **In the paper-faithful model, clustering strength and
+level collapse are not independent knobs; both are set by the window size.** A constant re-normalisation does not
+separate them: for n = 150 the level falls at c = 1.00 (1/6 runs rise) and rises in 6/6 runs at c = 1.01; for n = 16 even
+c = 1.03 still collapses (-74). The break-even c depends on the window size, which in the seconds-window model moves with
+the level, so a constant c only creates an unstable equilibrium.
+
+Paper model with a 150 s window (12 runs, geometric-mean interval, paper time scale, 100 000 events):
+
+| events | 0-500 | 3000-6000 | 12000-24000 | 90000-100000 |
+|---|---|---|---|---|
+| geometric mean T (init 1x) | 2.7 | 4.2 | 0.96 | 0.27 |
+| events per window | 38 | 38 | 158 | 398 |
+| ACF1 | 0.23 | 0.72 | 0.38 | 0.05 |
+| CV, max/mean | 0.96, 8.6 | 5.5, 143 | 1.4, 25 | 0.9, 12 |
+
+The level falls ~10x over 10^5 events, the window fills up (38 to ~400 events) and the clustering fades; in between
+there are bursts with CV 4-6 and max/mean 100-300. Initial levels 0.3x / 1x / 3x are forgotten by ~12 000 events (same
+trajectory afterwards, with common random numbers), so the long-run level is a trend, not a fixed point. In short the
+literal model produces transient clustering that decays with the level collapse; it is not a stationary interval process.
+
+### E. Stabilised extensions (separate models, not a reproduction of the paper)
+
+* **M2-S1** = paper clock + mean reversion in log (`A = exp((1-lam) log mean + lam log m0)`). lam = 0.01 holds the level
+  (geometric mean 2.8-3.1 from event 12 000 to 100 000) with ACF1 0.7, but strongly heavy-tailed (CV 6-7, max/mean ~300);
+  lam = 0.002 still decays (2.7 to 0.8); lam = 0.05 is stable and milder (ACF1 0.66, CV 2.7, max/mean 100).
+* **M2-S2** = log-domain AR(n): `log T_k = log F_k + (1-lam) mean_n log T + lam log m0`, with `E log F = 0` (exactly
+  linear, stationary iff lam > 0; 400 000 events x 8 runs):
+
+| n, lam | ACF1(T) | CV | max/mean | Var(log T) | drift Q1 to Q4 | init offset remaining |
+|---|---|---|---|---|---|---|
+| 16, 0 | 0.56 | 13.8 | 1125 | 314 | -5.8 | 4.00 (permanent) |
+| 16, 0.01 | 0.57 | 6.0 | 561 | 6.2 | 0.18 | 0 |
+| 16, 0.1 | 0.35 | 1.32 | 36 | 1.4 | 0.02 | 0 |
+| 50, 0.03 | 0.37 | 1.41 | 38 | 1.5 | 0.05 | 0 |
+
+With lam > 0 the level is stationary and forgets its start while the clustering is kept (n = 16, lam = 0.1: ACF1 0.35,
+CV 1.3 against the paper excerpt's 0.31 / 1.43). **Clustering and level stability can therefore be separated, but only
+by ingredients that are not in the paper (a restoring force and a log-normalisation).** Conceptually, the empirical
+statement that interval / moving-average interval is white noise concerns a real-market activity level that is driven
+externally (time of day, news); inside the model the same level is endogenous and has a unit root (a conjecture, not
+tested).
+
+Plausibility of the paper's excerpt (`tdm_fig3_t0c_excerpt.py`; 49-interval excerpts; percentile rank of the observed
+CV 1.43 / ACF1 0.31 / max-mean 7.6, and the share of excerpts within +-0.15 ACF1 and CV 0.8-1.25x of the observation):
+
+| model | CV pct | ACF1 pct | max/mean pct | joint share |
+|---|---|---|---|---|
+| paper clock, run start, init 1x / 3x / 5x | 97 / 90 / 85 | 91 / 73 / 62 | 98 / 90 / 87 | 0.7% / 3.6% / 4.7% |
+| paper clock, after level collapse | 100 | 99 | 99 | 0.2% |
+| M2-S2 n=16, lam 0.03 / 0.1 | 100 | 95-96 | 98 | 1.5% / 1.3% |
+
+The paper's excerpt is a rare draw under every model (it starts with intervals of 47, 42 and 70 s). It is most compatible
+with the start-up transient of the literal clock with a high initial level and least with the stationary extensions,
+but a single excerpt cannot discriminate.
+
+### Conclusions and open questions
+
+1. Eq.(3) alone does not generate a stationary interval process; clustering and collapse are coupled (collapse
+   rate ~ ACF1^2).
+2. tau = 150 s is a clustering-regime window (~16 events) at the paper's time scale.
+3. Stabilised variants (restoring force + log normalisation) separate the two but must be reported as models M2-S1/S2.
+
+Open: the paper's dt / c_i to seconds conversion; whether the Model-4 results (volatility clustering, Fig.5) depend on
+the interval clustering; whether the initial level of the paper's run was above its long-run level; the effect of
+replacing the repository's i.i.d. clock by M2-S2 on OHLC-based results (class C, T1).
