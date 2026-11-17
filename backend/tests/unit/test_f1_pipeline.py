@@ -251,3 +251,54 @@ def test_gaussian_baseline_crps_close_to_analytic(real_ctx):
     sig = np.sqrt(st.v[4])
     analytic = sig * analytic_gauss_crps(y / sig)
     assert np.mean(fc.fair_crps(x, y)) == pytest.approx(analytic.mean(), rel=0.02)
+
+
+# ----------------------------------------------------------------------------- R-07/R-08 end-to-end analysis on synthetic scores
+def _fake_scores(path, period_blocks, ddm_factor, rng):
+    """Write a scores_<period>.npz with the exact key layout of f1_run.stage_score and known CRPS ratios."""
+    sc = {}
+    n = len(period_blocks)
+    base = {h: 1e-3 * np.sqrt(h) * (1 + 0.05 * rng.standard_normal(n)) for h in fc.HORIZONS}
+    models = ["B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7N", "B7T", "B8", "B4s"]
+    for h in fc.HORIZONS:
+        for k, m in enumerate(models):
+            sc[f"{m}|h{h}|j"] = period_blocks
+            sc[f"{m}|h{h}|crps"] = base[h] * (1.0 + 0.02 * k) if m != "B1" else base[h]
+            sc[f"{m}|h{h}|crps_plain"] = sc[f"{m}|h{h}|crps"] * 1.001
+            sc[f"{m}|h{h}|pit"] = rng.random(n)
+            for c in (50, 80, 90, 95):
+                sc[f"{m}|h{h}|hit{c}"] = (rng.random(n) < c / 100).astype(float)
+            for q in fc.TAIL_LEVELS:
+                sc[f"{m}|h{h}|ql{q}"] = np.abs(rng.normal(size=n)) * 1e-4
+        for d in ("DDM1", "DDM2", "DDM3"):
+            sc[f"{d}|h{h}|j"] = period_blocks
+            sc[f"{d}|h{h}|crps"] = base[h] * ddm_factor * (1 + 0.001 * rng.standard_normal(n))
+            sc[f"{d}|h{h}|crps_plain"] = sc[f"{d}|h{h}|crps"]
+            sc[f"{d}|h{h}|pit"] = rng.random(n)
+            for c in (50, 80, 90, 95):
+                sc[f"{d}|h{h}|hit{c}"] = (rng.random(n) < c / 100).astype(float)
+            for q in fc.TAIL_LEVELS:
+                sc[f"{d}|h{h}|ql{q}"] = np.abs(rng.normal(size=n)) * 1e-4
+    np.savez(path, **sc)
+
+
+@pytest.mark.parametrize("factor,label", [(0.90, "DDM better"), (1.00, "equivalent"), (1.10, "statistical model better")])
+def test_stage_select_and_final_on_synthetic_scores(tmp_path, monkeypatch, factor, label):
+    close, idx = make_series(n=60 * 24 * 120, seed=11)
+    s = fc.Series(close, idx)
+    monkeypatch.setattr(fc, "load_series", lambda: s)
+    blocks = np.arange(10, s.nblocks - 30)
+    rng = np.random.default_rng(5)
+    _fake_scores(tmp_path / "scores_validation.npz", blocks, factor, rng)
+    _fake_scores(tmp_path / "scores_final.npz", blocks, factor, rng)
+    fa.stage_select(str(tmp_path))
+    sel = json.load(open(tmp_path / "selection.json"))["selected"]
+    assert all(sel[str(h)] == "B1" for h in fc.HORIZONS)             # B1 has the lowest CRPS by construction
+    fa.stage_final(str(tmp_path))
+    res = json.load(open(tmp_path / "final_result.json"))
+    for h in fc.HORIZONS:
+        r = res["per_horizon"][str(h)]
+        assert r["delta"] == pytest.approx(factor - 1, abs=3e-3)       # Delta_h = (DDM - Stat) / Stat, negative = DDM better
+        assert r["label"] == label
+        assert r["simultaneous_band"][0] <= r["delta"] <= r["simultaneous_band"][1]
+        assert r["simultaneous_band"][0] <= r["marginal_ci95"][0] + 1e-9    # simultaneous band is at least as wide as marginal
