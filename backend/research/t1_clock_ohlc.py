@@ -46,6 +46,7 @@ S0_SEEDS = tuple(range(7001, 7006))
 DIAG_CHAINS, DIAG_LEN, DIAG_TOL = 4000, 2000, 0.05
 CLOCK_SEED_OFFSET, SHUFFLE_SEED_BASE = 1000, 50_000
 N_BOOT = 10_000
+MIN_BARS = 30                             # amended before any OHLC comparison was seen: C0 as-is yields only ~40 M1 bars per 100k trades
 COUNT_CANDLE = 20                         # trades per count-based candle used by all earlier research
 G1_ACF_RANGE, G1_CV_RANGE = (0.20, 0.50), (0.9, 1.8)
 G1_QUARTER_MEAN_TOL, G1_QUARTER_STD_RATIO = 0.25, (0.8, 1.25)
@@ -160,7 +161,7 @@ def bars_stats(times, prices):
     start = np.ceil(times[BURN - 1] / BAR) * BAR
     end = np.floor(times[-1] / BAR) * BAR
     nb = int(round((end - start) / BAR))
-    if nb < 200:
+    if nb < MIN_BARS:
         return None
     i0 = int(np.searchsorted(times, start, "left"))
     i1 = int(np.searchsorted(times, end, "left"))
