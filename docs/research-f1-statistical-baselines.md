@@ -124,3 +124,13 @@ predictive samples must be bit-identical to the unperturbed ones for the same se
 
 `arch==8.0.0` (added to `backend/requirements.txt`; installing it changed no existing package); numpy 2.3.3, scipy 1.17.1,
 pandas 3.0.1, statsmodels 0.14.6, Python 3.13.17.
+
+## Implementation amendments (made before any validation/final score; no result had been computed)
+
+1. Common origin set: an origin is evaluated only if the ATR block, the block return at the origin and the target window are
+   all gap-free, so that every model (including the GARCH family and HAR-RV) can use the block ending at the origin. The
+   counts quoted above are upper bounds; the exact counts are reported with the results.
+2. DDM mapping windows additionally require the 1 001 forward closes to be gap-free under the same 5-minute rule (the earlier
+   code did not check contiguity; forward statistics that include a weekend jump would be inconsistent with gap-free targets).
+3. Simulation size: statistical models draw 1 000 independent paths per origin directly (M = 1 000), instead of 10 000 paths
+   followed by sub-sampling.
