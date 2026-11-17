@@ -37,9 +37,13 @@ MAX_ATTEMPTS = 4000
 
 
 def simulate_long_path(delta: float, wma: int, seed: int):
-    """Replica of ddm_horizon_analysis.simulate_long_path with the §11 shock (24 windows of candles, N=300)."""
+    """Replica of ddm_horizon_analysis.simulate_long_path with the §11 shock (N=300), with ONE audit correction:
+    it returns MAX_H*60 + 1 closes so that the cumulative return over h windows spans exactly 60h candle steps,
+    log(closes[60h] / closes[0]), like the real target log(C[t+60h] / C[t]). The earlier code used closes[60h-1] (59/60 of
+    the horizon at h=1)."""
     from data.collectors.ddm_simulator import DDMv3
-    n_trades = fc.MAX_H * fc.BLOCK * TRADES_PER_CANDLE
+    n_candles = fc.MAX_H * fc.BLOCK + 1
+    n_trades = n_candles * TRADES_PER_CANDLE
     random.seed(seed)
     np.random.seed(seed)
     model = DDMv3(num_agent=N_AGENT, max_volatility=0.02, min_volatility=0.01, wma=wma,
@@ -53,13 +57,13 @@ def simulate_long_path(delta: float, wma: int, seed: int):
         return None
     n = (len(prices) // TRADES_PER_CANDLE) * TRADES_PER_CANDLE
     closes = prices[:n].reshape(-1, TRADES_PER_CANDLE)[:, -1]
-    if len(closes) < fc.MAX_H * fc.BLOCK:
+    if len(closes) < n_candles:
         return None
-    return closes[: fc.MAX_H * fc.BLOCK]
+    return closes[:n_candles]
 
 
 def cum_returns(closes):
-    return [float(np.log(closes[fc.BLOCK * h - 1] / closes[0])) for h in fc.HORIZONS]
+    return [float(np.log(closes[fc.BLOCK * h] / closes[0])) for h in fc.HORIZONS]
 
 
 def bucket_job(args):

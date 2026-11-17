@@ -48,7 +48,7 @@ class Context:
         self.hour = np.asarray(self.tt.hour)
         self.bucket = np.digitize(self.atr, self.edges)
         self.lrv = np.log(self.rv)
-        self.origin_ok = self.atr_ok & np.isfinite(self.r) & np.isfinite(self.rv)
+        self.origin_ok = self.atr_ok & np.isfinite(self.r) & np.isfinite(self.rv) & (self.rv > 0)   # RV = 0 would make log RV = -inf
 
     def end_time(self, h):
         end_row = np.minimum(self.s.t + fc.BLOCK * h, len(self.s.close) - 1)

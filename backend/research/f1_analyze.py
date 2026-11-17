@@ -31,12 +31,21 @@ def load_scores(workdir, period):
     return {k: z[k] for k in z.files}
 
 
+def assert_same_origins(sc, models, h):
+    ref = sc[f"{models[0]}|h{h}|j"]
+    for m in models[1:]:
+        if not np.array_equal(ref, sc[f"{m}|h{h}|j"]):
+            raise RuntimeError(f"origin sets differ between {models[0]} and {m} at h={h}")
+
+
 def mean_crps(sc, model, h):
     return float(sc[f"{model}|h{h}|crps"].mean())
 
 
 def stage_select(workdir):
     sc = load_scores(workdir, "validation")
+    for h in fc.HORIZONS:
+        assert_same_origins(sc, SELECT_POOL + ["B8", "B4s"], h)
     sel = {}
     table = {}
     for h in fc.HORIZONS:
@@ -75,6 +84,8 @@ def stage_final(workdir):
     sel = json.load(open(os.path.join(workdir, "selection.json")))["selected"]
     sc = load_scores(workdir, "final")
     ctx_idx = {h: sc[f"B1|h{h}|j"] for h in fc.HORIZONS}
+    for h in fc.HORIZONS:                       # every compared model must be scored on exactly the same origins
+        assert_same_origins(sc, ["B1", "B0", "B2", "B3", "B4", "B5", "B6", "B7N", "B7T", "B8", "B4s", *DDM_SEEDS], h)
     s = fc.load_series()
     out = {"selected": sel, "per_horizon": {}, "models_final_crps": {}}
     # week id per origin and the common week universe
