@@ -110,3 +110,41 @@ byte-identical apart from line endings) has no Model-2 either, so the Fig.3 gap 
 So the "no Model-2" and "all-contrarian" items in section 2 are deliberate practical substitutes made when the
 book's interval law could not be reproduced, not accidental implementation errors; their classification stays
 "implementation mismatch".
+
+## 7. T0-B: one-factor readings of eq.(3) (Study Manager #903)
+
+Code `backend/research/tdm_fig3_t0b.py`; Model-1 interval series T' (N=500, L=1, dt=0.01, c=[-0.01,0.01] "signed" and
+[0,0.01] "abs", seeds 1-3, 20 000 trades) are reused; only the clock modulation changes, one factor at a time from the
+T0-A baseline B0 (tau=150 s, <T> averages past modulated T, init <T>=mean(T'), alpha=1.25). Medians over the 6 series;
+`vr20` = variance of 20-event block means relative to the shuffled series (>1 = clustering), `drift` = log(last/first
+quarter mean T), `collapsed` = share of intervals below 1e-3 x mean(T').
+
+| variant | vr20 | acf1 | drift | max/mean | collapsed |
+|---|---|---|---|---|---|
+| Model-1 clock (reference) | 0.88 | 0.00 | 0.00 | 6.5 | 0 |
+| B0 literal (tau=150 s) | 0.97 | 0.00 | 0.04 | 9.5 | 0 |
+| tau 500 s / 50 s | 0.90 / 1.59 | 0.00 / 0.03 | 0.01 / -0.03 | 9.6 / 9.7 | 0 |
+| tau 15 s / 5 s | 5.1 / 6.9 | 0.22 / 0.35 | -0.38 / -0.61 | 21 / 53 | 0 / 0.001 |
+| tau 150 ticks / 20 ticks | 2.1 / 12.6 | 0.06 / 0.59 | -0.58 / -48 | 11 / 230 | 0 / 0.90 |
+| initial <T> x0.1 / x10 | 0.89 / 4.8 | 0.00 / 0.22 | 0.00 / -0.38 | 9.6 / 21 | 0.001 / 0 |
+| empty-window rule (mean T') | 0.99 | 0.00 | 0.04 | 9.5 | 0 |
+| <T> averaged over T' instead of T | 0.93 | 0.00 | 0.00 | 9.7 | 0 |
+| alpha 1.0 / 1.5 | 0.91 / 1.05 | 0.00 / 0.01 | 0.00 / 0.03 | 6.5 / 13.9 | 0 |
+
+Findings:
+1. Clustering under literal eq.(3) is controlled by the number of events in the window, tau / mean(T): it appears for
+   about <=30 events per window (tau 15 s, 5 s, 150 ticks) and grows as the window shrinks. "init x10" reproduces the
+   tau=15 s numbers, i.e. the unspecified initial <T> (the time scale) acts as tau.
+2. The same short-window regime is unstable: the level of T drifts down (E[F]=1 implies E[log F]<0, so the
+   multiplicative clock contracts), reaching total collapse (90% of intervals below 1e-3 of the Model-1 scale at 20
+   ticks) together with isolated very long intervals (max/mean 21-230). This is the "dense periods plus extremely long
+   intervals" pattern recalled from the earlier failed attempt (that attempt's logs were not re-checked, so this is
+   consistent with, not proof of, the earlier cause).
+3. Averaging over the modulated T is necessary (averaging T' gives no clustering); alpha only changes the tail
+   (1.0 no fat tail, 1.5 heavier), not the clustering; the empty-window rule is irrelevant for tau >= 5 s.
+4. Not established: whether the paper's tau=150 s sits in the clustered regime. That needs the paper's time scale of T
+   (mean tick interval in seconds); Fig.3 is only available as a plot and its mean interval is not stated. A
+   stabilising ingredient (e.g. mean-reversion of <T> or a geometric-mean normalisation) is not in the paper and is not
+   tested here.
+5. Numerical note: a running-sum moving average goes negative once T collapses by ~14 orders of magnitude; the script
+   re-sums short windows exactly.
