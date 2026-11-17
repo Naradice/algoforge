@@ -66,6 +66,7 @@ def synthetic():
 
 
 # ----------------------------------------------------------------------------- production wiring (R-09, R-12)
+# R-09
 def test_stage_map_calls_build_mapping_with_the_production_functions(tmp_path, monkeypatch):
     import ddm_ensemble_selection as des
     import ddm_regime_atlas as dra
@@ -90,6 +91,7 @@ def test_stage_map_calls_build_mapping_with_the_production_functions(tmp_path, m
     assert saved["top_k"] == des.TOP_K and len(saved["edges"]) == 19
 
 
+# R-12
 def test_month_job_passes_the_loaded_objects_to_score_month(tmp_path, monkeypatch):
     ctx_s, ens_s, ms = object(), object(), pd.Timestamp("2020-10-01")
     calls = []
@@ -125,6 +127,7 @@ def _canned_month(offset):
     return out
 
 
+# R-12
 def test_stage_score_writes_what_write_scores_aggregates(tmp_path, monkeypatch):
     months = fr.fm.month_starts("validation")
     seen = []
@@ -136,6 +139,7 @@ def test_stage_score_writes_what_write_scores_aggregates(tmp_path, monkeypatch):
 
     monkeypatch.setattr(fr, "ProcessPoolExecutor", _SerialExecutor)
     monkeypatch.setattr(fr, "month_job", fake_job)
+    monkeypatch.setattr(fr, "require_leak_pass", lambda wd: {"pass": True})      # the precondition has its own tests below
     fr.stage_score(str(tmp_path), "validation")
     assert [a[2] for a in seen] == months and all(a[:2] == (str(tmp_path), "validation") for a in seen)
     z = np.load(tmp_path / "scores_validation.npz")
@@ -146,6 +150,8 @@ def test_stage_score_writes_what_write_scores_aggregates(tmp_path, monkeypatch):
 
 
 # ----------------------------------------------------------------------------- independent expectations
+# R-02
+# R-12
 def test_origin_sets_equal_an_independent_brute_force_construction(synthetic, periods):
     close, idx, ms = synthetic["close"], synthetic["idx"], synthetic["ms"]
     out = synthetic["out"]
@@ -176,6 +182,7 @@ def test_origin_sets_equal_an_independent_brute_force_construction(synthetic, pe
         assert expect and np.array_equal(out[("B1", h)]["j"], np.array(expect)), h
 
 
+# R-06
 def test_scores_recomputed_by_brute_force(synthetic):
     out, ctx, ens = synthetic["out"], synthetic["ctx"], synthetic["ens"]
     h, hi = 4, 1
@@ -202,12 +209,14 @@ def _prepare_leak(synthetic, tmp_path, monkeypatch):
     json.dump({"edges": list(map(float, synthetic["edges"]))}, open(tmp_path / "ddm_mapping.json", "w"))
 
 
+# R-10
 def test_leak_job_passes_for_the_real_samplers(synthetic, periods, tmp_path, monkeypatch):
     _prepare_leak(synthetic, tmp_path, monkeypatch)
     period, n, bad = fr.leak_job((str(tmp_path), "validation", 11))
     assert n == 3 and bad == []
 
 
+# R-10
 def test_leak_job_detects_a_sampler_that_reads_the_future(synthetic, periods, tmp_path, monkeypatch):
     _prepare_leak(synthetic, tmp_path, monkeypatch)
     real_b1 = fm.SAMPLERS["B1"]
@@ -221,3 +230,55 @@ def test_leak_job_detects_a_sampler_that_reads_the_future(synthetic, periods, tm
     assert {m for m, _ in bad} == {"B1"} and len(bad) == 3
 
 
+
+
+# ----------------------------------------------------------------------------- R-10b: no score without a passing leak test
+def _leak_record(tmp_path, **over):
+    for f in fr.LEAK_BOUND:
+        (tmp_path / f).write_bytes(f.encode())
+    rec = {"pass": True, "head": "H" * 40, "bound_files": fr.leak_bound_files(str(tmp_path)), "results": []}
+    rec.update(over)
+    json.dump(rec, open(tmp_path / "leak_test.json", "w"))
+    return rec
+
+
+# R-10b
+def test_stage_score_requires_a_passing_leak_test_on_this_commit_and_these_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(fr, "ProcessPoolExecutor", _SerialExecutor)
+    monkeypatch.setattr(fr.fg, "current_head", lambda repo=None: "H" * 40)
+    called = []
+    monkeypatch.setattr(fr, "month_job", lambda a: called.append(a) or ("m", {}, []))
+    with pytest.raises(SystemExit) as e:                                  # no leak_test.json at all
+        fr.stage_score(str(tmp_path), "validation")
+    assert "leak_test.json missing" in str(e.value) and called == []
+    _leak_record(tmp_path, **{"pass": False})
+    with pytest.raises(SystemExit) as e:
+        fr.stage_score(str(tmp_path), "validation")
+    assert "did not pass" in str(e.value) and called == []
+    _leak_record(tmp_path, head="0" * 40)
+    with pytest.raises(SystemExit) as e:
+        fr.stage_score(str(tmp_path), "validation")
+    assert "another commit" in str(e.value)
+    _leak_record(tmp_path)
+    (tmp_path / "ddm_ens_seed2.npy").write_bytes(b"changed after the leak test")
+    with pytest.raises(SystemExit) as e:
+        fr.stage_score(str(tmp_path), "validation")
+    assert "changed or are missing" in str(e.value) and called == []
+    (tmp_path / "ddm_ens_seed2.npy").unlink()                            # a missing ensemble file is also refused
+    with pytest.raises(SystemExit):
+        fr.require_leak_pass(str(tmp_path))
+    _leak_record(tmp_path)
+    assert fr.require_leak_pass(str(tmp_path))["pass"] is True
+
+
+# R-10b
+def test_stage_leak_records_the_commit_and_the_bound_files(synthetic, periods, tmp_path, monkeypatch):
+    _prepare_leak(synthetic, tmp_path, monkeypatch)
+    for i in range(1, 4):
+        np.save(tmp_path / f"ddm_ens_seed{i}.npy", synthetic["ens"][i - 1])
+    monkeypatch.setattr(fr, "ProcessPoolExecutor", _SerialExecutor)
+    monkeypatch.setattr(fr.fg, "current_head", lambda repo=None: "H" * 40)
+    fr.stage_leak(str(tmp_path))
+    rec = json.load(open(tmp_path / "leak_test.json"))
+    assert rec["pass"] is True and rec["head"] == "H" * 40 and set(rec["bound_files"]) == set(fr.LEAK_BOUND)
+    assert fr.require_leak_pass(str(tmp_path))["pass"] is True

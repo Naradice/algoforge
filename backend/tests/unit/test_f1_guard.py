@@ -73,6 +73,7 @@ def run(repo, tmp_path, stage="s"):
     return fg.start_run(str(tmp_path / "w"), stage, repo=str(repo.root), argv=["x"])
 
 
+# R-15
 def test_state_hash_is_stable_and_changes_with_the_code(repo):
     s1 = fg.measure_state(repo.root)
     assert s1["head"] == repo.head() and s1["dirty"] == [] and "backend/research/f1_dep_guard.py" in s1["code"]
@@ -82,6 +83,7 @@ def test_state_hash_is_stable_and_changes_with_the_code(repo):
     assert s2["state_hash"] != s1["state_hash"] and s2["dirty"] == ["backend/research/f1_dep_guard.py"]
 
 
+# R-15
 def test_refuses_without_an_approval_but_records_the_attempt_and_the_state(repo, tmp_path):
     with pytest.raises(SystemExit) as e:
         run(repo, tmp_path)
@@ -90,6 +92,7 @@ def test_refuses_without_an_approval_but_records_the_attempt_and_the_state(repo,
     assert manifests and json.load(open(manifests[0]))["gate_verified"] is False
 
 
+# R-15
 def test_accepts_a_passing_approval_for_exactly_this_state(repo, tmp_path):
     repo.approval(tmp_path / "w")
     st = run(repo, tmp_path)
@@ -109,6 +112,7 @@ def test_accepts_a_passing_approval_for_exactly_this_state(repo, tmp_path):
     ({"det_clean_workspace": False}, "dirty workspace"),
     ({"det_unresolved_criticals": ["R-10b"]}, "unresolved critical"),
 ])
+# R-15
 def test_refuses_every_kind_of_wrong_approval(repo, tmp_path, override, text):
     repo.approval(tmp_path / "w", **override)
     with pytest.raises(SystemExit) as e:
@@ -116,6 +120,7 @@ def test_refuses_every_kind_of_wrong_approval(repo, tmp_path, override, text):
     assert text in str(e.value)
 
 
+# R-15
 def test_environment_variables_cannot_bypass_the_guard(repo, tmp_path, monkeypatch):
     for k, v in (("F1_ALLOW_DIRTY", "1"), ("F1_EXPECTED_COMMIT", repo.head()), ("F1_SKIP_GUARD", "1")):
         monkeypatch.setenv(k, v)
@@ -128,6 +133,7 @@ def test_environment_variables_cannot_bypass_the_guard(repo, tmp_path, monkeypat
     assert "modified or untracked" in str(e.value)
 
 
+# R-15
 def test_an_untracked_module_that_is_loaded_is_refused(repo, tmp_path):
     extra = repo.root / "backend" / "research" / "f1_dep_guard_extra.py"
     extra.write_text("Y = 1\n")
@@ -142,6 +148,7 @@ def test_an_untracked_module_that_is_loaded_is_refused(repo, tmp_path):
         sys.modules.pop("f1_dep_guard_extra", None)
 
 
+# R-15
 def test_preload_brings_lazily_imported_modules_into_the_measured_state(repo):
     lazy = repo.root / "backend" / "research" / "f1_dep_lazy.py"
     lazy.write_text("Z = 1\n")
@@ -157,6 +164,7 @@ def test_preload_brings_lazily_imported_modules_into_the_measured_state(repo):
         sys.modules.pop("f1_dep_lazy", None)
 
 
+# R-15
 def test_end_run_flags_a_modification_made_during_the_run(repo, tmp_path):
     repo.approval(tmp_path / "w")
     st = run(repo, tmp_path)
@@ -168,6 +176,7 @@ def test_end_run_flags_a_modification_made_during_the_run(repo, tmp_path):
     assert end_manifest["run_state_consistent"] is False and end_manifest["modules_changed_during_run"]
 
 
+# R-15
 def test_stage_scripts_call_the_guard_before_doing_anything():
     """Every executable stage script must route through guard_main and end_run (no path around the guard)."""
     for name, stages in (("f1_ddm.py", 1), ("f1_run.py", 1), ("f1_analyze.py", 1)):

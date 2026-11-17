@@ -66,6 +66,7 @@ def build(close, idx, rec, **kw):
 
 
 # ----------------------------------------------------------------------------- R-09 stage_map
+# R-09
 def test_stage_map_windows_edges_and_forward_range(est_period):
     close, idx = make_sv_series(60 * 24 * 60, seed=1)
     s = fc.Series(close, idx)
@@ -93,6 +94,7 @@ def test_stage_map_windows_edges_and_forward_range(est_period):
     assert k == len(rec.windows) > 0
 
 
+# R-09
 def test_stage_map_ignores_data_after_the_estimation_period_and_is_reproducible(est_period):
     close, idx = make_sv_series(60 * 24 * 60, seed=2)
     mp0 = build(close, idx, Recorder(), max_per_bucket=20)
@@ -109,6 +111,7 @@ def test_stage_map_ignores_data_after_the_estimation_period_and_is_reproducible(
     assert [b["used_blocks"] for b in mp0["buckets"]] != [b["used_blocks"] for b in mp3["buckets"]]
 
 
+# R-09
 def test_stage_map_excludes_windows_with_gaps_and_windows_running_past_the_period_end(est_period):
     close, idx = make_sv_series(60 * 24 * 60, seed=3, gap_at=30000)           # a 60 h gap inside the estimation period
     s = fc.Series(close, idx)
@@ -136,6 +139,8 @@ def val_period():
     fc.PERIODS.update(old)
 
 
+# R-11
+# R-12
 def test_score_month_to_saved_results_end_to_end(val_period, tmp_path, monkeypatch):
     import f1_models as fm
     import f1_run as fr
@@ -193,6 +198,7 @@ def test_score_month_to_saved_results_end_to_end(val_period, tmp_path, monkeypat
 
 
 # ----------------------------------------------------------------------------- PIT randomisation spread
+# R-14
 def test_pit_randomisation_spread_is_zero_without_ties_and_positive_with_ties():
     lo = np.linspace(0, 1, 500, endpoint=False)
     assert fa.pit_randomisation_spread(lo, np.zeros(500))["ks_sd"] == 0.0

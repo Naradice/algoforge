@@ -42,6 +42,7 @@ def fixed_close(n=1001, seed=3):
     return 110.0 * np.exp(np.cumsum(1e-4 * np.exp(lv) * rng.standard_normal(n)))
 
 
+# R-19
 def test_full_characterize_equals_independent_definitions_on_a_fixed_series():
     close = fixed_close()
     got = dra.full_characterize(pd.DataFrame({"close": close}))
@@ -51,6 +52,7 @@ def test_full_characterize_equals_independent_definitions_on_a_fixed_series():
         assert got[k] == pytest.approx(v, rel=1e-8, abs=1e-12), k
 
 
+# R-19
 @pytest.mark.skipif(not DATA.exists(), reason="USDJPY derived artifact not available")
 def test_full_characterize_equals_independent_definitions_on_a_real_window():
     close = pd.read_parquet(DATA, columns=["close"])["close"].values[300_000:301_001]
@@ -61,6 +63,7 @@ def test_full_characterize_equals_independent_definitions_on_a_real_window():
     assert 1e-5 < got["std"] < 1e-3                           # log-return units of one M1 candle, not price units
 
 
+# R-19
 def test_atlas_columns_and_selection_statistics():
     atlas = pd.read_csv(ATLAS)
     for name in dra.FULL_STAT_NAMES:
@@ -69,6 +72,7 @@ def test_atlas_columns_and_selection_statistics():
     assert atlas["std"].dropna().between(1e-6, 0.5).all()      # same log-return units as the real windows
 
 
+# R-19
 def test_an_atlas_row_is_reproduced_by_the_current_characterisation():
     atlas = pd.read_csv(ATLAS)
     row = atlas[(atlas["delta"] == 0.0) & (atlas["wma"] == 15)].iloc[0]
@@ -82,6 +86,7 @@ def test_an_atlas_row_is_reproduced_by_the_current_characterisation():
         assert float(np.nanmean([x[name] for x in stats])) == pytest.approx(row[name], rel=1e-9), name
 
 
+# R-19
 def test_select_ensemble_maps_the_statistics_to_the_right_atlas_columns():
     atlas = pd.read_csv(ATLAS)
     row = atlas[(atlas["delta"] == 0.0) & (atlas["wma"] == 15)].iloc[0]

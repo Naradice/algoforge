@@ -41,6 +41,10 @@ def repo_root():
     return Path(_git(Path(__file__).resolve().parent, "rev-parse", "--show-toplevel").strip()).resolve()
 
 
+def current_head(repo=None):
+    return _git(repo or repo_root(), "rev-parse", "HEAD").strip()
+
+
 def sha256(path):
     try:
         h = hashlib.sha256()

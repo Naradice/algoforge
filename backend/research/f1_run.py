@@ -107,6 +107,7 @@ def write_scores(workdir, period, results, fails):
 
 
 def stage_score(workdir, period):
+    require_leak_pass(workdir)
     months = fm.month_starts(period)
     t0 = time.time()
     results = {}
@@ -164,6 +165,35 @@ def leak_job(args):
     return period, len(picks), bad
 
 
+LEAK_BOUND = ["ddm_mapping.json"] + [f"ddm_ens_seed{i}.npy" for i in range(1, N_DDM_SEEDS + 1)]
+
+
+def leak_bound_files(workdir):
+    """sha256 of the exact mapping/ensemble files the leak test was run on."""
+    return {f: fg.sha256(os.path.join(workdir, f)) for f in LEAK_BOUND}
+
+
+def require_leak_pass(workdir, head=None):
+    """R-10b (execution-time gate): no score may be computed unless a leak test passed on THIS commit and on exactly these
+    ensemble/mapping files. Independent of the Study Manager gate."""
+    path = os.path.join(workdir, "leak_test.json")
+    if not os.path.exists(path):
+        raise SystemExit("refusing to score: leak_test.json missing (run `f1_run.py leak` first)")
+    rec = json.load(open(path))
+    head = head or fg.current_head()
+    problems = []
+    if rec.get("pass") is not True:
+        problems.append("the leak test did not pass")
+    if rec.get("head") != head:
+        problems.append(f"the leak test was run on another commit ({rec.get('head')} != {head})")
+    now = leak_bound_files(workdir)
+    if rec.get("bound_files") != now or any(v is None for v in now.values()):
+        problems.append("the mapping/ensemble files changed or are missing since the leak test")
+    if problems:
+        raise SystemExit("refusing to score: " + "; ".join(problems))
+    return rec
+
+
 def stage_leak(workdir):
     jobs = [(workdir, p, 7000 + i) for i, p in enumerate(("validation", "final"))]
     with ProcessPoolExecutor(max_workers=2) as ex:
@@ -174,7 +204,8 @@ def stage_leak(workdir):
         ok &= (len(bad) == 0)
         if bad:
             print("  ", bad[:10])
-    json.dump({"pass": ok, "results": [{"period": p, "n": n, "mismatches": b} for p, n, b in res]},
+    json.dump({"pass": ok, "head": fg.current_head(), "bound_files": leak_bound_files(workdir),
+               "results": [{"period": p, "n": n, "mismatches": b} for p, n, b in res]},
               open(os.path.join(workdir, "leak_test.json"), "w"), indent=1)
     if not ok:
         sys.exit(1)

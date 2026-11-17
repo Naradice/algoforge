@@ -36,6 +36,7 @@ def make_series(n=6000, gap_at=None, seed=0):
 
 
 # ----------------------------------------------------------------------------- R-06 CRPS estimators
+# R-06
 def test_fair_crps_matches_bruteforce():
     rng = np.random.default_rng(1)
     x = rng.normal(size=(4, 40))
@@ -48,6 +49,7 @@ def test_fair_crps_matches_bruteforce():
         assert got[i] == pytest.approx(t1 - t2, rel=1e-12)
 
 
+# R-06
 def test_plain_crps_matches_bruteforce():
     rng = np.random.default_rng(2)
     x = rng.normal(size=(3, 30))
@@ -64,6 +66,7 @@ def analytic_gauss_crps(y):
     return y * (2 * stats.norm.cdf(y) - 1) + 2 * stats.norm.pdf(y) - 1 / np.sqrt(np.pi)
 
 
+# R-06
 def test_fair_crps_is_unbiased_for_small_ensembles():
     rng = np.random.default_rng(3)
     y = np.full(40000, 0.7)
@@ -75,6 +78,7 @@ def test_fair_crps_is_unbiased_for_small_ensembles():
     assert plain > fair                       # the biased estimator overstates for finite M
 
 
+# R-06
 def test_crps_quantile_grid_matches_analytic():
     m = 4000
     x = np.tile(stats.norm.ppf((np.arange(m) + 0.5) / m), (3, 1))       # deterministic ensemble
@@ -83,6 +87,7 @@ def test_crps_quantile_grid_matches_analytic():
     assert np.allclose(fc.fair_crps(x, y), analytic_gauss_crps(y), atol=2e-3)
 
 
+# R-06
 def test_pit_uniform_for_calibrated_samples_and_ties_randomised():
     rng = np.random.default_rng(5)
     n = 20000
@@ -98,6 +103,7 @@ def test_pit_uniform_for_calibrated_samples_and_ties_randomised():
 
 
 # ----------------------------------------------------------------------------- R-02 windows, gaps, targets
+# R-02
 def test_gap_rule_and_targets():
     close, idx = make_series(gap_at=3000)
     s = fc.Series(close, idx)
@@ -113,6 +119,7 @@ def test_gap_rule_and_targets():
     assert np.allclose(t1[:-1][ok], r[1:][ok])
 
 
+# R-02
 def test_missing_quiet_minutes_do_not_break_blocks():
     close, idx = make_series(n=3000)
     keep = np.ones(len(idx), bool)
@@ -121,6 +128,7 @@ def test_missing_quiet_minutes_do_not_break_blocks():
     assert s.atr_valid().all()
 
 
+# R-03
 def test_derived_arrays_depend_only_on_rows_up_to_origin():
     close, idx = make_series(n=9000, seed=7)
     s0 = fc.Series(close, idx)
@@ -135,6 +143,7 @@ def test_derived_arrays_depend_only_on_rows_up_to_origin():
     assert not np.array_equal(s0.target(1)[j], s1.target(1)[j])      # the target does use the future (as it must)
 
 
+# R-01
 def test_period_mask_purges_targets_crossing_the_period_end():
     close, idx = make_series(n=60 * 24 * 40)
     s = fc.Series(close, idx)
@@ -150,6 +159,7 @@ def test_period_mask_purges_targets_crossing_the_period_end():
 
 
 # ----------------------------------------------------------------------------- R-09 DDM horizon definition
+# R-09b
 def test_ddm_cumulative_return_covers_exactly_60h_candle_steps():
     closes = np.exp(np.arange(fc.MAX_H * fc.BLOCK + 1) * 1e-3)
     got = fd.cum_returns(closes)
@@ -158,6 +168,7 @@ def test_ddm_cumulative_return_covers_exactly_60h_candle_steps():
 
 
 # ----------------------------------------------------------------------------- R-07/R-08 inference
+# R-08
 def test_newey_west_matches_naive_for_iid_and_holm_is_monotone():
     rng = np.random.default_rng(6)
     d = rng.normal(size=4000)
@@ -167,6 +178,7 @@ def test_newey_west_matches_naive_for_iid_and_holm_is_monotone():
     assert abs(t2) < 4 and p2 > 1e-4
 
 
+# R-08
 def test_simultaneous_band_label_rules():
     # label rule is implemented inside stage_final; replicate its thresholds here
     margin = fa.MARGIN
@@ -196,6 +208,7 @@ def real_ctx():
     return fm, df, edges, fm.Context(df["close"].values, df.index, edges)
 
 
+# R-04
 @needs_data
 def test_state_depends_only_on_data_before_month_start(real_ctx):
     fm, df, edges, ctx = real_ctx
@@ -215,6 +228,7 @@ def test_state_depends_only_on_data_before_month_start(real_ctx):
     assert st0.z_std == st1.z_std and st0.har_nu == st1.har_nu and np.allclose(st0.hour_factor, st1.hour_factor)
 
 
+# R-05
 @needs_data
 def test_samplers_are_deterministic_and_ignore_the_future(real_ctx):
     fm, df, edges, ctx = real_ctx
@@ -233,12 +247,14 @@ def test_samplers_are_deterministic_and_ignore_the_future(real_ctx):
         assert np.array_equal(a, fn(st, ctx_p, j)), f"{name} reads data after the origin"
 
 
+# R-05
 @needs_data
 def test_origin_set_excludes_zero_realised_variance(real_ctx):
     fm, df, edges, ctx = real_ctx
     assert np.all(ctx.rv[ctx.origin_ok] > 0)
 
 
+# R-05
 @needs_data
 def test_gaussian_baseline_crps_close_to_analytic(real_ctx):
     fm, df, edges, ctx = real_ctx
@@ -286,6 +302,8 @@ def _fake_scores(path, period_blocks, ddm_factor, rng):
     np.savez(path, **sc)
 
 
+# R-07
+# R-08
 @pytest.mark.parametrize("factor,label", [(0.90, "DDM better"), (1.00, "equivalent"), (1.10, "statistical model better")])
 def test_stage_select_and_final_on_synthetic_scores(tmp_path, monkeypatch, factor, label):
     close, idx = make_series(n=60 * 24 * 120, seed=11)
