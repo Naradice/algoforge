@@ -38,10 +38,12 @@ def origin_stats(sorted_ens, bucket, y):
     pit_r = np.empty(len(y))
     for b in np.unique(bucket):
         m = bucket == b
-        pit_lo[m] = np.searchsorted(sorted_ens[b], y[m], side="left") / M
-        pit_r[m] = np.searchsorted(sorted_ens[b], y[m], side="right") / M
+        left = np.searchsorted(sorted_ens[b], y[m], side="left")
+        right = np.searchsorted(sorted_ens[b], y[m], side="right")
+        pit_lo[m] = left / M
+        pit_r[m] = (right - left) / M              # integer difference first (float subtraction of fractions is not exact)
     out["pit_lo"] = pit_lo
-    out["pit_w"] = pit_r - pit_lo
+    out["pit_w"] = pit_r
     for c in COVER:
         out[f"hit{c}"] = ((y >= out[f"lo{c}"]) & (y <= out[f"hi{c}"])).astype(float)
     return out
