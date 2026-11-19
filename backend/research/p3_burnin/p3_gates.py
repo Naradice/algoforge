@@ -156,19 +156,20 @@ def main():
     step_n(m, 300)
     check("gate3a p=1: a shock at every step", len(m._shock_events) == 300 and m._step_count == 300, len(m._shock_events))
     # b: branch at first shock
-    def run_branch(turn_on_at, n):
+    def run_branch(turn_on_at, n, cps):
         mm = S.build_model(0.0, 7, 66, False, True, shock_override=FORCED)       # starts with p = 0 (disabled)
         snaps = {}
         for k in range(n):
             if k == turn_on_at:
                 mm.exogenous_shock_probability = 1.0
             step_n(mm, 1)
-            if k + 1 in (turn_on_at - 1, turn_on_at, turn_on_at + 1, turn_on_at + 50, n):
+            if k + 1 in cps:
                 snaps[k + 1] = (fp(mm), rs())
         return snaps, len(mm._shock_events)
     K, N = 100, 2000
-    sa, ea = run_branch(K, N)
-    sb, eb = run_branch(10 ** 9, N)            # never turned on
+    CPS = (K - 1, K, K + 1, K + 50, N)
+    sa, ea = run_branch(K, N, CPS)
+    sb, eb = run_branch(10 ** 9, N, CPS)            # never turned on
     before = (sa[K - 1][0] == sb[K - 1][0])
     after = all(sa[k][0] != sb[k][0] for k in (K + 1, K + 50, N))
     rng_equal = all(sa[k][1] == sb[k][1] for k in sa)
