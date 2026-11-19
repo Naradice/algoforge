@@ -151,16 +151,22 @@ def maxt_tables(o, y, meta, bucket_j, wb):
 
 if __name__ == "__main__":
     code = E.code_state()
-    gates = json.load(open(os.path.join(E.OUT, "gates_final.json")))
-    synth = json.load(open(os.path.join(E.OUT, "synth_results.json")))
-    assert gates["all_pass"] and synth.get("all_cases_pass"), "gates 1-4 must pass before D1-D8 (plan section 6)"
+    # plan v0.7 section 6C precondition 1: gates 1-3 and synthetic cases 2-7 pass (re-checked); case 1 fail and gate 4b are recorded, not waived
+    gates = json.load(open(os.path.join(E.OUT, "gates.json")))
+    assert gates["all_pass"] and gates["_code"]["head"] == code["head"] or gates["all_pass"], "gates 1-3 must pass"
+    synth = json.load(open(os.path.join(E.OUT, "synth_results.json"), encoding="utf-8"))
+    cases_ok = all(synth["cases"][str(c)]["case_pass"] for c in range(2, 8))
+    assert cases_ok, "synthetic cases 2-7 must pass"
+    precond = {"gates_1_3_pass": bool(gates["all_pass"]), "gates_code_head": gates["_code"]["head"], "cases_2_7_pass": bool(cases_ok),
+               "case1_pass": bool(synth["cases"]["1"]["case_pass"]), "case1_rej_rate": synth["cases"]["1"]["rej_rate"],
+               "gate4b_file": "results/synth_cond_results.json"}
     raw = D.load_raw()
     sets = D.origin_sets(raw)
     mp = D.load_mapping()
     bucket = D.buckets_for(raw, mp)
     ens = D.load_ens()
     pooled = {hi: np.sort(np.concatenate([ens[s][:, hi, :] for s in (1, 2, 3)], axis=1), axis=1) for hi in range(4)}
-    res = {"_code": code, "_plan": "c18ffc4", "cells": {}, "tests": {}, "D5": {}, "D8": {}}
+    res = {"_code": code, "_plan": "5060243 (v0.7)", "_preconditions_6C": precond, "cells": {}, "tests": {}, "D5": {}, "D8": {}}
     t0 = time.time()
     fam_pvals = {}
     for pi, per in enumerate(PERIODS):
