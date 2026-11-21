@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import os
 
-_NO_AUTH = os.getenv("ALGOFORGE_NO_AUTH", "").lower() in ("1", "true")
+def _is_no_auth() -> bool:
+    return os.getenv("ALGOFORGE_NO_AUTH", "").lower() in ("1", "true")
 
 _UNAUTHORIZED_BODY = b'{"error":{"code":"UNAUTHORIZED","message":"Valid API key required for /mcp. See auth.py / scripts/create_api_key.py."}}'
 
@@ -20,7 +21,7 @@ class MCPAuthMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http" or _NO_AUTH:
+        if scope["type"] != "http" or _is_no_auth():
             await self.app(scope, receive, send)
             return
 

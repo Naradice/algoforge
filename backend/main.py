@@ -5,6 +5,13 @@ Start with:
     uvicorn main:app --reload --port 8000
 """
 
+from pathlib import Path
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 import asyncio
 import contextlib
 import logging
@@ -18,6 +25,7 @@ from database import engine, Base
 from log_writer import start_log_writer
 from strategy.router import router as strategy_router
 from strategy.config_router import config_router as strategy_config_router
+from strategy.mt5_router import router as mt5_router
 from model.router import router as model_router
 from model.training_runs_router import tr_router
 from model.preprocessed_datasets_router import pd_router
@@ -76,10 +84,16 @@ async def _lifespan(app_):
     Lives in the API because it is the one process that is always up. Disable with
     ALGOFORGE_DISABLE_REAPER=1."""
     from model.heartbeat import reaper_loop
+    from data.scheduler import scheduler_loop
 
     reaper = None
     if os.getenv("ALGOFORGE_DISABLE_REAPER") != "1":
         reaper = asyncio.create_task(reaper_loop())
+
+    scheduler = None
+    if os.getenv("ALGOFORGE_DISABLE_SCHEDULER") != "1":
+        scheduler = asyncio.create_task(scheduler_loop())
+
     try:
         mcp_lifespan = getattr(_mcp_asgi, "lifespan", None) if _mcp_mounted else None
         if mcp_lifespan is not None:
@@ -88,6 +102,10 @@ async def _lifespan(app_):
         else:
             yield
     finally:
+        if scheduler is not None:
+            scheduler.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await scheduler
         if reaper is not None:
             reaper.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -123,6 +141,7 @@ app.include_router(pd_router, prefix=API_PREFIX)
 app.include_router(model_config_router, prefix=API_PREFIX)
 app.include_router(ops_router, prefix=API_PREFIX)
 app.include_router(assessment_router, prefix=API_PREFIX)
+app.include_router(mt5_router)
 
 # MCP server — accessible at /mcp (SSE transport for Claude Desktop). _mcp_asgi was built above,
 # before FastAPI(...), so its lifespan could be wired in at construction time -- see that

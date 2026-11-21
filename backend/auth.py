@@ -42,10 +42,17 @@ def generate_api_key() -> tuple[str, str]:
     return raw, _hash_key(raw)
 
 
+def _is_no_auth() -> bool:
+    return os.getenv("ALGOFORGE_NO_AUTH", "").lower() in ("1", "true")
+
+
 async def require_api_key(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Security(_security)] = None,
     db: AsyncSession = Depends(get_db),
 ) -> APIKey:
+    if _is_no_auth():
+        return APIKey(id=0, name="dev_bypass", active=True, scopes=["*"])
+
     if credentials is None:
         raise HTTPException(status_code=401, detail="API key required")
 
@@ -61,15 +68,11 @@ async def require_api_key(
     return api_key
 
 
-# Convenience: skip auth when ALGOFORGE_NO_AUTH=1 (dev only)
-_NO_AUTH = os.getenv("ALGOFORGE_NO_AUTH", "").lower() in ("1", "true")
-
-
 async def optional_auth(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Security(_security)] = None,
     db: AsyncSession = Depends(get_db),
 ) -> APIKey | None:
-    if _NO_AUTH:
+    if _is_no_auth():
         return None
     if credentials is None:
         return None

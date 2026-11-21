@@ -13,21 +13,52 @@ Tools are grouped by domain and registered in mcp_server/tools/.
 
 from __future__ import annotations
 
-from fastmcp import FastMCP  # type: ignore
+import logging
+import os
+import sys
 
-mcp = FastMCP(
-    name="AlgoForge",
-    instructions=(
-        "AlgoForge is an algorithmic trading platform. "
-        "Use these tools to inspect strategy performance, ML model metrics, "
-        "dataset characteristics, and system logs. "
-        "Always start with list_* tools to discover available resources, "
-        "then drill down with detail tools."
-    ),
-)
+logger = logging.getLogger(__name__)
 
-# Register all tool modules (import triggers @mcp.tool() decoration)
-from mcp_server.tools import logs, strategy, model, data  # noqa: E402, F401
+if sys.platform == "win32":
+    for p in list(sys.path):
+        if "site-packages" in p:
+            win32_path = os.path.join(p, "win32")
+            win32_lib_path = os.path.join(p, "win32", "lib")
+            pywin32_sys32 = os.path.join(p, "pywin32_system32")
+            if os.path.isdir(win32_path) and win32_path not in sys.path:
+                sys.path.append(win32_path)
+            if os.path.isdir(win32_lib_path) and win32_lib_path not in sys.path:
+                sys.path.append(win32_lib_path)
+            if os.path.isdir(pywin32_sys32) and hasattr(os, "add_dll_directory"):
+                try:
+                    os.add_dll_directory(pywin32_sys32)
+                except Exception:
+                    pass
+
+try:
+    from fastmcp import FastMCP  # type: ignore
+
+    mcp = FastMCP(
+        name="AlgoForge",
+        instructions=(
+            "AlgoForge is an algorithmic trading platform. "
+            "Use these tools to inspect strategy performance, ML model metrics, "
+            "dataset characteristics, and system logs. "
+            "Always start with list_* tools to discover available resources, "
+            "then drill down with detail tools."
+        ),
+    )
+
+    # Register all tool modules (import triggers @mcp.tool() decoration)
+    from mcp_server.tools import logs, strategy, model, data  # noqa: E402, F401
+except Exception as exc:
+    logger.warning("Failed to initialize FastMCP, falling back to dummy: %s", exc)
+    class _DummyMCP:
+        def resource(self, *args, **kwargs):
+            return lambda fn: fn
+        def tool(self, *args, **kwargs):
+            return lambda fn: fn
+    mcp = _DummyMCP()
 
 import sqlalchemy as sa
 

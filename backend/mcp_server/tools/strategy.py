@@ -313,8 +313,11 @@ async def start_strategy_run(
             walk_forward_ratio=walk_forward_ratio,
             window_size=window_size,
             starting_capital=starting_capital,
+            from_ts=from_ts,
+            to_ts=to_ts,
         )
         run = await strategy_service.create_run(db, strategy_id, body)
+        await db.commit()
         await enqueue("execute_strategy_run", run.id)
         return {"run_id": run.id, "strategy_id": strategy_id, "status": run.status}
 
@@ -401,6 +404,8 @@ async def run_parameter_sweep(
     variants: list[dict],
     base_risk: dict | None = None,
     starting_capital: float = 1.0,
+    from_ts: str | None = None,
+    to_ts: str | None = None,
 ) -> dict:
     """
     Launch multiple backtest variants in parallel and return a ranked comparison
@@ -416,7 +421,7 @@ async def run_parameter_sweep(
                             keys to merge in (e.g. add an indicator, change
                             entry conditions). Applied on top of the saved
                             strategy definition for this run only via a
-                            temporary strategy copy.
+                            separate strategy record retained for reproducibility.
                           At minimum, supply [{"label": "baseline"}] to get
                           the base strategy metrics.
         base_risk:        Risk params shared by all variants (each variant's
@@ -439,6 +444,7 @@ async def run_parameter_sweep(
     # Launch all variants
     run_ids: list[tuple[str, int]] = []
     async with db_session() as db:
+        base = await strategy_service.get_strategy(db, strategy_id)
         for v in variants:
             label = v.get("label", f"variant_{len(run_ids)}")
             risk = {**(base_risk or {}), **(v.get("risk_override") or {})}
@@ -447,39 +453,57 @@ async def run_parameter_sweep(
                 dataset_id=dataset_id,
                 risk_override=risk or None,
                 starting_capital=starting_capital if starting_capital != 1.0 else None,
+                from_ts=from_ts,
+                to_ts=to_ts,
             )
-            run = await strategy_service.create_run(db, strategy_id, body)
-            await enqueue("execute_strategy_run", run.id)
-            run_ids.append((label, run.id))
+            variant_id = strategy_id
+            if "definition_patch" in v:
+                from strategy.models import StrategyCreate
 
-    launched = [{"label": lbl, "run_id": rid, "status": "pending"} for lbl, rid in run_ids]
+                variant = await strategy_service.create_strategy(db, StrategyCreate(
+                    name=f"{base.name} / {label}",
+                    definition={**base.definition, **v["definition_patch"]},
+                ))
+                variant_id = variant.id
+            run = await strategy_service.create_run(db, variant_id, body)
+            run_ids.append((label, variant_id, run.id))
+
+    for _, _, run_id in run_ids:
+        await enqueue("execute_strategy_run", run_id)
+
+    launched = [{"label": lbl, "strategy_id": sid, "run_id": rid, "status": "pending"} for lbl, sid, rid in run_ids]
 
     # Poll until all complete (max 10 min)
     deadline = 600
     poll_interval = 8
     elapsed = 0
-    pending = dict(run_ids)
+    pending = {rid: sid for _, sid, rid in run_ids}
 
     while pending and elapsed < deadline:
         await asyncio.sleep(poll_interval)
         elapsed += poll_interval
         async with db_session() as db:
-            for label, rid in list(pending.items()):
-                run = await strategy_service.get_run(db, strategy_id, rid)
+            for rid, sid in list(pending.items()):
+                run = await strategy_service.get_run(db, sid, rid)
                 if run.status in ("completed", "error", "stopped"):
-                    pending.pop(label)
+                    pending.pop(rid)
 
     # Collect results
     results = []
     async with db_session() as db:
-        for label, rid in run_ids:
+        for label, sid, rid in run_ids:
             try:
-                m = await strategy_service.get_metrics(db, strategy_id, rid)
+                run = await strategy_service.get_run(db, sid, rid)
+                if run.status != "completed":
+                    results.append({"label": label, "strategy_id": sid, "run_id": rid, "error": run.status})
+                    continue
+                m = await strategy_service.get_metrics(db, sid, rid)
                 trades = int(m.get("total_trades", 0))
                 pnl = float(m.get("total_pnl", 0.0))
                 results.append({
                     "label": label,
                     "run_id": rid,
+                    "strategy_id": sid,
                     "trades": trades,
                     "total_pnl": round(pnl, 4),
                     "per_trade_pnl": round(pnl / trades, 6) if trades else 0.0,
@@ -491,7 +515,7 @@ async def run_parameter_sweep(
                 results.append({"label": label, "run_id": rid, "error": "failed"})
 
     results.sort(key=lambda r: r.get("total_pnl", float("-inf")), reverse=True)
-    best = results[0]["label"] if results else "none"
+    best = next((r["label"] for r in results if "error" not in r), "none")
 
     # Plain-English analysis
     lines = [f"Sweep of {len(variants)} variant(s) on strategy {strategy_id}, dataset {dataset_id}."]
