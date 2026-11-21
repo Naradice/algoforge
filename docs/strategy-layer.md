@@ -319,3 +319,24 @@ Reference run (9 majors, carry + VIX-jump guard, 2000→2026-10): Sharpe 0.65, 2
 Result includes `stress` (book P&L in 2008, 2011, 2015 SNB, 2016 Brexit, 2020, 2024-08 windows) and `targets`
 (latest signed weights). A strategy whose definition contains `universe` runs through this engine from the normal
 `POST /strategies/{id}/runs` (modes `backtest` and `paper`; `paper` re-computes the current target book).
+
+---
+
+## Backtesting & Execution Anti-Patterns (Guidelines & Lessons Learned)
+
+To prevent severe performance discrepancies between backtest and live execution, all strategy implementations must strictly adhere to the following quantitative engineering principles.
+
+### 1. Prohibition of Intra-Bar Lookahead Bias (足内先読み・タイムトラベルの厳禁)
+- **The Core Rule:** When an entry/exit signal is triggered on bar $i$ (close/evaluation), the execution **must occur at bar $i+1$ Open or later**.
+- **No Same-Bar High/Low Settlement:** Never evaluate SL (Stop Loss) or TP (Take Profit) against the High/Low of the very same bar $i$ where the condition was detected. Doing so creates an artificial "wick/pinbar illusion," falsely assuming the trade caught the extreme wick of the candle and immediately exited with profit, inflating Win Rate and Profit Factor (e.g. producing false PF 2.80+ when real next-bar execution is PF < 1.0).
+- **No Ad-Hoc Execution Loops:** Do not create separate "toy backtesters" (such as `analyst_strategy.py`). All strategies must integrate into the standard engine (`strategy/engine/backtest.py`), which natively enforces the `pending_entry -> next bar open fill -> subsequent bar SL/TP checks` execution lifecycle.
+
+### 2. Strict Separation of Out-of-Sample Evaluation (学習内評価の禁止とパージング)
+- **No Full-Retrained In-Sample Scoring:** Never evaluate or publish backtest results by scoring the training dataset with a model that was retrained on that entire dataset.
+- **Walk-Forward with Purging:** ML-filtered strategies must be evaluated using strictly sequential Walk-Forward splits. Any training events whose label holding window overlaps with the start of the validation window must be purged to prevent label leakage.
+- **Distinguish Filtering from Re-Simulation:** Filtering existing historical trades by score is an offline analytical study, not an execution backtest. An actual backtest must simulate daily quota preservation, subsequent intraday candidates upon rejection, and next-bar order executions.
+
+### 3. Mandatory Fail-Closed Architecture for Live Runners (ライブ執行のフェイルクローズ徹底)
+- **Whitelist-Only Order Approval:** When an ML filter or safety guard is enabled, orders may proceed **only if** inference succeeds and returns a strictly finite numeric probability that meets or exceeds the threshold (`math.isfinite(prob) and prob >= threshold`).
+- **Default to Rejection (Fail-Closed):** Any anomalous state—including empty candles, missing data, API timeout, unhandled exceptions, `NaN`, or $\pm\infty$—must unconditionally cancel the order candidate (`dir_to_enter = None`). Never permit a "fail-open" path where an unverified signal defaults to execution.
+

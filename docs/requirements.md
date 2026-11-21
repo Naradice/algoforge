@@ -431,3 +431,7 @@ sub-app (mounted in `main.py`) since it isn't a FastAPI router and can't use
 `ALGOFORGE_NO_AUTH=1`, matching `auth.optional_auth`'s existing dev-only escape hatch. Added
 `scripts/create_api_key.py` to issue keys (`python scripts/create_api_key.py --name
 research-agent-service`) since the Settings → API Keys UI is still a roadmap stub.
+
+## 戦略探索からの実装要求
+
+東京仲値と買い板補充の実装要求は [戦略探索の実装要求](../requirements/strategy-research.md) を参照してください。

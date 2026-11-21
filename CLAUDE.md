@@ -238,6 +238,19 @@ The `docs/` directory is the authoritative human-readable reference for the plat
 - When a roadmap item is completed, move it to a "Done" section or remove the checkbox.
 - Docs describe the *actual* implementation — never document planned features as if they exist.
 
+### Quantitative Engineering & Strategy Rules (Never Break These)
+1. **Always Use Standard Backtest Engine (`strategy/engine/backtest.py`):**
+   - Never write isolated ad-hoc simulation loops (e.g., `analyst_strategy.py`). Always extend `conditions.py` or `backtest.py`.
+   - All executions must enforce `pending_entry` -> fill at next bar's `open`.
+   - Never evaluate SL/TP inside the same candle that triggered the condition (prevents artificial wick/pinbar lookahead bias).
+2. **Strict Out-of-Sample Evaluation & Purging:**
+   - Never report in-sample scores from full-retrained models as backtest metrics.
+   - Use sequential Walk-Forward CV with purging (discard training samples whose forward outcome overlaps the validation window).
+3. **Fail-Closed Live Execution:**
+   - ML filters and risk guards must be whitelist-only: `math.isfinite(prob) and prob >= threshold`.
+   - Empty data, exceptions, `NaN`, or $\pm\infty$ must unconditionally cancel the trade (`dir_to_enter = None`).
+
+
 ---
 
 ## Maintenance scripts (`scripts/`)

@@ -178,6 +178,9 @@ def _eval_one(
             return False
         return evaluate_llm_condition(df_upto, bar_index, cond)
 
+    if ctype == "ml_rebound_filter":
+        return _eval_ml_rebound(row, cond, context)
+
     # Default: standard comparison condition
     return _eval_comparison(row, cond)
 
@@ -383,3 +386,42 @@ def _resolve(row: pd.Series, operand) -> float:
             raise KeyError(f"Column '{operand}' not found. Available: {list(row.index)}")
         return float(val)
     return float(operand)
+
+
+def _eval_ml_rebound(row: pd.Series, cond: dict, context: dict[str, Any] | None) -> bool:
+    """
+    Evaluates Rebound Classifier probability.
+    Enforces FAIL-CLOSED: returns True ONLY if inference succeeds with finite prob >= threshold.
+    """
+    threshold = float(cond.get("threshold", 0.50))
+    direction = cond.get("direction", "buy")
+    model_path = cond.get("model_path")
+
+    if "expected_low" not in row.index or "expected_high" not in row.index:
+        return False
+
+    exp_low = row["expected_low"]
+    exp_high = row["expected_high"]
+    if math.isnan(float(exp_low)) or math.isnan(float(exp_high)):
+        return False
+
+    touch_p = float(row.get("low" if direction == "buy" else "high", row.get("close", 0.0)))
+    bar_time = getattr(row, "name", None) or getattr(row, "time", None)
+
+    try:
+        from strategy.engine.rebound_features import predict_rebound_prob
+        prob = predict_rebound_prob(
+            bar_series=row,
+            direction=direction,
+            exp_low=float(exp_low),
+            exp_high=float(exp_high),
+            touch_price=touch_p,
+            bar_time=bar_time,
+            model_path=model_path,
+        )
+        if isinstance(prob, (int, float)) and math.isfinite(prob) and prob >= threshold:
+            return True
+        return False
+    except Exception:
+        return False
+

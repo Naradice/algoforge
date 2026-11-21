@@ -27,6 +27,9 @@ in AlgoForge strategy definitions so existing saved strategies keep working:
     event       → {id}_near (1 inside a pre/post window of a matching release), {id}_mins_to_next, {id}_mins_since_last,
                   {id}_surprise (last (actual-forecast), z-scored). params: calendar (event_calendar artifact path),
                   currencies, min_impact=high, pre_minutes=60, post_minutes=60, title_contains, surprise_window=24
+    supply_event → {id}_event_active (1 if disclosed in lookback window), {id}_institutional_buy,
+                  {id}_squeeze_alert, {id}_latest_ratio_change, {id}_days_since_event.
+                  params: events_path, symbol, lookback_days=10. Point-in-time aligned.
     rvol        → {id} (annualised realised vol), {id}_ratio (short/long vol), {id}_pct (1y percentile rank);
                   proxy for implied vol. params: window=20, long_window=250, periods_per_year=252, column
     carry       → {id} (annual base-quote rate differential), {id}_w (diff/scale clipped to +-cap, 0 inside +-threshold)
@@ -446,6 +449,30 @@ def _apply_one(df: pd.DataFrame, itype: str, iid: str, params: dict) -> pd.DataF
         df[f"{iid}_bear_pin"] = technical.bearish_pinbar(df, ohlc, ratio=ratio).astype(int)
         df[f"{iid}_bull_outside"] = technical.bullish_outside(df, ohlc).astype(int)
         df[f"{iid}_bear_outside"] = technical.bearish_outside(df, ohlc).astype(int)
+
+    elif itype == "supply_event":
+        from strategy.engine.supply_features import supply_event_features, load_supply_events
+        sym = str(params.get("symbol", ""))
+        ev_df = load_supply_events(params.get("events_path"))
+        feats = supply_event_features(
+            df.index,
+            ev_df,
+            code=sym,
+            lookback_days=int(params.get("lookback_days", 10)),
+        )
+        for c in feats.columns:
+            df[f"{iid}_{c}"] = feats[c].values
+
+    elif itype == "rebound_features":
+        from strategy.engine.rebound_features import compute_m30_indicators
+        df = compute_m30_indicators(df)
+
+    elif itype == "analyst_forecast":
+        from strategy.engine.forecast_levels import apply_forecast_indicators
+        sym = str(params.get("symbol", "USDJPY"))
+        src = str(params.get("source", "FX168"))
+        tol = float(params.get("tolerance_pips", 10.0))
+        df = apply_forecast_indicators(df, symbol=sym, source=src, tolerance_pips=tol)
 
     else:
         raise ValueError(f"Unknown indicator type: {itype!r}")

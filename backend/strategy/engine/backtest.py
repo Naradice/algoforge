@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import math
 import os
-from datetime import datetime, timezone, date
+from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from typing import Callable
 
@@ -69,7 +69,78 @@ from strategy.engine.execution import RiskParams, OpenPosition, calc_volume, fil
 # ---------------------------------------------------------------------------
 
 def _normalise(definition: dict) -> dict:
-    """Convert old { entry, exit } format to { long/short: { entry, exit } }."""
+    """
+    Normalises strategy definitions:
+    - Transpiles analyst_* forecast strategies into standard indicators + long/short blocks.
+    - Converts old { entry, exit } format to { long/short: { entry, exit } }.
+    """
+    strat_type = definition.get("strategy_type", "")
+    if strat_type.startswith("analyst_"):
+        if strat_type not in {"analyst_range_reversion", "analyst_breakout_momentum"}:
+            raise ValueError(f"Unsupported analyst strategy type: {strat_type!r}")
+        params = definition.get("parameters", {})
+        sym = definition.get("symbol", "USDJPY")
+        source = params.get("source", "FX168")
+        tol_pips = float(params.get("tolerance_pips", 10.0) or 0.0)
+        sl_pips = params.get("sl_pips")
+        tp_pips = params.get("tp_pips")
+        ml_filter = params.get("ml_filter")
+        ml_enabled = isinstance(ml_filter, dict) and ml_filter.get("enabled", False)
+
+        indicators = list(definition.get("indicators", []))
+        if not any(i.get("type") == "analyst_forecast" for i in indicators):
+            indicators.append({
+                "id": "forecast",
+                "type": "analyst_forecast",
+                "params": {"symbol": sym, "source": source, "tolerance_pips": tol_pips}
+            })
+
+        if ml_enabled and strat_type == "analyst_range_reversion":
+            indicators.append({"id": "rebound_features", "type": "rebound_features"})
+
+        long_conds = [{"left": "has_forecast", "op": "==", "right": 1}]
+        short_conds = [{"left": "has_forecast", "op": "==", "right": 1}]
+
+        if strat_type == "analyst_range_reversion":
+            long_conds.append({"left": "low", "op": "<=", "right": "buy_boundary"})
+            short_conds.append({"left": "high", "op": ">=", "right": "sell_boundary"})
+            if ml_enabled:
+                long_conds.append({
+                    "type": "ml_rebound_filter",
+                    "threshold": ml_filter.get("threshold", 0.50),
+                    "model_path": ml_filter.get("model_path"),
+                    "direction": "buy"
+                })
+                short_conds.append({
+                    "type": "ml_rebound_filter",
+                    "threshold": ml_filter.get("threshold", 0.50),
+                    "model_path": ml_filter.get("model_path"),
+                    "direction": "sell"
+                })
+        elif strat_type == "analyst_breakout_momentum":
+            long_conds.append({"left": "high", "op": ">", "right": "expected_high"})
+            short_conds.append({"left": "low", "op": "<", "right": "expected_low"})
+
+        risk = dict(definition.get("risk", {}))
+        pip_unit = 0.01 if "JPY" in sym.upper() else 0.0001
+        risk["pip_size"] = pip_unit
+        risk.setdefault("sl_pct", 0.0)
+        risk.setdefault("tp_pct", 0.0)
+        if sl_pips is not None and str(sl_pips).lower() != "none" and "sl_pips" not in risk:
+            risk["sl_pips"] = float(sl_pips)
+        if tp_pips is not None and str(tp_pips).lower() not in ("none", "opposite") and "tp_pips" not in risk:
+            risk["tp_pips"] = float(tp_pips)
+        if "max_positions" not in risk:
+            risk["max_positions"] = 1
+
+        return {
+            **definition,
+            "indicators": indicators,
+            "long": {"entry": {"conditions": long_conds, "logic": "and"}, "exit": {}},
+            "short": {"entry": {"conditions": short_conds, "logic": "and"}, "exit": {}},
+            "risk": risk,
+        }
+
     if "long" in definition or "short" in definition:
         return definition
 
@@ -99,6 +170,8 @@ def run_backtest(
     walk_forward_ratio: float = 0.0,
     window_size: int = 0,
     starting_capital: float = 1.0,
+    from_ts: datetime | None = None,
+    to_ts: datetime | None = None,
 ) -> tuple[list[dict], dict, list[dict]]:
     """
     Load the dataset parquet and run a bar-by-bar simulation.
@@ -114,8 +187,26 @@ def run_backtest(
 
     store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts"))
     raw_df = _load_df(store / artifact_path)
+    if from_ts is not None or to_ts is not None:
+        index = pd.to_datetime(raw_df.index, utc=True)
+        mask = np.ones(len(index), dtype=bool)
+        if from_ts is not None:
+            mask &= index >= pd.to_datetime(from_ts, utc=True)
+        if to_ts is not None:
+            mask &= index <= pd.to_datetime(to_ts, utc=True)
+        raw_df = raw_df.loc[mask]
+        if raw_df.empty:
+            raise ValueError("No market data in the requested backtest period")
+
+    # Note: analyst_* strategies are transpiled by _normalise() into standard indicators/conditions.
 
     definition = _normalise(definition)
+    analyst = definition.get("strategy_type", "").startswith("analyst_")
+    analyst_params = definition.get("parameters", {}) if analyst else {}
+    time_stop = analyst and analyst_params.get("exit_at_close", True)
+    opposite_tp = analyst and str(analyst_params.get("tp_pips")).lower() == "opposite"
+    if analyst:
+        from strategy.engine.forecast_levels import ANALYST_CLOSE_UTC
 
     indicator_specs = definition.get("indicators", [])
     warmup_bars = estimate_warmup_bars(indicator_specs)
@@ -140,6 +231,9 @@ def run_backtest(
     pos_long: OpenPosition | None = None
     pos_short: OpenPosition | None = None
     equity = 1.0      # normalised starting equity
+    entered_on = {}
+    analyst_signal_at = None
+    long_target = short_target = None
     pending_long_entry  = False
     pending_short_entry = False
     last_loss_bar = -9999
@@ -198,10 +292,51 @@ def run_backtest(
         # even when both long and short are pending simultaneously.
         num_open = (1 if pos_long else 0) + (1 if pos_short else 0)
 
-        if pending_long_entry and pos_long is None and num_open < rp.max_positions:
+        entry_window = not analyst or (
+            analyst_signal_at is not None
+            and bar_dt == analyst_signal_at + timedelta(minutes=30)
+            and bar_dt.date() == analyst_signal_at.date()
+            and bar_dt.time() < ANALYST_CLOSE_UTC
+        )
+
+        if time_stop:
+            for position in (pos_long, pos_short):
+                if position and (bar_dt.time() >= ANALYST_CLOSE_UTC or bar_date != position.opened_at.date()):
+                    side = "sell" if position.direction == "buy" else "buy"
+                    pnl = close_trade(position, fill_price(open_, side, rp.slippage_pct),
+                                      bar_dt, "day_close", trades, symbol, rp, phase)
+                    equity += pnl
+                    _record_day_loss(day_loss, bar_date, pnl)
+                    if pnl < 0:
+                        last_loss_bar = i
+                    if on_trade:
+                        on_trade(trades[-1], "close")
+                    if position.direction == "buy":
+                        pos_long = None
+                    else:
+                        pos_short = None
+            num_open = (1 if pos_long else 0) + (1 if pos_short else 0)
+
+        if entry_window and pending_long_entry and pos_long is None and num_open < rp.max_positions:
             fill = fill_price(open_, "buy", rp.slippage_pct)
-            sl = fill * (1 - rp.sl_pct) if rp.sl_pct > 0 else None
-            tp = fill * (1 + rp.tp_pct) if rp.tp_pct > 0 else None
+            if rp.sl_pips > 0:
+                sl = fill - (rp.sl_pips * rp.pip_size)
+            elif rp.sl_pct > 0:
+                sl = fill * (1 - rp.sl_pct)
+            else:
+                sl = None
+
+            if rp.tp_pips > 0:
+                tp = fill + (rp.tp_pips * rp.pip_size)
+            elif rp.tp_pct > 0:
+                tp = fill * (1 + rp.tp_pct)
+            else:
+                tp = None
+
+            if opposite_tp and long_target > fill:
+                tp = long_target
+            if analyst:
+                entered_on["buy"] = bar_date
             vol = calc_volume(rp, equity, fill, atr)
             pos_long = OpenPosition("buy", fill, sl, tp, vol, bar_dt, i)
             num_open += 1
@@ -209,10 +344,26 @@ def run_backtest(
                 on_trade({"direction": "buy", "entry_price": fill, "sl_price": sl, "tp_price": tp,
                           "opened_at": bar_dt, "symbol": symbol}, "open")
 
-        if pending_short_entry and pos_short is None and num_open < rp.max_positions:
+        if entry_window and pending_short_entry and pos_short is None and num_open < rp.max_positions:
             fill = fill_price(open_, "sell", rp.slippage_pct)
-            sl = fill * (1 + rp.sl_pct) if rp.sl_pct > 0 else None
-            tp = fill * (1 - rp.tp_pct) if rp.tp_pct > 0 else None
+            if rp.sl_pips > 0:
+                sl = fill + (rp.sl_pips * rp.pip_size)
+            elif rp.sl_pct > 0:
+                sl = fill * (1 + rp.sl_pct)
+            else:
+                sl = None
+
+            if rp.tp_pips > 0:
+                tp = fill - (rp.tp_pips * rp.pip_size)
+            elif rp.tp_pct > 0:
+                tp = fill * (1 - rp.tp_pct)
+            else:
+                tp = None
+
+            if opposite_tp and short_target < fill:
+                tp = short_target
+            if analyst:
+                entered_on["sell"] = bar_date
             vol = calc_volume(rp, equity, fill, atr)
             pos_short = OpenPosition("sell", fill, sl, tp, vol, bar_dt, i)
             num_open += 1
@@ -339,18 +490,26 @@ def run_backtest(
         if can_enter:
             num_open = (1 if pos_long else 0) + (1 if pos_short else 0)
 
-            if pos_long is None and long_def.get("entry") and num_open < rp.max_positions:
+            if (pos_long is None and long_def.get("entry") and num_open < rp.max_positions
+                    and (not analyst or entered_on.get("buy") != bar_date)):
                 try:
                     if evaluate_conditions(row, long_def["entry"], context=ctx):
                         pending_long_entry = True
+                        analyst_signal_at = bar_dt
+                        if opposite_tp:
+                            long_target = float(row["expected_high"])
                         num_open += 1
                 except (KeyError, ValueError):
                     pass
 
-            if pos_short is None and short_def.get("entry") and num_open < rp.max_positions:
+            if (pos_short is None and short_def.get("entry") and num_open < rp.max_positions
+                    and (not analyst or entered_on.get("sell") != bar_date)):
                 try:
                     if evaluate_conditions(row, short_def["entry"], context=ctx):
                         pending_short_entry = True
+                        analyst_signal_at = bar_dt
+                        if opposite_tp:
+                            short_target = float(row["expected_low"])
                         num_open += 1
                 except (KeyError, ValueError):
                     pass
@@ -497,9 +656,12 @@ def _load_df_windowed(
 
         if to_ts is not None:
             try:
-                unix = df.index.asi8 // 1_000_000_000
+                if df.index.tz is not None:
+                    unix = df.index.tz_convert("UTC").tz_localize(None).astype("datetime64[s]").astype("int64")
+                else:
+                    unix = df.index.astype("datetime64[s]").astype("int64")
             except Exception:
-                unix = df.index.astype("datetime64[s]").astype("int64")
+                unix = pd.Series([int(t.timestamp()) if isinstance(t, pd.Timestamp) else 0 for t in df.index], index=df.index)
             df = df[unix <= int(to_ts)]
 
         has_more = len(df) > total_needed
@@ -512,7 +674,20 @@ def _load_df_windowed(
 
 def _load_df(path: Path) -> pd.DataFrame:
     if not path.exists():
-        raise FileNotFoundError(f"Dataset artifact not found: {path}")
+        # Fallback candidates across root artifacts and backend artifacts
+        candidates = [
+            Path("../artifacts") / path.name,
+            Path("../artifacts") / "datasets" / path.name,
+            Path("artifacts") / "datasets" / path.name,
+            Path(__file__).resolve().parents[2] / "artifacts" / "datasets" / path.name,
+            Path(__file__).resolve().parents[3] / "artifacts" / "datasets" / path.name,
+        ]
+        for c in candidates:
+            if c.exists():
+                path = c
+                break
+        else:
+            raise FileNotFoundError(f"Dataset artifact not found: {path}")
     if path.is_dir():
         from data.parquet_reader import load_ddm_ticks
         tick_df = load_ddm_ticks(path, max_files=_MAX_TICK_FILES)
@@ -531,7 +706,7 @@ def _load_df(path: Path) -> pd.DataFrame:
 
 def _row_dt(ts) -> datetime:
     if isinstance(ts, pd.Timestamp):
-        return ts.to_pydatetime().replace(tzinfo=timezone.utc)
+        return (ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")).to_pydatetime()
     return datetime.now(timezone.utc)
 
 

@@ -15,6 +15,7 @@ class OpenPosition:
     bar_index: int = 0
     mae: float = 0.0
     mfe: float = 0.0
+    entry_reason: str = "signal"
 
 
 @dataclass
@@ -25,6 +26,9 @@ class RiskParams:
     atr_multiplier: float = 2.0
     sl_pct: float = 0.02
     tp_pct: float = 0.04
+    sl_pips: float = 0.0
+    tp_pips: float = 0.0
+    pip_size: float = 0.01
     slippage_pct: float = 0.0005
     commission_pct: float = 0.001
     max_positions: int = 1
@@ -46,6 +50,9 @@ class RiskParams:
             atr_multiplier=float(data.get("atr_multiplier", 2.0)),
             sl_pct=float(data.get("sl_pct", 0.02)),
             tp_pct=float(data.get("tp_pct", 0.04)),
+            sl_pips=float(data.get("sl_pips", 0.0)),
+            tp_pips=float(data.get("tp_pips", 0.0)),
+            pip_size=float(data.get("pip_size", 0.01)),
             slippage_pct=float(data.get("slippage_pct", 0.0005)),
             commission_pct=float(data.get("commission_pct", 0.001)),
             max_positions=int(data.get("max_positions", 1)),
@@ -134,6 +141,7 @@ def close_trade(
         "profit": profit,
         "opened_at": pos.opened_at,
         "closed_at": closed_at,
+        "entry_reason": getattr(pos, "entry_reason", "signal"),
         "exit_reason": reason,
         "mae": round(mae_pct, 6),
         "mfe": round(mfe_pct, 6),
