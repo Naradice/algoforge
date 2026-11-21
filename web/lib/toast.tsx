@@ -12,9 +12,13 @@ interface Toast {
 
 interface ToastContextValue {
   toast: (message: string, variant?: ToastVariant) => void;
+  addToast: (message: string, variant?: ToastVariant) => void;
 }
 
-const ToastContext = createContext<ToastContextValue>({ toast: () => {} });
+const ToastContext = createContext<ToastContextValue>({
+  toast: () => {},
+  addToast: () => {},
+});
 
 const ICON = {
   success: (
@@ -51,7 +55,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ToastContext.Provider value={{ toast }}>
+    <ToastContext.Provider value={{ toast, addToast: toast }}>
       {children}
       {/* Material Snackbar — bottom-right stack */}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none" style={{ maxWidth: 360 }}>

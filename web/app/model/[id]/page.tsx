@@ -38,7 +38,7 @@ export default function ModelDetailPage() {
   const { data: model, isLoading, error } = useSWR(`/api/v1/models/${id}`, fetcher, { refreshInterval: 5000 });
   const { data: runs } = useSWR(`/api/v1/models/${id}/training-runs`, fetcher, { refreshInterval: 5000 });
   const { data: validations } = useSWR(`/api/v1/models/${id}/validations`, fetcher);
-  const { data: datasets } = useSWR("/api/v1/datasets", fetcher);
+  const { data: datasets } = useSWR("/api/v1/datasets?page_size=1000", fetcher);
 
   // ── Train form state ──
   const [showTrainForm, setShowTrainForm] = useState(false);

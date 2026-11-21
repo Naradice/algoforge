@@ -7,11 +7,12 @@ import functools
 import os
 from pathlib import Path
 
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select as sa_select
+from sqlalchemy import select
 
 from database import get_db
 from pagination import Pagination
@@ -393,3 +394,95 @@ async def investigate_strategy(strategy_id: int, body: dict):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class StrategyOptimizeRequest(BaseModel):
+    dataset_id: int
+    param_ranges: dict[str, list[Any]] = Field(default_factory=dict)
+    target_metric: str = "total_pnl"
+    primary_param: str | None = None
+
+
+@router.post("/{strategy_id}/optimize")
+async def optimize_strategy(
+    strategy_id: int,
+    body: StrategyOptimizeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run grid search optimization over parameter ranges and return top results + sensitivity curve."""
+    from data.models import Dataset
+    from strategy.models import Strategy
+    from strategy.engine.optimizer import run_parameter_optimization
+
+    strat = await strategy_service.get_strategy(db, strategy_id)
+    if not strat:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    ds_res = await db.execute(select(Dataset).where(Dataset.id == body.dataset_id))
+    ds = ds_res.scalar_one_or_none()
+    if not ds or not ds.artifact_path:
+        raise HTTPException(status_code=404, detail="Dataset or artifact not found")
+
+    # If no param_ranges provided, set intelligent defaults based on strategy_type
+    param_ranges = dict(body.param_ranges)
+    strat_def = dict(strat.definition or {})
+    is_analyst = strat_def.get("strategy_type", "").startswith("analyst_")
+
+    if not param_ranges:
+        if is_analyst:
+            param_ranges = {
+                "sl_pips": [15, 20, 25, 30, 40, 50, 60, 75, 100, 150, None],
+                "tp_pips": [50, 80, 100, 150, "opposite"],
+            }
+        else:
+            param_ranges = {
+                "sl_pct": [0.005, 0.01, 0.015, 0.02, 0.03, 0.05],
+                "tp_pct": [0.01, 0.02, 0.03, 0.04, 0.06],
+            }
+
+    primary_param = body.primary_param or ("sl_pips" if is_analyst else "sl_pct")
+
+    res = await asyncio.to_thread(
+        run_parameter_optimization,
+        strat_def,
+        ds.artifact_path,
+        param_ranges,
+        target_metric=body.target_metric,
+        primary_param=primary_param,
+    )
+    return DataResponse(data=res)
+
+
+@router.post("/{strategy_id}/apply-params")
+async def apply_parameters(
+    strategy_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply optimized parameters to strategy definition."""
+    from strategy.models import StrategyUpdate
+    strat = await strategy_service.get_strategy(db, strategy_id)
+    if not strat:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    params_to_apply = body.get("params", {})
+    new_def = dict(strat.definition or {})
+    is_analyst = new_def.get("strategy_type", "").startswith("analyst_")
+
+    if is_analyst:
+        current_params = dict(new_def.get("parameters", {}))
+        current_params.update(params_to_apply)
+        new_def["parameters"] = current_params
+    else:
+        risk = dict(new_def.get("risk", {}))
+        current_params = dict(new_def.get("parameters", {}))
+        for k, v in params_to_apply.items():
+            if k in ("sl_pct", "tp_pct", "risk_pct", "slippage_pct", "commission_pct"):
+                risk[k] = v
+            else:
+                current_params[k] = v
+        new_def["risk"] = risk
+        new_def["parameters"] = current_params
+
+    updated = await strategy_service.update_strategy(db, strategy_id, StrategyUpdate(definition=new_def))
+    return DataResponse(data={"strategy_id": strategy_id, "definition": updated.definition})

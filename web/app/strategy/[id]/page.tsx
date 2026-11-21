@@ -10,6 +10,8 @@ import { StrategyEditor, StrategyDefinitionView } from "@/components/strategy-ed
 import { StrategyChart } from "@/components/strategy-chart";
 import { EquityChart } from "@/components/equity-chart";
 import { InvestigationPanel } from "@/components/investigation-panel";
+import { OptimizationPanel } from "@/components/optimization-panel";
+import { MT5Settings } from "@/components/mt5-settings";
 
 // ---------------------------------------------------------------------------
 // Metrics panel — handles combined / IS / OOS split view
@@ -36,6 +38,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
     <div className="rounded bg-gray-900 px-3 py-2">
       <p className="text-xs text-gray-500 leading-tight">{label.replace(/_/g, " ")}</p>
       <p className="text-sm font-mono text-white">{value}</p>
+
     </div>
   );
 }
@@ -241,7 +244,7 @@ export default function StrategyDetailPage() {
     refreshInterval: (data) =>
       data?.some((r: any) => ["pending", "running"].includes(r.status)) ? 3000 : 0,
   });
-  const { data: datasets } = useSWR("/api/v1/datasets", fetcher);
+  const { data: datasets } = useSWR("/api/v1/datasets?page_size=1000", fetcher);
   const [showVersions, setShowVersions] = useState(false);
   const { data: versions } = useSWR(
     showVersions ? `/api/v1/strategies/${id}/versions` : null,
@@ -447,10 +450,39 @@ export default function StrategyDetailPage() {
     }
   }
 
-  const [stopping, setStopping] = useState<number | null>(null);
+
+  function syncWithEquityRange() {
+    if (!equityCurve || equityCurve.length === 0) return;
+    const first = equityCurve[0].timestamp;
+    const last = equityCurve[equityCurve.length - 1].timestamp;
+    const toLocal = (iso: string) => {
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return "";
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      } catch {
+        return "";
+      }
+    };
+    const fromStr = toLocal(first);
+    const toStr = toLocal(last);
+    setChartFrom(fromStr);
+    setChartTo(toStr);
+    setAppliedRange({ from: fromStr, to: toStr });
+  }
+
+  function handleLoadChart() {
+    setShowChart(true);
+    if (!appliedRange.from && !appliedRange.to && equityCurve && equityCurve.length > 0) {
+      syncWithEquityRange();
+    }
+  }
+
+    const [stopping, setStopping] = useState<number | null>(null);
   const [deletingRun, setDeletingRun] = useState<number | null>(null);
   const [deletingStrategy, setDeletingStrategy] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [showMT5Modal, setShowMT5Modal] = useState(false);
 
   const [editingDef, setEditingDef] = useState(false);
   const [savingDef, setSavingDef] = useState(false);
@@ -884,6 +916,13 @@ export default function StrategyDetailPage() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-medium uppercase tracking-wide text-gray-400">Runs</h2>
           <div className="flex gap-2">
+            <button
+              onClick={() => setShowMT5Modal(true)}
+              className="rounded border border-gray-700 bg-gray-800 px-3 py-1 text-xs text-gray-300 hover:bg-gray-700 flex items-center gap-1.5 transition-colors"
+              title="Configure MT5 broker connection"
+            >
+              <span>⚙️</span> MT5 Broker
+            </button>
             {activeRun && (
               <button
                 onClick={() => stopRun(activeRun.id)}
@@ -913,10 +952,20 @@ export default function StrategyDetailPage() {
                 onChange={(e) => setMode(e.target.value)}
                 className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
               >
-                <option value="backtest">Backtest</option>
-                <option value="paper">Paper (live yfinance, simulated orders)</option>
-                <option value="live">Live (broker — not implemented)</option>
+                <option value="backtest">Backtest (Historical data)</option>
+                <option value="paper">Paper (MT5 Simulated Demo / Dry-run)</option>
+                <option value="live">Live (MT5 Real Order Execution)</option>
               </select>
+              {mode === "live" && (
+                <div className="mt-2 rounded bg-amber-950/40 border border-amber-800/60 p-2 text-xs text-amber-300">
+                  ⚠️ <strong>Live Mode:</strong> MT5の接続口座に対して実際の成行発注と決済を行います。事前に「MT5 Broker」ボタンより接続テストおよび口座残高をご確認ください。
+                </div>
+              )}
+              {mode === "paper" && (
+                <div className="mt-2 rounded bg-sky-950/40 border border-sky-800/60 p-2 text-xs text-sky-300">
+                  ℹ️ <strong>Paper Mode:</strong> MT5から取得するリアルタイムレートを用いて、擬似取引シミュレーション（Dry-run）を行います。ブローカー口座への実発注は行われません。
+                </div>
+              )}
             </div>
             {mode === "backtest" && (
               <>
@@ -1159,6 +1208,15 @@ export default function StrategyDetailPage() {
                       Detail →
                     </a>
                     <span className="text-gray-500 mr-3">{selectedRun === run.id ? "▲ Hide" : "▼ Show"}</span>
+                    {["pending", "running"].includes(run.status) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); stopRun(run.id); }}
+                        disabled={stopping === run.id}
+                        className="text-amber-400 hover:text-amber-300 font-medium disabled:opacity-50 mr-3"
+                      >
+                        {stopping === run.id ? "Stopping…" : "⏹ Stop"}
+                      </button>
+                    )}
                     {!["pending", "running"].includes(run.status) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); deleteRun(run.id); }}
@@ -1174,6 +1232,23 @@ export default function StrategyDetailPage() {
             </tbody>
           </table>
         )}
+      </section>
+
+      {/* Parameter Optimization */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-gray-400">Parameter Optimization</h2>
+          <p className="text-xs text-gray-600">Automated grid search & sensitivity curve analysis</p>
+        </div>
+        <OptimizationPanel
+          strategyId={id}
+          datasets={datasets ?? []}
+          currentDefinition={strategy?.definition}
+          onStrategyUpdated={() => {
+            mutate(`/api/v1/strategies/${id}`);
+            mutate(`/api/v1/strategies/${id}/versions`);
+          }}
+        />
       </section>
 
       {/* AI Investigation */}
@@ -1199,8 +1274,8 @@ export default function StrategyDetailPage() {
                 <h3 className="text-xs font-medium text-gray-400">Price Chart</h3>
                 {!showChart && (
                   <button
-                    onClick={() => setShowChart(true)}
-                    className="text-xs text-sky-400 hover:text-sky-300"
+                    onClick={handleLoadChart}
+                    className="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1"
                   >
                     Load chart →
                   </button>
@@ -1247,6 +1322,16 @@ export default function StrategyDetailPage() {
                   >
                     Apply
                   </button>
+                  {equityCurve && equityCurve.length > 0 && (
+                    <button
+                      onClick={syncWithEquityRange}
+                      title="Sync chart view range with the Equity Curve"
+                      className="rounded border border-sky-700 bg-sky-950/70 px-2 py-0.5 text-xs text-sky-300 hover:bg-sky-900 transition-colors flex items-center gap-1 font-medium"
+                    >
+                      <span>🎯</span>
+                      <span>Match Equity Range</span>
+                    </button>
+                  )}
                   {(appliedRange.from || appliedRange.to) && (
                     <button
                       onClick={() => { setChartFrom(""); setChartTo(""); setAppliedRange({ from: "", to: "" }); }}
@@ -1452,7 +1537,8 @@ export default function StrategyDetailPage() {
                       <th className="py-1 pr-3">PnL</th>
                       <th className="py-1 pr-3">MAE</th>
                       <th className="py-1 pr-3">MFE</th>
-                      <th className="py-1 pr-3">Reason</th>
+                      <th className="py-1 pr-3">Signal / Entry</th>
+                      <th className="py-1 pr-3">Exit Reason</th>
                       <th className="py-1">Opened</th>
                     </tr>
                   </thead>
@@ -1482,7 +1568,16 @@ export default function StrategyDetailPage() {
                         </td>
                         <td className="py-1 pr-3 font-mono text-gray-500">{t.mae != null ? `${(t.mae * 100).toFixed(2)}%` : "—"}</td>
                         <td className="py-1 pr-3 font-mono text-gray-500">{t.mfe != null ? `${(t.mfe * 100).toFixed(2)}%` : "—"}</td>
-                        <td className="py-1 pr-3 text-gray-500 text-[10px]">{t.exit_reason ?? "—"}</td>
+                        <td className="py-1 pr-3 text-[10px] whitespace-nowrap">
+                          {t.entry_reason ? (
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 font-mono text-[10px] border border-sky-800/40">
+                              {t.entry_reason}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600">—</span>
+                          )}
+                        </td>
+                        <td className="py-1 pr-3 text-gray-400 text-[10px] font-mono whitespace-nowrap">{t.exit_reason ?? "—"}</td>
                         <td className="py-1 text-gray-400">
                           {new Date(t.opened_at).toLocaleDateString()}
                         </td>
@@ -1497,6 +1592,20 @@ export default function StrategyDetailPage() {
           {/* Chat panel */}
           <ChatPanel strategyId={id} runId={selectedRun} />
         </section>
+      )}
+      {/* MT5 Settings Modal */}
+      {showMT5Modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-900 shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setShowMT5Modal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white text-lg font-bold"
+            >
+              ✕
+            </button>
+            <MT5Settings onClose={() => setShowMT5Modal(false)} />
+          </div>
+        </div>
       )}
     </div>
   );

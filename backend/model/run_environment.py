@@ -58,7 +58,8 @@ def _git(*args: str, repo_root: Path) -> str:
     # refuses every command ("dubious ownership") -- read-only queries here are harmless.
     return subprocess.check_output(
         ["git", "-c", "safe.directory=*", *args],
-        cwd=repo_root, text=True, stderr=subprocess.DEVNULL, timeout=_GIT_TIMEOUT_S,
+        cwd=repo_root, text=True, encoding="utf-8", errors="replace",
+        stderr=subprocess.DEVNULL, timeout=_GIT_TIMEOUT_S,
     )
 
 
@@ -92,7 +93,8 @@ def git_state(repo_root: Path = REPO_ROOT) -> dict:
         state["git_dirty_files"] = dirty_files[:_MAX_DIRTY_FILES]
         if dirty_files:
             diff = _git("diff", "HEAD", "--", "backend", repo_root=repo_root)
-            state["git_diff_sha256"] = hashlib.sha256(diff.encode("utf-8")).hexdigest()
+            if diff:
+                state["git_diff_sha256"] = hashlib.sha256(diff.encode("utf-8")).hexdigest()
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
         logger.warning("run_environment: git status failed", exc_info=True)
 

@@ -88,6 +88,7 @@ class Trade(Base):
     profit: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     opened_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    entry_reason: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     exit_reason: Mapped[str | None] = mapped_column(sa.Text, nullable=True)  # signal | sl | tp | end_of_data
     phase: Mapped[str | None] = mapped_column(sa.Text, nullable=True)        # is | oos
     mae: Mapped[float | None] = mapped_column(sa.Float, nullable=True)       # max adverse excursion
@@ -219,6 +220,7 @@ class TradeRead(BaseModel):
     profit: float | None = None
     opened_at: datetime
     closed_at: datetime | None = None
+    entry_reason: str | None = None
     exit_reason: str | None = None
     phase: str | None = None
     mae: float | None = None

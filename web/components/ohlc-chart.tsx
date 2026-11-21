@@ -86,7 +86,7 @@ export function OHLCChart({ candles, indicators, markers, events = [], height = 
         wickUpColor: "#22c55e",
         wickDownColor: "#ef4444",
       });
-      candleSeries.setData(candles);
+      candleSeries.setData(candles as any);
 
       // ── Overlay indicators (EMA, SMA, BB — same price scale) ───────────────
       const overlayEntries = Object.entries(indicators).filter(
@@ -100,7 +100,7 @@ export function OHLCChart({ candles, indicators, markers, events = [], height = 
           priceLineVisible: false,
           crosshairMarkerVisible: false,
         });
-        ls.setData(series.data);
+        ls.setData(series.data as any);
       }
 
       // ── All markers: economic events + trades (sorted by time) ─────────────
@@ -135,7 +135,7 @@ export function OHLCChart({ candles, indicators, markers, events = [], height = 
 
       if (allMarkers.length > 0) {
         allMarkers.sort((a, b) => a.time - b.time);
-        candleSeries.setMarkers(allMarkers);
+        candleSeries.setMarkers(allMarkers as any);
       }
 
       chart.timeScale().fitContent();

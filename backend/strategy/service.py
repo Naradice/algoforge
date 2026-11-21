@@ -1046,9 +1046,12 @@ def _build_chart_base(
     # Filter by upper time bound first so we work on the relevant subset.
     if from_ts is not None or to_ts is not None:
         try:
-            unix = df.index.asi8 // 1_000_000_000
+            if df.index.tz is not None:
+                unix = df.index.tz_convert("UTC").tz_localize(None).astype("datetime64[s]").astype("int64")
+            else:
+                unix = df.index.astype("datetime64[s]").astype("int64")
         except Exception:
-            unix = df.index.astype("datetime64[s]").astype("int64")
+            unix = pd.Series([int(t.timestamp()) if isinstance(t, pd.Timestamp) else 0 for t in df.index], index=df.index)
         mask = pd.Series(True, index=df.index)
         if from_ts is not None:
             mask = mask & (unix >= from_ts)
