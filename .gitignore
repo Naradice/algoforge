@@ -20,3 +20,11 @@ tsconfig.tsbuildinfo
 .vscode
 # Celery Beat runtime state (incl. SQLite -shm/-wal and shelve .dat/.dir/.bak variants)
 celerybeat-schedule*
+*.log
+*.log.err
+backend/data/reports_cache/
+backend/scratch_fxstreet.html
+*.tsbuildinfo
+data/
+infra/docker
+
