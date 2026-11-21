@@ -410,8 +410,10 @@ def collect(datasource_id: int, config: dict, *, force: bool = False) -> Collect
     unique = config.get("unique", "segment")
     interval_days = config.get("interval_days", 1)
     custom: list | None = config.get("custom")
+    base_delay: float | None = config.get("request_delay_seconds") or config.get("delay_seconds")
 
-    reports_root = ARTIFACT_STORE / "web_reports"
+    custom_root = config.get("save_dir") or config.get("reports_root") or os.getenv("WEB_REPORTS_STORE_PATH")
+    reports_root = Path(custom_root) if custom_root else (ARTIFACT_STORE / "web_reports")
     out_dir = reports_root / subfolder
     out_dir.mkdir(parents=True, exist_ok=True)
     (reports_root / _CHECKSUM_DIR).mkdir(parents=True, exist_ok=True)
@@ -434,16 +436,35 @@ def collect(datasource_id: int, config: dict, *, force: bool = False) -> Collect
 
     try:
         if custom is None:
-            filename = _resolve_filename(filename_tpl, url, ext)
-            dest = out_dir / filename
-            if _save_file(url, dest, fetch_type, unique, reports_root, browser_state):
-                files_downloaded += 1
+            has_date_placeholder = any(p in url for p in ("{YYYYMMDD}", "{YYMMDD}", "{YYYYMM}", "{YYMM}"))
+            is_initial = config.get("is_initial", False)
+            backfill_days = config.get("backfill_days") or (30 if is_initial else (5 if has_date_placeholder else 1))
+
+            if has_date_placeholder and backfill_days > 1:
+                target_dates = _expand_backfill_dates(backfill_days)
+                logger.info("[collect] backfilling %s across %d dates", url, len(target_dates))
+                for d in target_dates:
+                    resolved_url = _render_date_template(url, d)
+                    filename = _resolve_filename(filename_tpl, resolved_url, ext, target_date=d)
+                    dest = out_dir / filename
+                    if _save_file(resolved_url, dest, fetch_type, unique, reports_root, browser_state):
+                        files_downloaded += 1
+                        _polite_delay(base_delay)
+            else:
+                filename = _resolve_filename(filename_tpl, url, ext)
+                dest = out_dir / filename
+                if _save_file(url, dest, fetch_type, unique, reports_root, browser_state):
+                    files_downloaded += 1
         else:
-            files_downloaded = _process_custom(url, custom, out_dir, reports_root, browser_state, force=force)
+            files_downloaded = _process_custom(url, custom, out_dir, reports_root, browser_state, force=force, base_delay=base_delay)
     finally:
         _close_browser(browser_state)
 
-    _update_last_check(url, state_file)
+    # Only update check date for direct downloads when at least one file was processed
+    # (or when custom steps handled targets, targets update their own state_file).
+    # Never update parent URL state if custom is used or if direct fetch failed.
+    if custom is None and files_downloaded > 0:
+        _update_last_check(url, state_file)
 
     total_files = len([f for f in out_dir.rglob("*") if f.is_file()])
     now = datetime.now(tz=timezone.utc)
@@ -460,7 +481,7 @@ def collect(datasource_id: int, config: dict, *, force: bool = False) -> Collect
 
 def _process_custom(
     page_url: str, steps: list, out_dir: Path, reports_root: Path, browser_state: list,
-    *, force: bool = False,
+    *, force: bool = False, base_delay: float | None = None,
 ) -> int:
     total = 0
     for step in steps:
@@ -469,12 +490,14 @@ def _process_custom(
 
         if step_type == "link_parse":
             links = _extract_links(page_url, browser_state)
+            if links:
+                _polite_delay(base_delay)
             for target in targets:
                 pattern = target.get("value", "")
                 for link in links:
                     if re.search(pattern, link.get("href") or ""):
                         href = _abs_url(link["href"], page_url)
-                        total += _handle_target(href, link.get("text", ""), target, out_dir, reports_root, browser_state, force=force)
+                        total += _handle_target(href, link.get("text", ""), target, out_dir, reports_root, browser_state, force=force, base_delay=base_delay)
 
         elif step_type == "element_parse":
             for target in targets:
@@ -483,7 +506,7 @@ def _process_custom(
                 for val in _extract_elements(page_url, selector, browser_state):
                     if re.search(pattern, val or ""):
                         abs_val = _abs_url(val, page_url)
-                        total += _handle_target(abs_val, val, target, out_dir, reports_root, browser_state, force=force)
+                        total += _handle_target(abs_val, val, target, out_dir, reports_root, browser_state, force=force, base_delay=base_delay)
 
     return total
 
@@ -497,10 +520,11 @@ def _handle_target(
     browser_state: list,
     *,
     force: bool = False,
+    base_delay: float | None = None,
 ) -> int:
     inner_custom = target.get("custom")
     if inner_custom:
-        return _process_custom(url, inner_custom, out_dir, reports_root, browser_state, force=force)
+        return _process_custom(url, inner_custom, out_dir, reports_root, browser_state, force=force, base_delay=base_delay)
 
     interval_days = target.get("interval_days", 1)
     state_file = reports_root / _STATE_FILE
@@ -516,10 +540,34 @@ def _handle_target(
     ok = _save_file(url, dest, fetch_type, unique, reports_root, browser_state, link_text=link_text)
     if ok and interval_days is not None:
         _update_last_check(url, state_file)
+    if ok:
+        _polite_delay(base_delay)
     return 1 if ok else 0
 
 
 # ── File saving ───────────────────────────────────────────────────────────────
+
+
+def _on_file_saved(dest: Path, datasource_id: int | None = None) -> None:
+    """Trigger forecast extraction on saved report files (PDF, HTML, JSON) and persist into report_forecasts table."""
+    if not dest.is_file() or dest.suffix.lower() not in (".pdf", ".html", ".htm", ".json"):
+        return
+    try:
+        from data.extractors.report_forecast import extract_forecast_from_file, save_report_forecast
+        from database import SessionLocal
+
+        fc = extract_forecast_from_file(dest)
+        if not fc:
+            return
+        with SessionLocal() as db:
+            saved = save_report_forecast(db, fc, datasource_id=datasource_id)
+            db.commit()
+            if isinstance(saved, list):
+                logger.info("[web_report] auto-extracted %d forecasts for %s", len(saved), dest.name)
+            elif saved:
+                logger.info("[web_report] auto-extracted forecast for %s (%s: %s - %s)", dest.name, saved.source, saved.expected_low, saved.expected_high)
+    except Exception as exc:
+        logger.debug("[web_report] forecast auto-extraction skipped for %s: %s", dest.name, exc)
 
 
 def _save_file(
@@ -531,6 +579,7 @@ def _save_file(
     browser_state: list,
     *,
     link_text: str = "",
+    datasource_id: int | None = None,
 ) -> bool:
     checksum_file = reports_root / _CHECKSUM_DIR / (_url_key(url) + ".txt")
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -545,6 +594,7 @@ def _save_file(
             return False
         dest.write_bytes(data)
         _dedup_save(unique, data, checksum_file, link_text)
+        _on_file_saved(dest, datasource_id)
         return True
 
     if fetch_type in ("goto_load", "goto_download"):
@@ -556,7 +606,10 @@ def _save_file(
             except Exception as exc:
                 logger.warning("[save_file] goto_load failed for %s: %s", url, exc)
                 return False
-            return dest.exists()
+            if dest.exists():
+                _on_file_saved(dest, datasource_id)
+                return True
+            return False
         else:
             try:
                 data = _playwright_fetch_binary(url, browser_state)
@@ -567,6 +620,7 @@ def _save_file(
                 return False
             dest.write_bytes(data)
             _dedup_save(unique, data, checksum_file, link_text)
+            _on_file_saved(dest, datasource_id)
             return True
 
     if fetch_type == "load_rep":
@@ -663,9 +717,18 @@ def _playwright_fetch_binary(url: str, state: list) -> bytes:
             page.goto("about:blank")
         data = page.evaluate(
             """async (u) => {
-                const r = await fetch(u);
-                const buf = await r.arrayBuffer();
-                return Array.from(new Uint8Array(buf));
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000);
+                try {
+                    const r = await fetch(u, { signal: controller.signal });
+                    if (!r.ok) {
+                        throw new Error(`HTTP ${r.status} ${r.statusText}`);
+                    }
+                    const buf = await r.arrayBuffer();
+                    return Array.from(new Uint8Array(buf));
+                } finally {
+                    clearTimeout(timeoutId);
+                }
             }""",
             url,
         )
@@ -735,6 +798,25 @@ def _http_text(url: str) -> str:
     return r.text
 
 
+def _polite_delay(base_delay: float | None = None) -> None:
+    """Sleep for a polite interval with random jitter to prevent server overload or IP bans.
+    
+    Skipped automatically in pytest runs unless FORCE_POLITE_DELAY=1 is set.
+    """
+    import os
+    import random
+    import time
+    if os.getenv("PYTEST_CURRENT_TEST") and not os.getenv("FORCE_POLITE_DELAY"):
+        return
+    if base_delay is None or base_delay <= 0:
+        delay = random.uniform(1.5, 2.5)
+    else:
+        jitter = base_delay * 0.2
+        delay = random.uniform(max(0.2, base_delay - jitter), base_delay + jitter)
+    logger.info("[polite_delay] sleeping %.2fs between requests", delay)
+    time.sleep(delay)
+
+
 # ── Deduplication ─────────────────────────────────────────────────────────────
 
 
@@ -795,18 +877,63 @@ def _update_last_check(url: str, state_file: Path) -> None:
 # ── Filename / URL utilities ──────────────────────────────────────────────────
 
 
-def _resolve_filename(template: str, url: str, ext: str) -> str:
-    today = date.today()
+def _extract_date_from_url(url: str) -> date | None:
+    """Extract a date from URL path if present (e.g. 20261106 or 261106)."""
+    path = urlparse(url).path
+    # 8-digit: YYYYMMDD, YYYY-MM-DD, YYYY_MM_DD
+    m = re.search(r'(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)', path)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+    # 6-digit: YYMMDD, YY-MM-DD, YY_MM_DD (e.g. 261106)
+    m = re.search(r'(?<!\d)(2\d)[-_]?([01]\d)[-_]?([0-3]\d)(?!\d)', path)
+    if m:
+        try:
+            year = 2000 + int(m.group(1))
+            return date(year, int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+    return None
+
+
+def _render_date_template(template: str, d: date) -> str:
+    """Replace date placeholders in a template with a specific date."""
+    return (
+        template
+        .replace("{YYYYMMDD}", d.strftime("%Y%m%d"))
+        .replace("{YYMMDD}", d.strftime("%y%m%d"))
+        .replace("{YYYYMM}", d.strftime("%Y%m"))
+        .replace("{YYMM}", d.strftime("%y%m"))
+    )
+
+
+def _expand_backfill_dates(days: int, weekdays_only: bool = True) -> list[date]:
+    """Return a list of dates going back `days` (skipping weekends if weekdays_only)."""
+    from datetime import timedelta
+    dates = []
+    cur = date.today()
+    checked = 0
+    while len(dates) < days and checked < days * 3:
+        if not weekdays_only or cur.weekday() < 5:  # Monday to Friday
+            dates.append(cur)
+        cur -= timedelta(days=1)
+        checked += 1
+    return dates
+
+def _resolve_filename(template: str, url: str, ext: str, target_date: date | None = None) -> str:
+    url_date = target_date or _extract_date_from_url(url) or date.today()
     parsed = urlparse(url)
     url_filename = Path(parsed.path).name or f"report.{ext}"
     url_base = Path(parsed.path).stem or "report"
 
     name = (
         template
-        .replace("{YYYYMMDD}", today.strftime("%Y%m%d"))
-        .replace("{YYMMDD}", today.strftime("%y%m%d"))
-        .replace("{YYYYMM}", today.strftime("%Y%m"))
-        .replace("{YYMM}", today.strftime("%y%m"))
+        .replace("{YYYYMMDD}", url_date.strftime("%Y%m%d"))
+        .replace("{YYMMDD}", url_date.strftime("%y%m%d"))
+        .replace("{YYYYMM}", url_date.strftime("%Y%m"))
+        .replace("{YYMM}", url_date.strftime("%y%m"))
         .replace("{filename}", url_filename)
         .replace("{basefilename}", url_base)
     )

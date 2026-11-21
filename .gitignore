@@ -25,6 +25,6 @@ celerybeat-schedule*
 backend/data/reports_cache/
 backend/scratch_fxstreet.html
 *.tsbuildinfo
-data/
+/data/
 infra/docker
 

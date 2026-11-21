@@ -73,24 +73,34 @@ def collect(datasource_id: int, config: dict, incremental: dict | None = None) -
     client = config.get("client", "yfinance")
     symbol: str = config["symbol"]
     timeframe: str = config.get("timeframe", "H1")
-    to_str: str | None = config.get("to_ts")
-    to_dt = pd.Timestamp(to_str, tz="UTC") if to_str else pd.Timestamp.now(tz="UTC")
+    def _to_utc_ts(val, default=None):
+        if not val:
+            return default
+        ts = pd.Timestamp(val)
+        if ts.tzinfo is None:
+            return ts.tz_localize("UTC")
+        return ts.tz_convert("UTC")
+
+    to_str = config.get("to_ts")
+    to_dt = _to_utc_ts(to_str, default=pd.Timestamp.now(tz="UTC"))
 
     if incremental is not None:
-        from_dt = pd.Timestamp(incremental["to_ts"], tz="UTC")
+        from_dt = _to_utc_ts(incremental["to_ts"])
     else:
-        from_str: str | None = config.get("from_ts")
-        from_dt = pd.Timestamp(from_str, tz="UTC") if from_str else pd.Timestamp("2000-01-01", tz="UTC")
+        from_str = config.get("from_ts")
+        from_dt = _to_utc_ts(from_str, default=pd.Timestamp("2000-01-01", tz="UTC"))
 
     if client == "yfinance":
         df = _collect_yfinance(symbol, timeframe, from_dt, to_dt, config)
     elif client == "vantage":
         df = _collect_vantage(symbol, timeframe, from_dt, to_dt, config)
+    elif client == "mt5":
+        df = _collect_mt5(symbol, timeframe, from_dt, to_dt, config)
     else:
         raise ValueError(f"Unknown OHLC client: {client!r}")
 
     # Normalise column names to lowercase
-    df.columns = [c.lower() for c in df.columns]
+    df.columns = [c[0].lower() if isinstance(c, tuple) else str(c).lower() for c in df.columns]
     df.index.name = "datetime"
 
     if incremental is not None:
@@ -145,6 +155,10 @@ def _collect_yfinance(
 
     interval = {"M1": "1m", "M5": "5m", "M15": "15m", "M30": "30m", "H1": "1h", "H4": "1h",
                 "D1": "1d", "W1": "1wk", "MN": "1mo"}.get(timeframe, "1d")
+    if interval in ("1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"):
+        earliest_start = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=720)
+        if from_dt < earliest_start:
+            from_dt = earliest_start
     df = yf.download(
         symbol,
         start=from_dt.tz_convert(None).strftime("%Y-%m-%d"),
@@ -227,3 +241,63 @@ def _normalise_index(df: pd.DataFrame) -> pd.DataFrame:
 
 def _filter_date_range(df: pd.DataFrame, from_dt: pd.Timestamp, to_dt: pd.Timestamp) -> pd.DataFrame:
     return df[(df.index >= from_dt) & (df.index <= to_dt)]
+
+
+def _collect_mt5(
+    symbol: str, timeframe: str, from_dt: pd.Timestamp, to_dt: pd.Timestamp, config: dict
+) -> pd.DataFrame:
+    """Collect OHLC data directly from MetaTrader 5 (MT5)."""
+    import MetaTrader5 as mt5
+    from strategy.mt5_client import mt5_client
+
+    # Clean symbol name: e.g. "USDJPY=X" -> "USDJPY", "EUR/USD" -> "EURUSD"
+    clean_sym = symbol.replace("=X", "").replace("/", "").strip()
+
+    tf_map = {
+        "M1": mt5.TIMEFRAME_M1,
+        "M5": mt5.TIMEFRAME_M5,
+        "M15": mt5.TIMEFRAME_M15,
+        "M30": mt5.TIMEFRAME_M30,
+        "H1": mt5.TIMEFRAME_H1,
+        "H4": mt5.TIMEFRAME_H4,
+        "D1": mt5.TIMEFRAME_D1,
+        "W1": mt5.TIMEFRAME_W1,
+        "MN": mt5.TIMEFRAME_MN1,
+    }
+    tf = tf_map.get(timeframe.upper(), mt5.TIMEFRAME_H1)
+
+    ok, msg = mt5_client.connect()
+    if not ok:
+        raise RuntimeError(f"MT5 connection failed: {msg}")
+
+    # Ensure symbol is selected in MarketWatch
+    mt5.symbol_select(clean_sym, True)
+
+    utc_from = from_dt.to_pydatetime()
+    utc_to = to_dt.to_pydatetime()
+
+    rates = mt5.copy_rates_range(clean_sym, tf, utc_from, utc_to)
+    if rates is None or len(rates) == 0:
+        err = mt5.last_error()
+        import logging
+        logging.getLogger(__name__).warning(
+            f"[_collect_mt5] copy_rates_range returned no data for {clean_sym} {timeframe} ({utc_from} to {utc_to}): {err}"
+        )
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rates)
+    df["datetime"] = pd.to_datetime(df["time"], unit="s", utc=True)
+    df = df.set_index("datetime")
+    df = df.rename(columns={
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
+        "close": "Close",
+        "tick_volume": "Volume",
+        "spread": "Spread",
+    })
+
+    df = _normalise_index(df)
+    df = _filter_date_range(df, from_dt, to_dt)
+    cols = [c for c in ["Open", "High", "Low", "Close", "Volume", "Spread"] if c in df.columns]
+    return df[cols]

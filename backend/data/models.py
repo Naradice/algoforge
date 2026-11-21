@@ -4,7 +4,7 @@ SQLAlchemy ORM models and Pydantic schemas for the Data Management layer.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -64,6 +64,7 @@ class CollectionJob(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     next_run_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     enabled: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
@@ -116,6 +117,135 @@ class DatasetSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
     dataset: Mapped[Dataset] = relationship("Dataset")
+
+
+class ReportForecast(Base):
+    __tablename__ = "report_forecasts"
+    __table_args__ = (
+        sa.UniqueConstraint("source", "symbol", "horizon", "report_date", name="uq_report_forecasts_source_sym_hor_date"),
+    )
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    datasource_id: Mapped[int | None] = mapped_column(sa.Integer, sa.ForeignKey("datasources.id", ondelete="SET NULL"), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(sa.Text, nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="USDJPY", index=True)
+    horizon: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="Daily")
+    report_date: Mapped[date] = mapped_column(sa.Date, nullable=False, index=True)
+    analyst: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    direction: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    expected_low: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    expected_high: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    title: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    raw_artifact_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    extracted_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class LargeHoldingReportRecord(Base):
+    __tablename__ = "large_holding_reports"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    doc_id: Mapped[str] = mapped_column(sa.Text, unique=True, index=True, nullable=False)
+    issuer_code: Mapped[str | None] = mapped_column(sa.Text, index=True, nullable=True)
+    issuer_name: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    filer_name: Mapped[str | None] = mapped_column(sa.Text, index=True, nullable=True)
+    base_date: Mapped[date | None] = mapped_column(sa.Date, index=True, nullable=True)
+    submit_date: Mapped[date | None] = mapped_column(sa.Date, index=True, nullable=True)
+    doc_type: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    holding_ratio: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    prev_holding_ratio: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    ratio_change: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    total_shares_held: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    total_outstanding_shares: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    purpose_of_holding: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    joint_holders_json: Mapped[list | None] = mapped_column(sa.JSON, nullable=True)
+    extracted_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+
+    trades: Mapped[list[LargeHoldingTradeRecord]] = relationship(
+        "LargeHoldingTradeRecord", back_populates="report", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class LargeHoldingTradeRecord(Base):
+    __tablename__ = "large_holding_trades"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    report_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("large_holding_reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    doc_id: Mapped[str] = mapped_column(sa.Text, index=True, nullable=False)
+    issuer_code: Mapped[str | None] = mapped_column(sa.Text, index=True, nullable=True)
+    trade_date: Mapped[date | None] = mapped_column(sa.Date, index=True, nullable=True)
+    security_type: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    quantity: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    ratio: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    market_type: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    trade_type: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    unit_price: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    description: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+    report: Mapped[LargeHoldingReportRecord] = relationship("LargeHoldingReportRecord", back_populates="trades")
+
+
+class DailyMarginRecord(Base):
+    __tablename__ = "daily_margin_records"
+    __table_args__ = (
+        sa.UniqueConstraint("as_of_date", "code", name="uq_daily_margin_date_code"),
+    )
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    as_of_date: Mapped[date] = mapped_column(sa.Date, index=True, nullable=False)
+    code: Mapped[str] = mapped_column(sa.Text, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    market: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    issue_type: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    restrictions: Mapped[list | None] = mapped_column(sa.JSON, nullable=True)
+    isin: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    sell_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    sell_change: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    sell_ratio: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    buy_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    buy_change: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    buy_ratio: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    ratio: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    negotiable_sell_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    negotiable_sell_change: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    standardized_sell_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    standardized_sell_change: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    negotiable_buy_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    negotiable_buy_change: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    standardized_buy_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    standardized_buy_change: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class MarginRegulationRecord(Base):
+    __tablename__ = "margin_regulation_records"
+    __table_args__ = (
+        sa.UniqueConstraint("code", "event_date", "event_type", name="uq_margin_reg_code_date_type"),
+    )
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(sa.Text, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    event_date: Mapped[date] = mapped_column(sa.Date, index=True, nullable=False)
+    event_type: Mapped[str] = mapped_column(sa.Text, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class MarketMarginWeeklyRecord(Base):
+    __tablename__ = "market_margin_weekly_records"
+    __table_args__ = (
+        sa.UniqueConstraint("date", name="uq_market_margin_weekly_date"),
+    )
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    date: Mapped[date] = mapped_column(sa.Date, unique=True, index=True, nullable=False)
+    standardized_sell_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    standardized_buy_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    negotiable_sell_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    negotiable_buy_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    total_sell_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    total_buy_shares: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    margin_ratio: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
 
 # ---------------------------------------------------------------------------
@@ -270,3 +400,21 @@ class CollectRequest(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     analyses: list[str] | None = None
+
+
+class ReportForecastRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    datasource_id: int | None = None
+    source: str
+    symbol: str
+    horizon: str
+    report_date: date
+    analyst: str | None = None
+    direction: str | None = None
+    expected_low: float | None = None
+    expected_high: float | None = None
+    title: str | None = None
+    raw_artifact_path: str | None = None
+    extracted_at: datetime

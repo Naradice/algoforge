@@ -119,7 +119,7 @@ def _make_db():
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
     from sqlalchemy.pool import NullPool
 
-    url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://algoforge:algoforge@localhost:5432/algoforge")
+    url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://algoforge:algoforge@127.0.0.1:5432/algoforge")
     engine = create_async_engine(url, poolclass=NullPool)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     return factory, engine
@@ -133,7 +133,7 @@ def _release_lock(task_name: str, entity_id) -> None:
     """Remove the Redis dedup lock set by celery_app.enqueue()."""
     try:
         import redis as _redis
-        r = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+        r = _redis.from_url(os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"), decode_responses=True, socket_connect_timeout=1, socket_timeout=1)
         r.delete(f"algoforge:enqueued:{task_name}:{entity_id}")
     except Exception:
         pass  # Non-critical: lock expires after 1 h anyway
@@ -144,7 +144,7 @@ def _release_lock(task_name: str, entity_id) -> None:
 # ---------------------------------------------------------------------------
 
 @celery_app.task(name="celery_worker.run_collection_job", bind=False)
-def run_collection_job(job_id: int) -> dict:
+def run_collection_job(job_id: int, overrides: dict | None = None) -> dict:
     # For endless DDM jobs the task never returns, so the Redis dedup lock
     # (TTL=1h) would expire and allow a second concurrent instance to start.
     # Renew it every 30 min in a background thread for the lifetime of this task.
@@ -157,7 +157,7 @@ def run_collection_job(job_id: int) -> dict:
         while not _stop_renewer.wait(timeout=1800):  # every 30 min
             try:
                 import redis as _r
-                r = _r.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+                r = _r.from_url(os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"), decode_responses=True)
                 r.expire(_lock_key, 3600)
             except Exception:
                 pass
@@ -165,16 +165,18 @@ def run_collection_job(job_id: int) -> dict:
     renewer = threading.Thread(target=_renew_lock, daemon=True)
     renewer.start()
     try:
-        return asyncio.run(_run_collection_job(job_id))
+        return asyncio.run(_run_collection_job(job_id, overrides=overrides))
     finally:
         _stop_renewer.set()
 
 
-async def _run_collection_job(job_id: int) -> dict:
+async def _run_collection_job(job_id: int, overrides: dict | None = None) -> dict:
     from sqlalchemy import select, update
     from data.models import CollectionJob, Datasource, Dataset
+    from data.scheduler import CollectionHeartbeat, compute_next_run, retry_run_at
 
     factory, engine = _make_db()
+    heartbeat = CollectionHeartbeat(job_id, _make_db).start()
     try:
         async with factory() as db:
             result = await db.execute(select(CollectionJob).where(CollectionJob.id == job_id))
@@ -189,8 +191,16 @@ async def _run_collection_job(job_id: int) -> dict:
                 logger.error(f"Datasource {job.datasource_id} not found for job {job_id}")
                 return {"error": "datasource_not_found"}
 
-            symbol = source.config.get("symbol") or source.config.get("timeframe")
-            timeframe = source.config.get("timeframe")
+            effective_config = dict(source.config or {})
+            if overrides:
+                effective_config.update(overrides)
+            # When the job has never run before and is_initial is not explicitly given,
+            # mark it as an initial backfill run so date placeholders can backfill past reports.
+            if job.last_run_at is None and "is_initial" not in effective_config:
+                effective_config["is_initial"] = True
+
+            symbol = effective_config.get("symbol") or effective_config.get("timeframe")
+            timeframe = effective_config.get("timeframe")
             is_ddm = source.type == "ddm_simulation"
             pre_dataset_id = None
             incremental_context = None
@@ -255,18 +265,20 @@ async def _run_collection_job(job_id: int) -> dict:
         collect_result = None
         try:
             import functools
-            logger.info(f"[job {job_id}] starting collector: type={source.type} incremental={incremental_context is not None} config={source.config}")
+            logger.info(f"[job {job_id}] starting collector: type={source.type} incremental={incremental_context is not None} config={effective_config}")
             loop = asyncio.get_event_loop()
             collect_result = await loop.run_in_executor(
                 None,
-                functools.partial(_run_collector, source.type, source.id, source.config, incremental_context),
+                functools.partial(_run_collector, source.type, source.id, effective_config, incremental_context),
             )
             logger.info(f"[job {job_id}] collector finished: {collect_result}")
         except NotImplementedError as e:
             async with factory() as db:
+                next_run_at = retry_run_at(source.type, source.config, job.schedule_cron)
                 await db.execute(
                     update(CollectionJob).where(CollectionJob.id == job_id).values(
-                        status="error", last_error=str(e), last_run_at=datetime.now(timezone.utc)
+                        status="error", last_error=str(e), last_run_at=datetime.now(timezone.utc),
+                        next_run_at=next_run_at,
                     )
                 )
                 await dispatch(db, "collection.error", {
@@ -278,9 +290,11 @@ async def _run_collection_job(job_id: int) -> dict:
             logger.exception(f"Collection job {job_id} failed")
             try:
                 async with factory() as db:
+                    next_run_at = retry_run_at(source.type, source.config, job.schedule_cron)
                     await db.execute(
                         update(CollectionJob).where(CollectionJob.id == job_id).values(
-                            status="error", last_error=str(e), last_run_at=datetime.now(timezone.utc)
+                            status="error", last_error=str(e), last_run_at=datetime.now(timezone.utc),
+                            next_run_at=next_run_at,
                         )
                     )
                     await dispatch(db, "collection.error", {
@@ -390,7 +404,7 @@ async def _run_collection_job(job_id: int) -> dict:
                 await db.refresh(dataset)
                 dataset_id = dataset.id
 
-            next_run_at = _compute_next_run(source.type, source.config, job.schedule_cron)
+            next_run_at = compute_next_run(source.type, source.config, job.schedule_cron)
             await db.execute(
                 update(CollectionJob).where(CollectionJob.id == job_id).values(
                     status="idle", last_run_at=datetime.now(timezone.utc), last_error=None,
@@ -415,48 +429,14 @@ async def _run_collection_job(job_id: int) -> dict:
 
         return {"dataset_id": dataset_id, "row_count": collect_result.row_count}
     finally:
+        heartbeat.stop()
         await engine.dispose()
         _release_lock("run_collection_job", job_id)
 
 
 def _compute_next_run(datasource_type: str, config: dict, schedule_cron: str | None) -> "datetime | None":
-    """Return the next UTC datetime this job should run, or None (one-off)."""
-    from datetime import timedelta
-
-    # web_report uses interval_days (and optional download_time) from the datasource config
-    if datasource_type == "web_report":
-        interval_days = config.get("interval_days")
-        if interval_days is None:
-            return None  # one-off download
-        try:
-            days = int(interval_days)
-        except (TypeError, ValueError):
-            return None
-        now = datetime.now(timezone.utc)
-        download_time = config.get("download_time")  # "HH:MM" UTC, e.g. "18:00"
-        if download_time:
-            try:
-                h, m = map(int, str(download_time).split(":"))
-                # Next occurrence of HH:MM that is strictly in the future.
-                # Try today first; if that moment has passed, step forward by interval_days.
-                candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
-                if candidate <= now:
-                    candidate += timedelta(days=days)
-                return candidate
-            except (ValueError, AttributeError):
-                pass  # fall back to interval-only below
-        return now + timedelta(days=days)
-
-    # Other types use schedule_cron on the job (e.g. "0 9 * * *")
-    if schedule_cron:
-        try:
-            from apscheduler.triggers.cron import CronTrigger
-            trigger = CronTrigger.from_crontab(schedule_cron, timezone="UTC")
-            return trigger.get_next_fire_time(None, datetime.now(timezone.utc))
-        except Exception:
-            logger.warning(f"_compute_next_run: invalid schedule_cron {schedule_cron!r}")
-
-    return None
+    from data.scheduler import compute_next_run
+    return compute_next_run(datasource_type, config, schedule_cron)
 
 
 def _run_collector(datasource_type: str, datasource_id: int, config: dict, incremental: dict | None = None):
@@ -572,31 +552,13 @@ def tick_scheduler() -> None:
 
 
 async def _tick_scheduler() -> None:
-    from sqlalchemy import select
-    from data.models import CollectionJob
+    from data.scheduler import scheduler_tick
 
-    now = datetime.now(timezone.utc)
     factory, engine = _make_db()
     try:
         async with factory() as db:
-            result = await db.execute(
-                select(CollectionJob).where(
-                    CollectionJob.enabled == True,  # noqa: E712
-                    CollectionJob.next_run_at.isnot(None),
-                    CollectionJob.next_run_at <= now,
-                    CollectionJob.status != "running",
-                )
-            )
-            jobs = result.scalars().all()
-
-        for job in jobs:
-            try:
-                _release_lock("run_collection_job", job.id)
-                from celery_app import enqueue
-                await enqueue("run_collection_job", job.id)
-                logger.info(f"[tick_scheduler] enqueued job {job.id} (next_run_at={job.next_run_at})")
-            except Exception as exc:
-                logger.warning(f"[tick_scheduler] could not enqueue job {job.id}: {exc}")
+            await scheduler_tick(db)
+            await db.commit()
     finally:
         await engine.dispose()
 

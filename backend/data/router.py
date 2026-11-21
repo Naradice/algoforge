@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -152,8 +152,22 @@ async def list_datasources(
 
 
 @router.post("/datasources", response_model=DataResponse[DatasourceRead], status_code=201)
-async def create_datasource(body: DatasourceCreate, db: AsyncSession = Depends(get_db)):
+async def create_datasource(
+    body: DatasourceCreate,
+    auto_collect: bool = Query(False, description="Automatically trigger initial collection upon creation"),
+    backfill_days: int | None = Query(None, description="Optional custom backfill days for initial collection"),
+    db: AsyncSession = Depends(get_db),
+):
     item = await data_service.create_datasource(db, body)
+    if auto_collect:
+        overrides = {"is_initial": True}
+        if backfill_days is not None:
+            overrides["backfill_days"] = backfill_days
+        try:
+            await data_service.trigger_datasource_collection(db, item.id, overrides=overrides)
+        except Exception as exc:
+            import logging
+            logging.getLogger("data.router").warning(f"Auto-collect on datasource {item.id} failed to enqueue: {exc}")
     return DataResponse(data=item)
 
 
@@ -175,11 +189,21 @@ async def delete_datasource(datasource_id: int, db: AsyncSession = Depends(get_d
 
 
 @router.post("/datasources/{datasource_id}/collect", status_code=202)
-async def trigger_collection(datasource_id: int, db: AsyncSession = Depends(get_db)):
+async def trigger_collection(
+    datasource_id: int,
+    backfill_days: int | None = Query(None, description="Number of past business days to backfill"),
+    is_initial: bool = Query(False, description="Whether to treat as initial collection (e.g. 30 days backfill)"),
+    db: AsyncSession = Depends(get_db),
+):
     from fastapi import HTTPException
     from celery_app import AlreadyRunningError
+    overrides: dict = {}
+    if backfill_days is not None:
+        overrides["backfill_days"] = backfill_days
+    if is_initial:
+        overrides["is_initial"] = True
     try:
-        job = await data_service.trigger_datasource_collection(db, datasource_id)
+        job = await data_service.trigger_datasource_collection(db, datasource_id, overrides=overrides or None)
     except AlreadyRunningError as exc:
         raise HTTPException(status_code=409, detail={"code": "ALREADY_RUNNING", "message": str(exc)})
     # job.status is still the previous run's (e.g. "error") until the worker picks the task up;
@@ -221,11 +245,15 @@ async def list_datasets(
     symbol: str | None = None,
     timeframe: str | None = None,
     datasource_id: int | None = None,
-    pagination: Pagination = Depends(),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(1000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await data_service.list_datasets(db, symbol=symbol, timeframe=timeframe, datasource_id=datasource_id, offset=pagination.offset, limit=pagination.page_size)
-    return DataResponse(data=items, meta=Meta(total=total, page=pagination.page, page_size=pagination.page_size))
+    offset = (page - 1) * page_size
+    items, total = await data_service.list_datasets(
+        db, symbol=symbol, timeframe=timeframe, datasource_id=datasource_id, offset=offset, limit=page_size
+    )
+    return DataResponse(data=items, meta=Meta(total=total, page=page, page_size=page_size))
 
 
 @router.get("/datasets/{dataset_id}", response_model=DataResponse[DatasetRead])
@@ -452,12 +480,22 @@ async def reset_collection_job(job_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/collection-jobs/{job_id}/run", response_model=DataResponse[CollectionJobRead], status_code=202)
-async def run_collection_job(job_id: int, db: AsyncSession = Depends(get_db)):
+async def run_collection_job(
+    job_id: int,
+    backfill_days: int | None = Query(None, description="Number of past business days to backfill"),
+    is_initial: bool = Query(False, description="Whether to treat as initial collection"),
+    db: AsyncSession = Depends(get_db),
+):
     """Trigger an immediate collection run."""
     from fastapi import HTTPException
     from celery_app import AlreadyRunningError
+    overrides: dict = {}
+    if backfill_days is not None:
+        overrides["backfill_days"] = backfill_days
+    if is_initial:
+        overrides["is_initial"] = True
     try:
-        item = await data_service.trigger_collection(db, job_id)
+        item = await data_service.trigger_collection(db, job_id, overrides=overrides or None)
     except AlreadyRunningError as exc:
         raise HTTPException(status_code=409, detail={"code": "ALREADY_RUNNING", "message": str(exc)})
     return DataResponse(data=item)
@@ -495,3 +533,257 @@ async def list_analyses_config():
         {"name": name, "description": getattr(fn, "__doc__", "") or "", "output_metrics": []}
         for name, fn in CHARACTERISTIC_REGISTRY.items()
     ])
+
+
+@router.get("/reports/forecasts")
+async def get_report_forecast(
+    symbol: str = Query("USDJPY", description="Currency pair or symbol"),
+    target_date: str | None = Query(None, description="ISO date (YYYY-MM-DD). Defaults to today"),
+    source: str | None = Query(None, description="Source filter (e.g. SMBC信託, みんなのFX, ソニーFG)"),
+    horizon: str = Query("Daily", description="Forecast horizon (Daily or Weekly)"),
+):
+    """Retrieve report forecast with autonomous fallback (DB -> Disk -> On-demand fetch)."""
+    from datetime import date as dt_date
+    t_date = dt_date.fromisoformat(target_date) if target_date else dt_date.today()
+    fc = await data_service.get_or_fetch_report_forecast(
+        symbol=symbol,
+        target_date=t_date,
+        source=source,
+        horizon=horizon,
+    )
+    if fc is None:
+        raise HTTPException(status_code=404, detail="No forecast available for given parameters")
+    return DataResponse(data=fc)
+
+
+@router.post("/reports/forecasts/sync")
+async def sync_report_forecasts():
+    """Bulk sync historical report forecasts from reports store into DB."""
+    import os
+    from pathlib import Path
+    from data.extractors.report_forecast import extract_forecast_from_pdf, save_report_forecast
+    from database import SessionLocal
+
+    custom_root = os.getenv("WEB_REPORTS_STORE_PATH")
+    reports_root = Path(custom_root) if custom_root else (Path("artifacts") / "web_reports")
+
+    synced_count = 0
+    with SessionLocal() as db:
+        for folder in ["SMBC", "みんなのFX", "SonyFinance"]:
+            f_dir = reports_root / folder
+            if not f_dir.exists():
+                continue
+            for pdf_file in f_dir.glob("*.pdf"):
+                fc = extract_forecast_from_pdf(pdf_file)
+                if fc:
+                    save_report_forecast(db, fc)
+                    synced_count += 1
+        db.commit()
+
+    return DataResponse(data={"synced_records": synced_count})
+
+
+# ── Swing Trading: Margin & Large Holding Data ─────────────────────────────────
+
+@router.get("/margin/daily")
+async def get_daily_margin_records(
+    code: str | None = Query(None, description="Symbol code filter (e.g. 3042, 3656)"),
+    order_by: str = Query("buy_ratio", description="Order field: buy_ratio, sell_ratio, ratio"),
+    limit: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+):
+    """Query latest JPX daily margin trading records with sorting and filters."""
+    import sqlalchemy as sa
+    from data.models import DailyMarginRecord
+
+    # Find the latest as_of_date
+    latest_date_q = sa.select(sa.func.max(DailyMarginRecord.as_of_date))
+    latest_date = (await db.execute(latest_date_q)).scalar_one_or_none()
+    if not latest_date:
+        return DataResponse(data=[])
+
+    q = sa.select(DailyMarginRecord).where(DailyMarginRecord.as_of_date == latest_date)
+    if code:
+        q = q.where(DailyMarginRecord.code == code)
+
+    if order_by == "sell_ratio":
+        q = q.order_by(DailyMarginRecord.sell_ratio.desc())
+    elif order_by == "ratio":
+        q = q.order_by(DailyMarginRecord.ratio.desc())
+    else:
+        q = q.order_by(DailyMarginRecord.buy_ratio.desc())
+
+    q = q.limit(limit)
+    rows = (await db.execute(q)).scalars().all()
+
+    return DataResponse(
+        data=[
+            {
+                "as_of_date": r.as_of_date.isoformat(),
+                "code": r.code,
+                "name": r.name,
+                "market": r.market,
+                "issue_type": r.issue_type,
+                "restrictions": r.restrictions,
+                "sell_shares": r.sell_shares,
+                "sell_change": r.sell_change,
+                "sell_ratio": r.sell_ratio,
+                "buy_shares": r.buy_shares,
+                "buy_change": r.buy_change,
+                "buy_ratio": r.buy_ratio,
+                "ratio": r.ratio,
+            }
+            for r in rows
+        ],
+        meta=Meta(total=len(rows)),
+    )
+
+
+@router.get("/margin/regulations")
+async def get_margin_regulations(
+    event_type: str | None = Query(None, description="Filter by 'designated' or 'lifted'"),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Query daily margin publication events (designation & lifting announcements)."""
+    import sqlalchemy as sa
+    from data.models import MarginRegulationRecord
+
+    q = sa.select(MarginRegulationRecord)
+    if event_type:
+        q = q.where(MarginRegulationRecord.event_type == event_type)
+    q = q.order_by(MarginRegulationRecord.event_date.desc()).limit(limit)
+    rows = (await db.execute(q)).scalars().all()
+
+    return DataResponse(
+        data=[
+            {
+                "code": r.code,
+                "name": r.name,
+                "event_date": r.event_date.isoformat(),
+                "event_type": r.event_type,
+            }
+            for r in rows
+        ],
+        meta=Meta(total=len(rows)),
+    )
+
+
+@router.post("/margin/sync")
+async def sync_daily_margin_data():
+    """Trigger on-demand fetch and sync of JPX daily margin balances & announcements."""
+    import asyncio
+    from data.swing_data_service import run_daily_margin_collection
+
+    res = await asyncio.get_event_loop().run_in_executor(None, run_daily_margin_collection)
+    return DataResponse(data=res)
+
+
+@router.get("/large-holding/reports")
+async def get_large_holding_reports(
+    issuer_code: str | None = Query(None, description="Issuer symbol code filter (e.g. 4381)"),
+    filer_name: str | None = Query(None, description="Filer name substring"),
+    min_ratio_change: float | None = Query(None, description="Filter reports with absolute ratio_change >= value"),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Query EDINET Large Volume Holding Reports (5% rule) with joint holders & change delta."""
+    import sqlalchemy as sa
+    from data.models import LargeHoldingReportRecord
+
+    q = sa.select(LargeHoldingReportRecord)
+    if issuer_code:
+        q = q.where(LargeHoldingReportRecord.issuer_code == issuer_code)
+    if filer_name:
+        q = q.where(LargeHoldingReportRecord.filer_name.contains(filer_name))
+    if min_ratio_change is not None:
+        q = q.where(sa.func.abs(LargeHoldingReportRecord.ratio_change) >= min_ratio_change)
+
+    q = q.order_by(LargeHoldingReportRecord.base_date.desc(), LargeHoldingReportRecord.extracted_at.desc()).limit(limit)
+    rows = (await db.execute(q)).scalars().all()
+
+    return DataResponse(
+        data=[
+            {
+                "id": r.id,
+                "doc_id": r.doc_id,
+                "issuer_code": r.issuer_code,
+                "issuer_name": r.issuer_name,
+                "filer_name": r.filer_name,
+                "base_date": r.base_date.isoformat() if r.base_date else None,
+                "holding_ratio": r.holding_ratio,
+                "prev_holding_ratio": r.prev_holding_ratio,
+                "ratio_change": r.ratio_change,
+                "total_shares_held": r.total_shares_held,
+                "total_outstanding_shares": r.total_outstanding_shares,
+                "purpose_of_holding": r.purpose_of_holding,
+                "joint_holders": r.joint_holders_json,
+                "trades_count": len(r.trades),
+            }
+            for r in rows
+        ],
+        meta=Meta(total=len(rows)),
+    )
+
+
+@router.post("/large-holding/sync")
+async def sync_large_holding_data(
+    target_date: str | None = Query(None, description="Target date YYYY-MM-DD. Defaults to today"),
+    max_documents: int = Query(30, ge=1, le=100),
+):
+    """Trigger on-demand fetch and sync of EDINET Large Volume Holding Reports."""
+    import asyncio
+    from datetime import date as dt_date
+    from data.swing_data_service import run_large_holding_collection
+
+    t_dt = dt_date.fromisoformat(target_date) if target_date else dt_date.today()
+    res = await asyncio.get_event_loop().run_in_executor(
+        None, run_large_holding_collection, t_dt, max_documents
+    )
+    return DataResponse(data=res)
+
+
+@router.get("/swing/signals")
+async def get_swing_signals(
+    target_date: str | None = Query(None, description="ISO date (YYYY-MM-DD). Defaults to latest date"),
+    signal_type: str | None = Query(None, description="Filter: squeeze_alert, daily_margin_lifted, institutional_buy, supply_relief, supply_overhang"),
+    direction: str | None = Query(None, description="Filter: LONG, SHORT, AVOID"),
+    min_confidence: float = Query(0.5, ge=0.0, le=1.0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Scan and generate actionable swing trading signals combining margin and holding data."""
+    from datetime import date as dt_date
+    from database import SessionLocal
+    from strategy.engine.swing_signals import screen_swing_signals
+
+    t_dt = dt_date.fromisoformat(target_date) if target_date else None
+
+    # Run screening in sync session
+    with SessionLocal() as sync_db:
+        signals = screen_swing_signals(sync_db, target_date=t_dt, min_confidence=min_confidence)
+
+    if signal_type:
+        signals = [s for s in signals if s.signal_type == signal_type]
+    if direction:
+        signals = [s for s in signals if s.direction == direction]
+
+    signals = signals[:limit]
+
+    return DataResponse(
+        data=[
+            {
+                "code": s.code,
+                "name": s.name,
+                "signal_type": s.signal_type,
+                "direction": s.direction,
+                "confidence_score": s.confidence_score,
+                "detected_date": s.detected_date,
+                "title": s.title,
+                "reasons": s.reasons,
+                "metrics": s.metrics,
+            }
+            for s in signals
+        ],
+        meta=Meta(total=len(signals)),
+    )

@@ -28,7 +28,7 @@ from celery import Celery
 
 logger = logging.getLogger("celery_app")
 
-_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+_REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 _NO_REDIS = os.getenv("ALGOFORGE_NO_REDIS", "").lower() in ("1", "true")
 
 # ---------------------------------------------------------------------------

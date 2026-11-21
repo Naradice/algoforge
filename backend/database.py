@@ -7,10 +7,10 @@ from sqlalchemy.orm import DeclarativeBase
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://algoforge:algoforge@localhost:5432/algoforge",
+    "postgresql+asyncpg://algoforge:algoforge@127.0.0.1:5432/algoforge",
 )
 
-engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True, pool_size=20, max_overflow=20)
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -52,3 +52,25 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+# ---------------------------------------------------------------------------
+# Synchronous engine & SessionLocal (for collectors, workers, and offline scripts)
+# ---------------------------------------------------------------------------
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+def _get_sync_url(url: str) -> str:
+    sync_url = os.getenv("SYNC_DATABASE_URL")
+    if sync_url:
+        return sync_url
+    return (
+        url
+        .replace("postgresql+asyncpg://", "postgresql://")
+        .replace("sqlite+aiosqlite://", "sqlite://")
+    )
+
+SYNC_DATABASE_URL = _get_sync_url(DATABASE_URL)
+_connect_args = {"check_same_thread": False} if "sqlite" in SYNC_DATABASE_URL else {}
+sync_engine = create_engine(SYNC_DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_connect_args)
+SessionLocal = sessionmaker(bind=sync_engine, expire_on_commit=False)

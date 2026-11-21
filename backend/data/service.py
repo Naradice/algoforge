@@ -206,7 +206,7 @@ def _revoke_collection_task(job_id: int) -> None:
     import os
     try:
         import redis as _redis
-        r = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+        r = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True, socket_connect_timeout=1, socket_timeout=1)
         r.delete(f"algoforge:enqueued:run_collection_job:{job_id}")
     except Exception:
         pass
@@ -252,10 +252,19 @@ class DataService:
             raise HTTPException(status_code=422, detail=DATASET_NOT_READY)
 
         store = Path(os.getenv("ARTIFACT_STORE_PATH", "artifacts")).resolve()
-        full_path = (store / dataset.artifact_path).resolve()
+        custom_web_store = os.getenv("WEB_REPORTS_STORE_PATH")
+
+        if dataset.artifact_path.startswith("web_reports") and custom_web_store:
+            custom_root = Path(custom_web_store).resolve()
+            subpath = Path(dataset.artifact_path).relative_to("web_reports")
+            full_path = (custom_root / subpath).resolve()
+            check_base = custom_root
+        else:
+            full_path = (store / dataset.artifact_path).resolve()
+            check_base = store
 
         try:
-            full_path.relative_to(store)
+            full_path.relative_to(check_base)
         except ValueError as exc:
             raise HTTPException(
                 status_code=403,
@@ -299,14 +308,18 @@ class DataService:
         return obj
 
     async def create_collection_job(self, db: AsyncSession, body: CollectionJobCreate):
-        await self.get_datasource(db, body.datasource_id)
-        return await data_repo.create_collection_job(db, datasource_id=body.datasource_id, schedule_cron=body.schedule_cron)
+        source = await self.get_datasource(db, body.datasource_id)
+        from data.scheduler import compute_next_run
+        next_run_at = compute_next_run(source.type, source.config, body.schedule_cron)
+        return await data_repo.create_collection_job(
+            db, datasource_id=body.datasource_id, schedule_cron=body.schedule_cron, next_run_at=next_run_at
+        )
 
     async def get_characteristics(self, db: AsyncSession, dataset_id: int):
         await self.get_dataset(db, dataset_id)
         return await data_repo.get_characteristics(db, dataset_id)
 
-    async def trigger_collection(self, db: AsyncSession, job_id: int):
+    async def trigger_collection(self, db: AsyncSession, job_id: int, overrides: dict | None = None):
         """Enqueue a run_collection_job Celery task and return the job.
 
         If the job is already running (status=running or dedup lock held), the
@@ -316,7 +329,10 @@ class DataService:
         job = await self.get_collection_job(db, job_id)
         _revoke_collection_task(job_id)
         from celery_app import enqueue
-        await enqueue("run_collection_job", job_id)
+        if overrides:
+            await enqueue("run_collection_job", job_id, overrides)
+        else:
+            await enqueue("run_collection_job", job_id)
         return job
 
     async def trigger_analysis(self, db: AsyncSession, dataset_id: int):
@@ -475,7 +491,7 @@ class DataService:
             datasets.append(ds)
         return datasets
 
-    async def trigger_datasource_collection(self, db: AsyncSession, datasource_id: int, body=None):
+    async def trigger_datasource_collection(self, db: AsyncSession, datasource_id: int, body=None, overrides: dict | None = None):
         """Find or create a collection job for this datasource, then enqueue it."""
         from data.models import CollectionJob
         from sqlalchemy import select
@@ -495,7 +511,10 @@ class DataService:
         # before enqueuing, otherwise enqueue() raises AlreadyRunningError.
         _revoke_collection_task(job.id)
         from celery_app import enqueue
-        await enqueue("run_collection_job", job.id)
+        if overrides:
+            await enqueue("run_collection_job", job.id, overrides)
+        else:
+            await enqueue("run_collection_job", job.id)
         return job
 
     async def get_dataset_preview(self, db: AsyncSession, dataset_id: int, rows: int = 100, timeframe: str | None = None) -> list[dict]:
@@ -549,6 +568,186 @@ class DataService:
         df.index = df.index.astype(str)
         records = df.reset_index().rename(columns={df.index.name or "index": "datetime"})
         return records.to_dict(orient="records")
+
+    async def get_or_fetch_report_forecast(
+        self,
+        symbol: str = "USDJPY",
+        target_date: date | None = None,
+        source: str | None = None,
+        horizon: str = "Daily",
+    ) -> dict | None:
+        """Fetch report forecast for a symbol & target date.
+
+        Autonomous multi-tiered lookup:
+        1. DB cache (`report_forecasts` table)
+        2. Local disk scan & on-the-fly extraction
+        3. On-demand collection trigger & extraction
+        """
+        import os
+        from datetime import date as dt_date
+        from pathlib import Path
+        import sqlalchemy as sa
+        from database import SessionLocal
+        from data.models import ReportForecast
+        from data.extractors.report_forecast import extract_forecast_from_pdf, save_report_forecast
+
+        t_date = target_date or dt_date.today()
+        src_filter = source or "SMBC信託"
+
+        # Tier 1: DB Lookup
+        with SessionLocal() as db:
+            stmt = sa.select(ReportForecast).where(
+                ReportForecast.symbol == symbol,
+                ReportForecast.horizon == horizon,
+                ReportForecast.report_date == t_date,
+            )
+            if source:
+                stmt = stmt.where(ReportForecast.source == source)
+            res = db.execute(stmt).scalars().first()
+            if res is not None:
+                return {
+                    "id": res.id,
+                    "source": res.source,
+                    "symbol": res.symbol,
+                    "horizon": res.horizon,
+                    "report_date": res.report_date.isoformat(),
+                    "analyst": res.analyst,
+                    "direction": res.direction,
+                    "expected_low": res.expected_low,
+                    "expected_high": res.expected_high,
+                    "title": res.title,
+                }
+
+        # Tier 2: Check Local Disk & Extract On-the-Fly
+        custom_root = os.getenv("WEB_REPORTS_STORE_PATH")
+        reports_root = Path(custom_root) if custom_root else (Path("artifacts") / "web_reports")
+
+        subfolder = "SMBC" if "SMBC" in src_filter else ("みんなのFX" if "みんな" in src_filter else "SonyFinance")
+        target_dir = reports_root / subfolder
+        candidate_files = []
+        if target_dir.exists():
+            date_str = t_date.strftime("%Y%m%d")
+            short_date = t_date.strftime("%y%m%d")
+            candidate_files = list(target_dir.glob(f"*{date_str}*")) + list(target_dir.glob(f"*{short_date}*"))
+
+        for cf in candidate_files:
+            fc = extract_forecast_from_pdf(cf)
+            if fc and fc.get("report_date") == t_date:
+                with SessionLocal() as db:
+                    saved = save_report_forecast(db, fc)
+                    db.commit()
+                    if saved:
+                        return {
+                            "id": saved.id,
+                            "source": saved.source,
+                            "symbol": saved.symbol,
+                            "horizon": saved.horizon,
+                            "report_date": saved.report_date.isoformat(),
+                            "analyst": saved.analyst,
+                            "direction": saved.direction,
+                            "expected_low": saved.expected_low,
+                            "expected_high": saved.expected_high,
+                            "title": saved.title,
+                        }
+
+        # Tier 3: Trigger On-Demand Collection for missing report
+        try:
+            datasources = await self.list_datasources()
+            matched_ds = next((ds for ds in datasources if src_filter in ds.name or subfolder in ds.name), None)
+            if matched_ds is not None:
+                logger.info("[get_or_fetch_forecast] triggering on-demand collection for datasource %s (%s)", matched_ds.id, matched_ds.name)
+                # Run collection synchronously for target_date
+                from data.collectors import web_report
+                cfg = dict(matched_ds.config)
+                cfg["backfill_days"] = 3
+                web_report.collect(matched_ds.id, cfg, force=True)
+
+                # Re-check Tier 2
+                if target_dir.exists():
+                    for cf in target_dir.glob(f"*{t_date.strftime('%Y%m%d')}*"):
+                        fc = extract_forecast_from_pdf(cf)
+                        if fc and fc.get("report_date") == t_date:
+                            with SessionLocal() as db:
+                                saved = save_report_forecast(db, fc, datasource_id=matched_ds.id)
+                                db.commit()
+                                if saved:
+                                    return {
+                                        "id": saved.id,
+                                        "source": saved.source,
+                                        "symbol": saved.symbol,
+                                        "horizon": saved.horizon,
+                                        "report_date": saved.report_date.isoformat(),
+                                        "analyst": saved.analyst,
+                                        "direction": saved.direction,
+                                        "expected_low": saved.expected_low,
+                                        "expected_high": saved.expected_high,
+                                        "title": saved.title,
+                                    }
+        except Exception as exc:
+            logger.warning("[get_or_fetch_forecast] on-demand fetch failed: %s", exc)
+
+        return None
+
+    def enrich_dataframe_with_forecasts(
+        self,
+        df: "pd.DataFrame",
+        symbol: str = "USDJPY",
+        horizon: str = "Daily",
+        source: str = "SMBC信託",
+    ) -> "pd.DataFrame":
+        """Enrich OHLCV DataFrame with analyst expected range & breakout features."""
+        import pandas as pd
+        import sqlalchemy as sa
+        from database import SessionLocal
+        from data.models import ReportForecast
+
+        with SessionLocal() as db:
+            stmt = sa.select(ReportForecast).where(
+                ReportForecast.symbol == symbol,
+                ReportForecast.horizon == horizon,
+                ReportForecast.source == source,
+            )
+            rows = db.execute(stmt).scalars().all()
+
+        if not rows:
+            return df
+
+        fc_data = [
+            {
+                "forecast_date": pd.Timestamp(r.report_date),
+                "fc_low": r.expected_low,
+                "fc_high": r.expected_high,
+                "fc_width": (r.expected_high - r.expected_low) if r.expected_high and r.expected_low else None,
+                "fc_direction": r.direction,
+                "fc_analyst": r.analyst,
+            }
+            for r in rows
+            if r.expected_low is not None and r.expected_high is not None
+        ]
+        df_fc = pd.DataFrame(fc_data).drop_duplicates("forecast_date").set_index("forecast_date")
+
+        res_df = df.copy()
+        if not isinstance(res_df.index, pd.DatetimeIndex):
+            if "date" in res_df.columns:
+                res_df["dt_idx"] = pd.to_datetime(res_df["date"])
+                res_df = res_df.set_index("dt_idx")
+            elif "timestamp" in res_df.columns:
+                res_df["dt_idx"] = pd.to_datetime(res_df["timestamp"])
+                res_df = res_df.set_index("dt_idx")
+
+        # Normalize to date for matching
+        orig_index = res_df.index
+        res_df["_match_date"] = res_df.index.normalize()
+        res_df = res_df.merge(df_fc, left_on="_match_date", right_index=True, how="left").drop(columns=["_match_date"])
+        res_df.index = orig_index
+
+        # Add breakout and range features if High/Low are available
+        if "High" in res_df.columns and "Low" in res_df.columns:
+            res_df["is_in_range"] = (res_df["Low"] >= res_df["fc_low"] - 0.10) & (res_df["High"] <= res_df["fc_high"] + 0.10)
+            res_df["is_high_break"] = res_df["High"] > (res_df["fc_high"] + 0.10)
+            res_df["is_low_break"] = res_df["Low"] < (res_df["fc_low"] - 0.10)
+
+        return res_df
 
 
 data_service = DataService()

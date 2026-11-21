@@ -1,0 +1,10 @@
+{
+  "login": null,
+  "password": null,
+  "server": "OANDA-Japan MT5 Live",
+  "path": null,
+  "magic": 100200,
+  "default_lot": 0.1,
+  "slippage": 20,
+  "dry_run": false
+}
