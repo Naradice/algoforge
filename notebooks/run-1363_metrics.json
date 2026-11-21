@@ -1,0 +1,75 @@
+{
+  "dataset_id": 33,
+  "hyperparams": {
+    "obs_len": 60,
+    "pred_len": 12,
+    "epochs": 3,
+    "batch_size": 256,
+    "lr": 0.001,
+    "val_split": 0.2,
+    "normalize": "zscore",
+    "feature_cols": [
+      "close"
+    ],
+    "split_mode": "regime_controlled",
+    "token_level": "quantize_diff",
+    "n_bins": 7,
+    "cluster_window": 20,
+    "n_clusters": 20,
+    "n_digits": 3,
+    "sax_paa_size": 5,
+    "embedding_dim": null,
+    "preprocessing": null,
+    "optimizer": "adam",
+    "beta1": 0.9,
+    "beta2": 0.999,
+    "momentum": 0.0,
+    "weight_decay": null,
+    "disable_lr_scheduler": false,
+    "shuffle": false,
+    "lr_warmup_epochs": 0,
+    "early_stop_patience": null,
+    "divergence_factor": null,
+    "seed": 1,
+    "max_rows": 5000,
+    "split_seed": 42,
+    "tgt_feature_cols": [
+      "log_rv"
+    ],
+    "require_contiguous": false
+  },
+  "model_config": {
+    "nhead": 4,
+    "d_model": 8,
+    "dropout": 0.1,
+    "num_layers": 8,
+    "attn_window": 5,
+    "use_attention": true,
+    "dim_feedforward": 16
+  },
+  "epoch_metrics": [
+    {
+      "epoch": 1,
+      "train_loss": 1.022182700343621,
+      "val_loss": 1.0004169543584187
+    },
+    {
+      "epoch": 2,
+      "train_loss": 1.0031779737044604,
+      "val_loss": 1.0003272906327858
+    },
+    {
+      "epoch": 3,
+      "train_loss": 1.0020770854674852,
+      "val_loss": 1.000331664696718
+    }
+  ],
+  "best_epoch": 2,
+  "val_loss": 1.0003272906327858,
+  "num_params": 4964,
+  "external_ref": {
+    "platform": "colab",
+    "git_commit": "cdd0f9f",
+    "dataset_snapshot_sha256": "60a1830fcd8f9cb66e9f37f42fa1f4a1a46efeb7cc7770808bf1b337099bc5b9"
+  }
+}
