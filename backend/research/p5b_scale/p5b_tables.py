@@ -19,7 +19,7 @@ def main():
     A = json.load(open(os.path.join(E.OUT, "analysis.json"), encoding="utf-8"))
     print("### 表 A1: マッピングの M1 レベルの検査(推定期間、バケット別)\n")
     print("`real_std` はマッピングが使った窓ごとの標準偏差の平均(×1e-5)。`√V/real_std` は窓ごとの分散の平均の平方根との比。`log(σ_atlas/real_std)` は 8 候補のアトラスの std の符号つきの対数比の平均。"
-          "`log(σ_mix/√V)` は分解の M1 項(候補内分散に基づく代理量)。被覆は、アトラスの有効点 {n} のうち実現値の std の ±10%・±25% 以内の点数。\n")
+          "`log(σ_mix/√V)` は分解の M1 項(候補内分散に基づく代理量)。被覆は、アトラスの有効点のうち実現値の std の ±10%・±25% 以内の点数。\n")
     print("| バケット | real_std ×1e5 | √V/real_std | 候補の log(σ_atlas/real_std) 平均 | M1 項 log(σ_mix/√V) | ±10% / ±25% の点数 | 実現値の std がアトラスの最小未満 | 30 点の shortlist の log 比の範囲 | best_std_ratio |\n|---|---|---|---|---|---|---|---|---|")
     for b in range(20):
         a = A["A"][str(b)]
