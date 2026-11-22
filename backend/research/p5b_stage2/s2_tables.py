@@ -17,7 +17,7 @@ def main():
     A = json.load(open(os.path.join(E.OUT, "analysis2.json"), encoding="utf-8"))["cells"]
     print("### 表 A2a: C3 の候補別: 最初の 1,000 本の M1 分散とアトラスの σ²_atlas、アトラスの統計量との比較(経路平均 ± 標準誤差。アトラスは平均 ± seed 間の標準偏差)\n")
     print("`log(V_ens/σ²_atlas)` の標準誤差は、経路間の標準誤差とアトラスの seed 間の標準誤差(delta 法の近似)の合成。\n")
-    print("| バケット | 候補 (delta, wma) | n | log(V_ens/σ²_atlas) ± SE | log(経路平均 std / アトラス std) ± SE | acf_1 DDM / アトラス | acf_5 DDM / アトラス | 尖度 DDM / アトラス | volclust_50 DDM / アトラス |\n|---|---|---|---|---|---|---|---|")
+    print("| バケット | 候補 (delta, wma) | n | log(V_ens/σ²_atlas) ± SE | log(経路平均 std / アトラス std) ± SE | acf_1 DDM / アトラス | acf_5 DDM / アトラス | 尖度 DDM / アトラス | volclust_50 DDM / アトラス |\n|---|---|---|---|---|---|---|---|---|")
     for q in BK:
         for c in A[str(q)]["candidates"]:
             e = c["C3"]
@@ -37,6 +37,15 @@ def main():
         c3 = b["C3"]
         print(f"| {q} | {b['sigma2_atlas_mix_proxy'] * 1e10:.2f} | {c3['V_mix_pooled'] * 1e10:.2f} | {c3['V_mix_within_mean'] * 1e10:.2f} | {b['A2_log_ratio_mix_var_vs_atlas']['pooled']:+.3f} | "
               f"{b['A2_log_ratio_mix_var_vs_atlas']['within_mean']:+.3f} | {c3['V_pooled_over_within']:.3f} | " + " / ".join(f"{x * 1e5:.2f}" for x in c3["pos_std_mean"]) + " |")
+    print("\n### 表 A2c: バケットの混合の std レベルの比較(アトラスと同じ統計量: 経路ごとの std の平均)と、分散レベルとの違い\n")
+    print("`ens/atlas` は 8 候補の経路平均 std の平均と、アトラスの std の平均の比。`√V_pooled / 経路平均 std` が 1 を超える分は、重い裾の経路と経路間の違いによる分散の寄与。\n")
+    print("| バケット | std の比 ens/atlas | √V_pooled / 経路平均 std | √σ²_atlas,mix / アトラスの平均 std | 尖度 8 超の候補数 |\n|---|---|---|---|---|")
+    for q in BK:
+        cs = A[str(q)]["candidates"]
+        ms = sum(c["C3"]["atlas_stats_mean"]["std"] for c in cs) / len(cs)
+        at = sum(c["atlas"]["std"] for c in cs) / len(cs)
+        b = A[str(q)]["bucket"]
+        print(f"| {q} | {ms / at:.3f} | {math.sqrt(b['C3']['V_mix_pooled']) / ms:.3f} | {math.sqrt(b['sigma2_atlas_mix_proxy']) / at:.3f} | {sum(c['C3']['atlas_stats_mean']['kurtosis'] > 8 for c in cs)} |")
     print("\n### 表 B2: ショックあり(C0s)と C3 の M1 レベルの観測差(バケットの混合。観測差であり純粋なショック効果ではない)\n")
     print("| バケット | V_pooled C0s/C3 | acf_1 C3 / C0s | acf_5 C3 / C0s | 尖度 C3 / C0s | volclust_50 C3 / C0s | 位置ブロック別 std の比(C0s/C3、1〜100 / 101〜200 / 201〜1000 / 1001〜1440) |\n|---|---|---|---|---|---|---|")
     for q in BK:
@@ -72,7 +81,7 @@ def main():
             o = A[str(q)]["bucket"][cond]["cross_path_vr_by_start_offset"]
             print(f"| {q} | {cond} | " + " / ".join(f"{o['60'][t]:.3f}" for t in ('0', '120', '360', '720')) + " | " + " / ".join(f"{o['240'][t]:.3f}" for t in ('0', '120', '360', '720') if t in o['240']) + " |")
     print("\n### 表 D2: 分解の再評価(測定した M1 分散による M1'・M3' と、第 1 段階の代理量による M1・M3。和 M1+M3 と M2 は不変。対数比)\n")
-    print("| バケット | h | M1(代理) | M1'(プール) | M1'(経路内平均) | M3(代理) | M3'(プール) | M3'(経路内平均) | M2 | M2 の M1 レベル(プール) | M2 の集約(プール) | VR_C3 測定(プール) |\n|---|---|---|---|---|---|---|---|---|---|---|---|")
+    print("| バケット | h | M1(代理) | M1'(プール) | M1'(経路内平均) | M3(代理) | M3'(プール) | M3'(経路内平均) | M2 | M2 の M1 レベル(プール) | M2 の集約(プール) | VR_C3'(3 seed の sd ÷ seed 1 の V、プール) |\n|---|---|---|---|---|---|---|---|---|---|---|---|")
     for q in BK:
         for h in HZ:
             d = A[str(q)]["D2"][f"h{h}"]
