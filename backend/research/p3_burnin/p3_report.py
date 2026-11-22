@@ -26,7 +26,8 @@ COMPARISONS = [
     ("C1_60 vs C5_60 (shock timing, clock runs)", "C1_60", "C5_60"),
     ("C2_60 vs C5_60 (shock timing, clock reset)", "C2_60", "C5_60"),
     ("C2_60 vs C1_60 (clock reset)", "C2_60", "C1_60"),
-]
+] + [(f"{a}_{B} vs {b}_{B}", f"{a}_{B}", f"{b}_{B}") for B in (15, 240) for a, b in (("C1", "C5"), ("C2", "C5"), ("C2", "C1"))] \
+  + [(f"{a}_{B} vs C0s", f"{a}_{B}", "C0s") for B in (15, 240) for a in ("C1", "C2", "C5")]
 PHASE2 = ["C1_15", "C1_240", "C2_15", "C2_240", "C5_15", "C5_240"]
 
 
