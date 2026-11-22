@@ -150,8 +150,7 @@ def main():
     # ---- gate 3: candidate recovery -------------------------------------------------------------------------------------------------------
     mp = K.load_mapping()
     import p3_sim as S3
-    import f1_ddm as F1
-    src_ok = ("cands[attempts % len(cands)]" in inspect.getsource(S3)) and ("cands[attempts % len(cands)]" in inspect.getsource(F1))
+    src_ok = ("cands[attempts % len(cands)]" in inspect.getsource(S3)) and ("cands[attempts % len(cands)]" in open(os.path.join(E.BACKEND, "research", "f1_ddm.py"), encoding="utf-8").read())
     cands_ok = all(len(b["candidates"]) == K.N_CAND for b in mp["buckets"])
     bad, fr_min, fr_max, first_ok = 0, 1.0, 0.0, True
     for s in K.SEEDS:
