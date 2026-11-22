@@ -1,0 +1,272 @@
+{
+ "_code": {
+  "head": "27d086410435cb58bce81be3bc0456d4e5c018b4",
+  "dirty_p4_files": ""
+ },
+ "all_pass": true,
+ "gates": {
+  "1a raw parquet sha256 equals the recorded F1/P3 hash": {
+   "pass": true,
+   "detail": {
+    "sha256": "c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828"
+   }
+  },
+  "1b DDM C0s metrics reproduce the stored P3 values (all seeds/cells, tol 1e-12; same n)": {
+   "pass": true,
+   "detail": {
+    "max_abs_diff": 0.0,
+    "n_bad": 0
+   }
+  },
+  "1c fair_crps_list equals p3_eval.fair_crps on the DDM ensemble": {
+   "pass": true,
+   "detail": {
+    "max_abs_diff": 0.0
+   }
+  },
+  "2 decomposition identity (cov90 and mean CRPS only; both orders and Shapley; total equals the direct difference)": {
+   "pass": true,
+   "detail": {
+    "max_identity_error": 1.5092094240998222e-16,
+    "max_total_error": 3.3306690738754696e-16
+   }
+  },
+  "3a fair CRPS (unequal M) equals brute force on random arrays": {
+   "pass": true,
+   "detail": {
+    "max_abs_diff": 8.881784197001252e-16
+   }
+  },
+  "3b E1a: empirical quantile ranks / in-sample coverage consistent (|cov-nominal|<=0.01 per bucket, 50% and 90%); E1b/E1c: sorted samples, monotone quantile grid, CRPS equals brute force (E1b/E1c in-sample coverage recorded, not a pass condition)": {
+   "pass": true,
+   "detail": {
+    "E1a|h1": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8981101068200493,
+      0.8999179655455292
+     ],
+     "insample_cov50_min_max": [
+      0.4987593052109181,
+      0.5004095004095004
+     ]
+    },
+    "E1b|h1": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8654485049833887,
+      0.9180194805194806
+     ],
+     "insample_cov50_min_max": [
+      0.4950166112956811,
+      0.5070306038047974
+     ]
+    },
+    "E1c|h1": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8621533442088092,
+      0.9210963455149501
+     ],
+     "insample_cov50_min_max": [
+      0.42251223491027734,
+      0.5490033222591362
+     ]
+    },
+    "E1a_crps_brute|h1": 5.421010862427522e-20,
+    "E1b_crps_brute_subsample|h1": 4.336808689942018e-19,
+    "E1a|h4": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8980458793542906,
+      0.899581589958159
+     ],
+     "insample_cov50_min_max": [
+      0.4983277591973244,
+      0.5004177109440268
+     ]
+    },
+    "E1b|h4": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8733624454148472,
+      0.9205685618729097
+     ],
+     "insample_cov50_min_max": [
+      0.49456066945606697,
+      0.5046728971962616
+     ]
+    },
+    "E1c|h4": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8645484949832776,
+      0.9222707423580786
+     ],
+     "insample_cov50_min_max": [
+      0.42642140468227424,
+      0.5379912663755458
+     ]
+    },
+    "E1a_crps_brute|h4": 8.673617379884035e-19,
+    "E1b_crps_brute_subsample|h4": 1.734723475976807e-18,
+    "E1a|h12": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8978102189781022,
+      0.8996282527881041
+     ],
+     "insample_cov50_min_max": [
+      0.4986376021798365,
+      0.5004935834155972
+     ]
+    },
+    "E1b|h12": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8710263396911898,
+      0.9309417040358744
+     ],
+     "insample_cov50_min_max": [
+      0.4936708860759494,
+      0.5076233183856502
+     ]
+    },
+    "E1c|h12": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8529121421520237,
+      0.9328922495274102
+     ],
+     "insample_cov50_min_max": [
+      0.43731490621915103,
+      0.5422794117647058
+     ]
+    },
+    "E1a_crps_brute|h12": 4.336808689942018e-19,
+    "E1b_crps_brute_subsample|h12": 3.469446951953614e-18,
+    "E1a|h24": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8977505112474438,
+      0.8996929375639714
+     ],
+     "insample_cov50_min_max": [
+      0.49841938883034775,
+      0.5005117707267144
+     ]
+    },
+    "E1b|h24": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8272017837235228,
+      0.9325153374233128
+     ],
+     "insample_cov50_min_max": [
+      0.49129989764585463,
+      0.5094760312151616
+     ]
+    },
+    "E1c|h24": {
+     "samples_sorted": true,
+     "grid_sorted": true,
+     "insample_cov90_min_max": [
+      0.8579175704989154,
+      0.9293993677555321
+     ],
+     "insample_cov50_min_max": [
+      0.455531453362256,
+      0.5373467112597548
+     ]
+    },
+    "E1a_crps_brute|h24": 0.0,
+    "E1b_crps_brute_subsample|h24": 3.469446951953614e-18
+   }
+  },
+  "4 purge: every fit origin's forward window ends before the evaluation period starts; fit/eval origins disjoint and ordered (B-1 and B-2)": {
+   "pass": true,
+   "detail": {
+    "B-1|h1|eval validation": {
+     "max_fit_window_end": "2020-08-31 23:08:00",
+     "eval_start": "2020-09-01 00:00:00",
+     "ok": true
+    },
+    "B-1|h1|eval final": {
+     "max_fit_window_end": "2020-08-31 23:08:00",
+     "eval_start": "2021-09-01 00:00:00",
+     "ok": true
+    },
+    "B-2|h1|eval final": {
+     "max_fit_window_end": "2021-08-31 23:34:00",
+     "eval_start": "2021-09-01 00:00:00",
+     "ok": true
+    },
+    "B-1|h4|eval validation": {
+     "max_fit_window_end": "2020-08-31 23:08:00",
+     "eval_start": "2020-09-01 00:00:00",
+     "ok": true
+    },
+    "B-1|h4|eval final": {
+     "max_fit_window_end": "2020-08-31 23:08:00",
+     "eval_start": "2021-09-01 00:00:00",
+     "ok": true
+    },
+    "B-2|h4|eval final": {
+     "max_fit_window_end": "2021-08-31 23:34:00",
+     "eval_start": "2021-09-01 00:00:00",
+     "ok": true
+    },
+    "B-1|h12|eval validation": {
+     "max_fit_window_end": "2020-08-31 23:08:00",
+     "eval_start": "2020-09-01 00:00:00",
+     "ok": true
+    },
+    "B-1|h12|eval final": {
+     "max_fit_window_end": "2020-08-31 23:08:00",
+     "eval_start": "2021-09-01 00:00:00",
+     "ok": true
+    },
+    "B-2|h12|eval final": {
+     "max_fit_window_end": "2021-08-31 23:34:00",
+     "eval_start": "2021-09-01 00:00:00",
+     "ok": true
+    },
+    "B-1|h24|eval validation": {
+     "max_fit_window_end": "2020-08-28 23:58:00",
+     "eval_start": "2020-09-01 00:00:00",
+     "ok": true
+    },
+    "B-1|h24|eval final": {
+     "max_fit_window_end": "2020-08-28 23:58:00",
+     "eval_start": "2021-09-01 00:00:00",
+     "ok": true
+    },
+    "B-2|h24|eval final": {
+     "max_fit_window_end": "2021-08-31 23:34:00",
+     "eval_start": "2021-09-01 00:00:00",
+     "ok": true
+    }
+   }
+  },
+  "5 conditioning variables use origin-time information only (vectorised == single-origin; altering rows after the origin leaves them unchanged; session from the origin hour)": {
+   "pass": true,
+   "detail": {
+    "max_rel_err_vectorised_vs_single": 9.765906688882413e-11,
+    "unchanged_when_future_replaced": true,
+    "n_origins_tested": 300,
+    "n_origins_with_features": 33137
+   }
+  }
+ }
+}
