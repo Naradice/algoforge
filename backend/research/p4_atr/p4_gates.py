@@ -133,7 +133,8 @@ def main():
         vr1, ret1 = P.feat_one(close, t)
         err_vec = max(err_vec, abs(vr1 - F["vr"][j]) / abs(vr1), abs(ret1 - F["ret"][j]) / (abs(ret1) + 1e-12) if abs(ret1) > 1e-9 else abs(ret1 - F["ret"][j]))
         cm = close.copy()
-        cm[t + 1:t + 6000] = rng.uniform(close.min(), close.max(), 5999)
+        nf = min(6000, len(close) - t - 1)
+        cm[t + 1:t + 1 + nf] = rng.uniform(close.min(), close.max(), nf)
         same_future &= P.feat_one(cm, t) == (vr1, ret1)
     gate("5 conditioning variables use origin-time information only (vectorised == single-origin; altering rows after the origin leaves them unchanged; "
          "session from the origin hour)", bool(same_future and err_vec < 1e-8), {"max_rel_err_vectorised_vs_single": float(err_vec), "unchanged_when_future_replaced": bool(same_future),

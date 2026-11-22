@@ -172,7 +172,7 @@ def build_features(raw):
     t = raw.t
     c = raw.close
     atr = raw.atr()
-    ok = raw.contiguous(t - WIN, t)
+    ok = raw.contiguous(t - WIN, t) & (atr > 0)          # vr is undefined when the block is flat (ATR = 0): such origins have no feature
     d = np.abs(np.diff(c))
     cs = np.concatenate([[0.0], np.cumsum(d)])
     vr = np.full(raw.nb, np.nan)
