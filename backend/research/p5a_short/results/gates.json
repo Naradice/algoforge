@@ -1,0 +1,111 @@
+{
+ "_code": {
+  "head": "703b7e6aa2790e105e25947c52ee8a7d70c99a64",
+  "dirty_p5a_files": ""
+ },
+ "all_pass": true,
+ "gates": {
+  "1 inputs: raw parquet hash; DDM(C0s) metrics reproduce P3 stored values; E1a (B-1) metrics reproduce P4 stored values (tol 1e-12)": {
+   "pass": true,
+   "detail": {
+    "sha256": "c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828",
+    "ddm_max_abs_diff": 0.0,
+    "ddm_bad": 0,
+    "e1a_max_abs_diff": 0.0,
+    "e1a_bad": 0
+   }
+  },
+  "2a quantile-ratio / shape / location implementation on known distributions (symmetric, asymmetric, undefined cases kept as NaN); T1 with s=1 returns the original ensemble exactly (CRPS equal to 1e-12); T1 scaling fixes the median and keeps the order": {
+   "pass": true,
+   "detail": {
+    "scale_ratio": true,
+    "location": true,
+    "asymmetric": true,
+    "undefined": true,
+    "T1_s1_exact": true,
+    "T1_scaling": true
+   }
+  },
+  "2b identity PIT transform (G(u)=u) reproduces the T0g quantile grid exactly; grid is monotone; CRPS equals brute force on the same representation (1e-12)": {
+   "pass": true,
+   "detail": {
+    "identity_exact": true,
+    "grid_monotone": true,
+    "same_repr_crps_max_diff": 7.589415207398531e-19,
+    "cdf_deviation_at_grid_points_max": 0.010000000000000009
+   }
+  },
+  "2c grid (T0g) vs sample (T0) CRPS relative error recorded against the fixed tolerance 1e-3 (exceedances are reported, not failures)": {
+   "pass": true,
+   "detail": {
+    "tolerance": 0.001,
+    "max_rel_error": 0.00038529947019284714,
+    "n_cells": 12,
+    "n_over_tolerance": 0,
+    "over": {},
+    "all": {
+     "estimation|h1": 0.00016768391814333302,
+     "estimation|h4": 0.00021892311868733683,
+     "estimation|h12": 9.665564380921841e-05,
+     "estimation|h24": 7.604032171240552e-05,
+     "validation|h1": 4.3787925709189655e-05,
+     "validation|h4": 9.409679454971727e-05,
+     "validation|h12": 0.00011880893249181357,
+     "validation|h24": 0.00038529947019284714,
+     "final|h1": 6.919712435009956e-05,
+     "final|h4": 0.00015897693661533392,
+     "final|h12": 7.516856797382144e-05,
+     "final|h24": 4.208374205443876e-05
+    }
+   }
+  },
+  "3 candidate recovery: the generation rule 'cands[attempt % len(cands)]' appears in F1 and P3 code; 8 candidates per bucket; attempt ids increasing within the recorded attempts; the first 150 recovered candidates equal the rule; per-candidate path share within [0.10, 0.15]": {
+   "pass": true,
+   "detail": {
+    "rule_in_sources": true,
+    "8_candidates_per_bucket": true,
+    "n_bad_attempt_arrays": 0,
+    "first150_match": true,
+    "share_min": 0.123,
+    "share_max": 0.126
+   }
+  },
+  "4 estimation-only fitting: T1-T4 coefficients and the candidate selection do not read non-estimation cells (guard raises) and are unchanged when validation/final data are replaced by random numbers": {
+   "pass": true,
+   "detail": {
+    "fits_same": true,
+    "selection_same": true,
+    "s1": {
+     "1": 1.29,
+     "4": 1.36,
+     "12": 1.17,
+     "24": 0.97
+    },
+    "s2_range": {
+     "1": [
+      0.61,
+      1.94
+     ],
+     "4": [
+      0.86,
+      1.78
+     ],
+     "12": [
+      0.75,
+      1.48
+     ],
+     "24": [
+      0.69,
+      1.19
+     ]
+    }
+   }
+  },
+  "5 T3/T4: transformed quantile functions (and G^-1) are monotone, i.e. the transformed CDFs are monotone": {
+   "pass": true,
+   "detail": {
+    "n_rows_checked": 480
+   }
+  }
+ }
+}
