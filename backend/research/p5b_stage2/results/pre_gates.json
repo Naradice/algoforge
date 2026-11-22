@@ -1,0 +1,52 @@
+{
+ "_code": {
+  "head": "823f75c5432ff25b4ee9968cb7a65afddf6c36af",
+  "dirty_p5b_stage2_files": ""
+ },
+ "all_pass": true,
+ "gates": {
+  "1a raw parquet hash; stage-1 stored values (mixture sd and 90% width of C0s and C3 for buckets 0, 8, 15, 19) reproduce to 1e-12": {
+   "pass": true,
+   "detail": {
+    "sha256": "c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828",
+    "max_abs_diff": 0.0
+   }
+  },
+  "1b generation code (p3_sim.py, ddm_simulator.py, f1_ddm.py) in the working tree equals the commits used for the stored ensembles (line endings ignored)": {
+   "pass": true,
+   "detail": {
+    "backend/research/p3_burnin/p3_sim.py": true,
+    "backend/data/collectors/ddm_simulator.py": true,
+    "backend/research/f1_ddm.py": true
+   }
+  },
+  "1c the 8 target cells have attempts = successes = 1000 (no failed attempts) and attempt ids 0..999": {
+   "pass": true,
+   "detail": {
+    "C3|q0": true,
+    "C3|q8": true,
+    "C3|q15": true,
+    "C3|q19": true,
+    "C0s|q0": true,
+    "C0s|q8": true,
+    "C0s|q15": true,
+    "C0s|q19": true
+   }
+  },
+  "4a statistics definitions: full_characterize equals numpy/scipy/statsmodels references on a synthetic series (1e-9); the ACF profile equals statsmodels acf for lags 1-50 (1e-9); VR_win equals a brute-force implementation (1e-12)": {
+   "pass": true,
+   "detail": {
+    "atlas_vs_ref": 0.0,
+    "acf_profile_vs_statsmodels": 3.469446951953614e-17,
+    "vr_win_vs_brute": 0.0
+   }
+  },
+  "4b the statistics reproduce the stored real_stats of the mapping on the 300 used windows of buckets 0, 8, 15, 19 (relative 1e-9), and the ACF profile equals the mapping's acf_1/5/20": {
+   "pass": true,
+   "detail": {
+    "max_rel_diff": 9.71445146547012e-17,
+    "n_windows": 1200
+   }
+  }
+ }
+}

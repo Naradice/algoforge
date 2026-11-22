@@ -1,0 +1,22 @@
+{
+ "_code": {
+  "head": "5cf7ab8367ab4f766799edc3bc0b76ba7dd3e2b9",
+  "dirty_p5b_stage2_files": ""
+ },
+ "cond": "C0s",
+ "pass": true,
+ "n_paths": 4000,
+ "n_regenerated_calls_main": 4000,
+ "n_parallel_check_calls": 32,
+ "n_none": 0,
+ "n_mismatch": 0,
+ "mismatches_first20": [],
+ "parallel_independence_bad": [],
+ "elapsed_s": 809.0504102706909,
+ "sha256": {
+  "closes_C0s_q0.npy": "f7c620f24c0af426db91437cba1d25034bcb577e5ea5c617e843ce4babbfa5a1",
+  "closes_C0s_q8.npy": "5eb1ec720c1eb494b2b5376b721eaadbc6ef64f844a3c7b5b863c04ca8a9c57b",
+  "closes_C0s_q15.npy": "d43d10a6131b0157c40c897f7ed7397a7b6c6b9c937e022c58c1ae36b3ab7a99",
+  "closes_C0s_q19.npy": "237194eea985221c7ea9c10ce46bd8f883c369d4a951c94b359bba16664d510d"
+ }
+}

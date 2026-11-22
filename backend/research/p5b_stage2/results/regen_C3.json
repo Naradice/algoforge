@@ -1,0 +1,22 @@
+{
+ "_code": {
+  "head": "823f75c5432ff25b4ee9968cb7a65afddf6c36af",
+  "dirty_p5b_stage2_files": ""
+ },
+ "cond": "C3",
+ "pass": true,
+ "n_paths": 4000,
+ "n_regenerated_calls_main": 4000,
+ "n_parallel_check_calls": 32,
+ "n_none": 0,
+ "n_mismatch": 0,
+ "mismatches_first20": [],
+ "parallel_independence_bad": [],
+ "elapsed_s": 1153.0198979377747,
+ "sha256": {
+  "closes_C3_q0.npy": "39f81830b3ba2bf46a2d98ae7a125ccc37b985c5e72df7cec66b3d8ccb454649",
+  "closes_C3_q8.npy": "a308e3f0188b49436897ea506e7cc0cff8083e9573bd1b2e9e1d8790588c794e",
+  "closes_C3_q15.npy": "2431552b62a013d3033e36731a741e067136aa1e397fd97ebf364904aff4933c",
+  "closes_C3_q19.npy": "34c8914da57feecaa372bc974c46ed2ef4a25e49d3f0b5e4a11ee7084effac10"
+ }
+}
