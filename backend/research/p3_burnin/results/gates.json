@@ -1,0 +1,218 @@
+{
+ "_code": {
+  "head": "a113456771683cad888518fcba75cffc6566f206",
+  "dirty_p3_files": ""
+ },
+ "simulator and f1_ddm.py identical to F1 commit": {
+  "pass": true,
+  "detail": {
+   "backend/data/collectors/ddm_simulator.py": {
+    "sha256_f1_commit": "cf6b5dc0312c41a79ab3f935afabe6a0fb93da97481342f50bbf87d56e29581f",
+    "sha256_working": "cf6b5dc0312c41a79ab3f935afabe6a0fb93da97481342f50bbf87d56e29581f",
+    "identical": true
+   },
+   "backend/research/f1_ddm.py": {
+    "sha256_f1_commit": "043d0393e43b55d3bece0796558285bf73b9d8bfb176f9445f6c99e19584c45e",
+    "sha256_working": "043d0393e43b55d3bece0796558285bf73b9d8bfb176f9445f6c99e19584c45e",
+    "identical": true
+   }
+  }
+ },
+ "input hashes (58 files + raw parquet)": {
+  "pass": true,
+  "detail": {
+   "bad": [],
+   "parquet": "c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828"
+  }
+ },
+ "gate1 C0 byte-identical reproduction (buckets 0,10,19, seed 1)": {
+  "pass": true,
+  "detail": {
+   "same": {
+    "0": true,
+    "10": true,
+    "19": true
+   },
+   "info_ok": {
+    "0": true,
+    "10": true,
+    "19": true
+   }
+  }
+ },
+ "gate2a B=0 window equals f1_ddm.simulate_long_path": {
+  "pass": true,
+  "detail": null
+ },
+ "gate2b window length 1441, base = trade 20(B+1), y_h = log C[B+60h] - log C[B]": {
+  "pass": true,
+  "detail": {
+   "C0s": {
+    "len": 1441,
+    "manual": [
+     -0.00019805706088647958,
+     -9.902362711827142e-05,
+     -0.0003763419606277172,
+     -0.00046549633147983753
+    ],
+    "got": [
+     -0.00019805706088647958,
+     -9.902362711827142e-05,
+     -0.0003763419606277172,
+     -0.00046549633147983753
+    ]
+   },
+   "C1_15": {
+    "len": 1441,
+    "manual": [
+     -0.0001782354693299628,
+     -0.0004258374454683788,
+     -0.00025746143171944037,
+     -0.0006140559578100237
+    ],
+    "got": [
+     -0.0001782354693299628,
+     -0.0004258374454683788,
+     -0.00025746143171944037,
+     -0.0006140559578100237
+    ]
+   },
+   "C1_60": {
+    "len": 1441,
+    "manual": [
+     0.0001584487867128509,
+     0.00014854647303726154,
+     0.0002772689030982313,
+     0.00013864406130466303
+    ],
+    "got": [
+     0.0001584487867128509,
+     0.00014854647303726154,
+     0.0002772689030982313,
+     0.00013864406130466303
+    ]
+   },
+   "C1_240": {
+    "len": 1441,
+    "manual": [
+     4.9513039268854036e-05,
+     0.0003960356879912585,
+     -0.00012874537648572277,
+     -3.96121966005912e-05
+    ],
+    "got": [
+     4.9513039268854036e-05,
+     0.0003960356879912585,
+     -0.00012874537648572277,
+     -3.96121966005912e-05
+    ]
+   }
+  }
+ },
+ "gate2c C1/C2/C5 prefixes equal C0s; C4 prefix equals C3": {
+  "pass": true,
+  "detail": null
+ },
+ "gate2d two-stage simulate equals single-run (no intervention)": {
+  "pass": true,
+  "detail": null
+ },
+ "gate3a p=1: a shock at every step": {
+  "pass": true,
+  "detail": 300
+ },
+ "gate3b C0s-like vs C3-like: identical before the first shock, states diverge after": {
+  "pass": true,
+  "detail": {
+   "before": true,
+   "after": true,
+   "events": [
+    1900,
+    0
+   ]
+  }
+ },
+ "gate4b' random state equal at every checkpoint around a forced shock (before/after)": {
+  "pass": true,
+  "detail": {
+   "99": true,
+   "100": true,
+   "101": true,
+   "150": true,
+   "2000": true
+  }
+ },
+ "gate3c reset: probability back to P0 after _step_count = 0": {
+  "pass": true,
+  "detail": [
+   0.1353352832366127,
+   1.0
+  ]
+ },
+ "gate3d C5: no shock events after disabling": {
+  "pass": true,
+  "detail": [
+   200,
+   200
+  ]
+ },
+ "gate3e C3/C4 produce no shock events": {
+  "pass": true,
+  "detail": 0
+ },
+ "gate3f production config: P(step=0) = 0.002 after reset": {
+  "pass": true,
+  "detail": null
+ },
+ "gate4a normal draws exactly 1/step (choices), shock_rng exactly 2/step, in p=0 / p=1 / natural": {
+  "pass": true,
+  "detail": {
+   "p0_sep": {
+    "choices": 3000,
+    "global random": 0,
+    "shock_rng draws": 6000,
+    "steps": 3000,
+    "events": 0
+   },
+   "p1_sep": {
+    "choices": 3000,
+    "global random": 0,
+    "shock_rng draws": 6000,
+    "steps": 3000,
+    "events": 3000
+   },
+   "natural_sep": {
+    "choices": 3000,
+    "global random": 0,
+    "shock_rng draws": 6000,
+    "steps": 3000,
+    "events": 0
+   }
+  }
+ },
+ "gate4c natural shocks: global random state equal after 4000 steps in 20 seeds (incl. paths with shocks)": {
+  "pass": true,
+  "detail": {
+   "paths_with_shock": 9
+  }
+ },
+ "gate5 attempt IDs saved and consistent": {
+  "pass": true,
+  "detail": [
+   0,
+   1,
+   2,
+   3
+  ]
+ },
+ "gate6 p3_sim reads no market data (static); bucket array hash recorded": {
+  "pass": true,
+  "detail": {
+   "banned": [],
+   "bucket_hash": "c3f8631d23dd6d41b9d395e751dfa7eac4687cfd2f58bb08b2e42f127ddd24b3"
+  }
+ },
+ "bucket_hash": "c3f8631d23dd6d41b9d395e751dfa7eac4687cfd2f58bb08b2e42f127ddd24b3",
+ "elapsed_s": 1484.433254480362,
+ "all_pass": true
+}
