@@ -1,0 +1,182 @@
+{
+ "_code": {
+  "head": "af76114a21a8d68acb74072138d75697de1f26cf",
+  "dirty_p5b_files": ""
+ },
+ "all_pass": true,
+ "gates": {
+  "1 inputs: raw parquet hash; P5-A stored values (E1a width, 8-candidate mixture width, per-candidate widths; C0s) reproduce to 1e-12": {
+   "pass": true,
+   "detail": {
+    "sha256": "c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828",
+    "max_abs_diff": 0.0,
+    "n_bad": 0
+   }
+  },
+  "2 mapping reproduction: the 300 used windows are gap-free and end inside the estimation period; window std (ddof=0) reproduces real_stats['std'] (1e-9); cumulative-sum variance equals the direct variance (1e-9); the std-first selection replicates the stored candidates and their order": {
+   "pass": true,
+   "detail": {
+    "max_std_rel_err": 0.0,
+    "max_var_rel_err": 1.5073466096209223e-10,
+    "sqrtV_over_real_std_min_max": [
+     1.039235426642783,
+     1.1180103469164573
+    ],
+    "per_bucket": {
+     "0": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 1.5073466096209223e-10,
+      "selection_replicated": true
+     },
+     "1": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 5.5951740425946666e-11,
+      "selection_replicated": true
+     },
+     "2": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 3.828189080598695e-11,
+      "selection_replicated": true
+     },
+     "3": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 4.131861355332732e-11,
+      "selection_replicated": true
+     },
+     "4": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 2.980004369618004e-11,
+      "selection_replicated": true
+     },
+     "5": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 2.6028420809220856e-11,
+      "selection_replicated": true
+     },
+     "6": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 8.530138631299304e-11,
+      "selection_replicated": true
+     },
+     "7": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 2.7119869207512666e-11,
+      "selection_replicated": true
+     },
+     "8": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 1.7039175174621348e-11,
+      "selection_replicated": true
+     },
+     "9": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 1.921639158659679e-11,
+      "selection_replicated": true
+     },
+     "10": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 2.8279429792523876e-11,
+      "selection_replicated": true
+     },
+     "11": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 1.7947919778560985e-11,
+      "selection_replicated": true
+     },
+     "12": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 1.1747865833619527e-11,
+      "selection_replicated": true
+     },
+     "13": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 1.2444551535225336e-11,
+      "selection_replicated": true
+     },
+     "14": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 1.1589258595279013e-11,
+      "selection_replicated": true
+     },
+     "15": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 2.1067159358060072e-11,
+      "selection_replicated": true
+     },
+     "16": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 1.3523085942914124e-11,
+      "selection_replicated": true
+     },
+     "17": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 9.754800017215637e-12,
+      "selection_replicated": true
+     },
+     "18": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 7.757378781793278e-12,
+      "selection_replicated": true
+     },
+     "19": {
+      "windows_valid_in_estimation": true,
+      "std_rel_err": 0.0,
+      "var_rel_err": 4.010584329846389e-12,
+      "selection_replicated": true
+     }
+    }
+   }
+  },
+  "3 atlas lookup: each of the 160 candidates (delta, wma) exists exactly once in the atlas with finite std and std across seeds": {
+   "pass": true,
+   "detail": {
+    "n_bad": 0
+   }
+  },
+  "4 candidate recovery for C0s and C3: generation rule present in F1 code; attempt ids increasing within the recorded attempts; no-failure buckets have ids 0..999; per-candidate path share within [0.10, 0.15]": {
+   "pass": true,
+   "detail": {
+    "rule_in_source": true,
+    "n_bad": 0,
+    "ids_ok": true,
+    "share_min": 0.123,
+    "share_max": 0.126
+   }
+  },
+  "5 decomposition identity M1 + M3 + M2 = log(sd_C0s / sd_E1a) to 1e-12 for all 80 bucket x horizon cells, and VR_real / VR_C3 / sigma^2_atlas,mix / V_real,M1 match the plan definitions": {
+   "pass": true,
+   "detail": {
+    "max_abs_residual": 3.3306690738754696e-16,
+    "definitions_ok": true
+   }
+  },
+  "6 no future information: mapping windows, all-origin estimation windows and y windows of the estimation set end before the validation period starts; validation/final context windows are restricted to end inside their own period": {
+   "pass": true,
+   "detail": {
+    "y h1 max window end": "2020-08-31 23:08:00",
+    "y h4 max window end": "2020-08-31 23:08:00",
+    "y h12 max window end": "2020-08-31 23:08:00",
+    "y h24 max window end": "2020-08-28 23:58:00"
+   }
+  }
+ }
+}
