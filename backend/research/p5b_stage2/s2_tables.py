@@ -1,5 +1,6 @@
 """P5-B stage 2: render the result tables (markdown) from OUT/analysis2.json. Usage: python s2_tables.py > s2_tables.md"""
 import json
+import math
 import os
 
 import s2_env as E
@@ -16,13 +17,16 @@ def main():
     A = json.load(open(os.path.join(E.OUT, "analysis2.json"), encoding="utf-8"))["cells"]
     print("### 表 A2a: C3 の候補別: 最初の 1,000 本の M1 分散とアトラスの σ²_atlas、アトラスの統計量との比較(経路平均 ± 標準誤差。アトラスは平均 ± seed 間の標準偏差)\n")
     print("`log(V_ens/σ²_atlas)` の標準誤差は、経路間の標準誤差とアトラスの seed 間の標準誤差(delta 法の近似)の合成。\n")
-    print("| バケット | 候補 (delta, wma) | n | log(V_ens/σ²_atlas) ± SE | acf_1 DDM / アトラス | acf_5 DDM / アトラス | 尖度 DDM / アトラス | volclust_50 DDM / アトラス |\n|---|---|---|---|---|---|---|---|")
+    print("| バケット | 候補 (delta, wma) | n | log(V_ens/σ²_atlas) ± SE | log(経路平均 std / アトラス std) ± SE | acf_1 DDM / アトラス | acf_5 DDM / アトラス | 尖度 DDM / アトラス | volclust_50 DDM / アトラス |\n|---|---|---|---|---|---|---|---|")
     for q in BK:
         for c in A[str(q)]["candidates"]:
             e = c["C3"]
             am, ase = e["atlas_stats_mean"], e["atlas_stats_se"]
             at, sa = c["atlas"], c["atlas_std_across_seeds"]
-            print(f"| {q} | ({c['delta']}, {c['wma']}) | {c['n']} | {c['A2_log_ratio_var_vs_atlas']:+.3f} ± {c['A2_se_log_ratio']:.3f} | "
+            m_, se_ = am["std"], ase["std"]
+            lr_std = math.log(m_ / at["std"])
+            se_std = math.sqrt((se_ / m_) ** 2 + (sa["std"] / math.sqrt(5) / at["std"]) ** 2)
+            print(f"| {q} | ({c['delta']}, {c['wma']}) | {c['n']} | {c['A2_log_ratio_var_vs_atlas']:+.3f} ± {c['A2_se_log_ratio']:.3f} | {lr_std:+.3f} ± {se_std:.3f} | "
                   f"{am['acf_1']:+.3f}±{ase['acf_1']:.3f} / {at['acf_1']:+.3f}±{sa['acf_1']:.3f} | {am['acf_5']:+.3f}±{ase['acf_5']:.3f} / {at['acf_5']:+.3f}±{sa['acf_5']:.3f} | "
                   f"{am['kurtosis']:.1f}±{ase['kurtosis']:.1f} / {at['kurtosis']:.1f}±{sa['kurtosis']:.1f} | {am['volclust_50']:+.3f} / {at['volclust_50']:+.3f} |")
     print("\n### 表 A2b: バケットの混合(C3)の M1 分散と、位置ブロック別の標準偏差(初期の過渡の確認)\n")
