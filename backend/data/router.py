@@ -922,17 +922,19 @@ async def query_pdf_tables(
 
 
 @router.post("/pdf/collect")
-async def collect_pdf_prospectus(
+async def collect_pdf_documents(
     body: PdfCollectRequest,
 ):
-    """Trigger batch collection and extraction of prospectus/offering PDF files from EDINET."""
+    """Trigger batch collection and extraction of PDF files (prospectus, foreign) from EDINET."""
     import asyncio
     from datetime import date as dt_date
-    from data.pdf_data_service import run_pdf_prospectus_collection
+    from data.pdf_data_service import run_pdf_prospectus_collection, run_pdf_foreign_collection
 
     t_dt = dt_date.fromisoformat(body.target_date) if body.target_date else dt_date.today()
+    collector_fn = run_pdf_foreign_collection if body.category == "foreign" else run_pdf_prospectus_collection
+
     res = await asyncio.get_event_loop().run_in_executor(
-        None, run_pdf_prospectus_collection, t_dt, body.max_documents, None, body.force
+        None, collector_fn, t_dt, body.max_documents, None, body.force
     )
     return DataResponse(data=res)
 

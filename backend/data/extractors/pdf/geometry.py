@@ -157,19 +157,28 @@ def is_adj(base_node: tuple | pd.Series, target_node: tuple | pd.Series, margin:
 
 
 def separate_adjs(
-    target_node: pd.Series, remaining_nodes: pd.DataFrame, margin: float = 1.0
-) -> tuple[list[pd.Series], pd.DataFrame]:
+    target_node: tuple | pd.Series, remaining_nodes: pd.DataFrame | list, margin: float = 1.0
+) -> tuple[list, pd.DataFrame | list]:
     """Partition remaining line segments into adjacent and non-adjacent."""
+    if isinstance(remaining_nodes, pd.DataFrame):
+        nodes_list = [tuple(r) for r in remaining_nodes[BBOX_COLUMNS].itertuples(index=False, name=None)]
+        as_df = True
+    else:
+        nodes_list = remaining_nodes
+        as_df = False
+
     adjs = []
     others = []
-    for index in remaining_nodes.index:
-        item = remaining_nodes.loc[index]
+    for item in nodes_list:
         _, coord = is_adj(target_node, item, margin=margin)
         if coord is None:
             others.append(item)
         else:
             adjs.append(item)
-    return adjs, pd.DataFrame(others, columns=BBOX_COLUMNS) if others else pd.DataFrame(columns=BBOX_COLUMNS)
+
+    if as_df:
+        return adjs, pd.DataFrame(others, columns=BBOX_COLUMNS) if others else pd.DataFrame(columns=BBOX_COLUMNS)
+    return adjs, others
 
 
 def retrieve_table_elements(page: Any) -> pd.DataFrame:
@@ -210,34 +219,32 @@ def retrieve_table_lines(target_lines: pd.DataFrame, margin: float = 1.0) -> tup
     if target_lines.empty:
         return pd.DataFrame(columns=BBOX_COLUMNS), pd.DataFrame(columns=BBOX_COLUMNS)
 
-    initial_node = target_lines.iloc[0]
-    table_nodes: list[pd.Series] = []
-    adjs: list[pd.Series] = [initial_node]
-    remaining_nodes = target_lines.iloc[1:].copy()
+    # Convert to list of tuples for 100x-1000x faster adjacency search without pandas churn
+    lines_list: list[tuple[float, float, float, float]] = [
+        tuple(r) for r in target_lines[BBOX_COLUMNS].itertuples(index=False, name=None)
+    ]
+    initial_node = lines_list[0]
+    table_nodes: list[tuple[float, float, float, float]] = []
+    adjs: list[tuple[float, float, float, float]] = [initial_node]
+    remaining_nodes: list[tuple[float, float, float, float]] = lines_list[1:]
 
-    while len(remaining_nodes) > 0:
-        pre_length = len(remaining_nodes)
-        if len(adjs) > 0:
-            new_adjs = []
-            for adj in adjs:
-                children, remaining_nodes = separate_adjs(adj, remaining_nodes, margin=margin)
-                new_adjs.extend(children)
-                table_nodes.append(adj)
-            adjs = new_adjs
-        else:
-            break
-        if pre_length == len(remaining_nodes):
-            break
+    while remaining_nodes and adjs:
+        new_adjs: list[tuple[float, float, float, float]] = []
+        for adj in adjs:
+            next_remaining: list[tuple[float, float, float, float]] = []
+            for item in remaining_nodes:
+                _, coord = is_adj(adj, item, margin=margin)
+                if coord is not None:
+                    new_adjs.append(item)
+                else:
+                    next_remaining.append(item)
+            remaining_nodes = next_remaining
+            table_nodes.append(adj)
+        adjs = new_adjs
 
     table_nodes_df = pd.DataFrame(table_nodes, columns=BBOX_COLUMNS)
-    remaining_adjs_df = pd.DataFrame(adjs, columns=BBOX_COLUMNS)
-    if not table_nodes_df.empty:
-        table_nodes_df = pd.concat([table_nodes_df, remaining_adjs_df], ignore_index=True)
-    else:
-        remaining_nodes = pd.concat([remaining_adjs_df, remaining_nodes], ignore_index=True)
-
-    table_nodes_df.reset_index(inplace=True, drop=True)
-    return table_nodes_df, remaining_nodes
+    remaining_df = pd.DataFrame(remaining_nodes, columns=BBOX_COLUMNS)
+    return table_nodes_df, remaining_df
 
 
 def to_bbox(table_lines: pd.DataFrame) -> tuple[float, float, float, float]:

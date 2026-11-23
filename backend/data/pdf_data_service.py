@@ -46,6 +46,14 @@ PROSPECTUS_DOC_TYPES = {
     "090": "訂正目論見書",
 }
 
+FOREIGN_DOC_TYPES = {
+    "120": "外国会社報告書・有価証券報告書（外国投資信託）",
+    "160": "外国会社半期報告書・半期報告書（外国投資信託）",
+    "180": "外国会社臨時報告書・臨時報告書（外国特定有価証券）",
+    "030": "有価証券届出書（外国投資信託受益証券等）",
+    "040": "訂正有価証券届出書（外国投資信託受益証券等）",
+}
+
 
 def get_storage_root() -> Path:
     """Return and ensure the root directory for PDF storage."""
@@ -112,8 +120,8 @@ def resolve_pdf_path(rel_or_abs_path: str | None) -> Path | None:
     return cand
 
 
-def download_edinet_pdf(doc_id: str) -> bytes | None:
-    """Download PDF binary directly from EDINET API (type=2)."""
+def download_edinet_pdf(doc_id: str, is_foreign: bool = False) -> bytes | None:
+    """Download PDF binary directly from EDINET API (type=2), with fallback to English PDF (type=4) for foreign companies."""
     api_key = get_edinet_api_key()
     url = f"https://api.edinet-fsa.go.jp/api/v2/documents/{doc_id}?type=2"
     if api_key:
@@ -122,9 +130,38 @@ def download_edinet_pdf(doc_id: str) -> bytes | None:
     logger.info("Downloading PDF for doc_id=%s from EDINET API...", doc_id)
     try:
         resp = requests.get(url, timeout=45)
-        if resp.status_code == 200 and resp.content.startswith(b"%PDF"):
-            logger.info("Successfully downloaded PDF for doc_id=%s (%d bytes)", doc_id, len(resp.content))
-            return resp.content
+        content = resp.content if (resp.status_code == 200 and resp.content.startswith(b"%PDF")) else None
+
+        # For foreign entities or when type=2 is a 2-page notice pointing to English documents
+        if is_foreign or (content and len(content) < 30000):
+            en_url = f"https://api.edinet-fsa.go.jp/api/v2/documents/{doc_id}?type=4"
+            if api_key:
+                en_url += f"&Subscription-Key={api_key}"
+            try:
+                en_resp = requests.get(en_url, timeout=45)
+                if en_resp.status_code == 200 and en_resp.content.startswith(b"PK"):
+                    import zipfile, io
+                    with zipfile.ZipFile(io.BytesIO(en_resp.content)) as zf:
+                        names = [n for n in zf.namelist() if n.lower().endswith(".pdf")]
+                        if names:
+                            chosen = None
+                            for n in names:
+                                lower = n.lower()
+                                if "10k" in lower or "10-k" in lower or "20f" in lower or "20-f" in lower:
+                                    chosen = n
+                                    break
+                            if not chosen:
+                                names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+                                chosen = names[0]
+                            logger.info("Found English PDF %s in type=4 archive for foreign doc %s", chosen, doc_id)
+                            return zf.read(chosen)
+            except Exception as e:
+                logger.debug("Type 4 check failed for %s: %s", doc_id, e)
+
+        if content:
+            logger.info("Successfully downloaded PDF for doc_id=%s (%d bytes)", doc_id, len(content))
+            return content
+
         logger.warning(
             "EDINET API returned non-PDF or error for doc_id=%s: status=%d, prefix=%r",
             doc_id,
@@ -141,9 +178,27 @@ def detect_table_title(table: ExtractedPdfTable, pdf_path: Path | None = None) -
     """Attempt to detect the table title from column headers or content."""
     # Check column header keywords if available
     headers_str = " ".join(str(c) for c in table.df.columns if c)
-    data_str = " ".join(str(v) for v in table.df.values.flatten()[:20] if v)
+    data_str = " ".join(str(v) for v in table.df.values.flatten()[:25] if v)
     combined = f"{headers_str} {data_str}"
+    combined_lower = combined.lower()
 
+    # Foreign Financial Statements
+    if "balance sheet" in combined_lower or "貸借対照表" in combined or ("total assets" in combined_lower and "liabilities" in combined_lower):
+        return "貸借対照表 (Balance Sheet)"
+    if (
+        "statement of operations" in combined_lower
+        or "statements of operations" in combined_lower
+        or "statement of income" in combined_lower
+        or "損益計算書" in combined
+        or ("total revenue" in combined_lower and "cost of sales" in combined_lower)
+    ):
+        return "損益計算書 (Statement of Operations)"
+    if "cash flow" in combined_lower or "キャッシュ・フロー" in combined:
+        return "キャッシュ・フロー計算書 (Statement of Cash Flows)"
+    if "schedule of investment" in combined_lower or "資産の種類" in combined or "ポートフォリオ" in combined or "時価合計" in combined:
+        return "組入有価証券・資産構成表 (Schedule of Investments)"
+
+    # Domestic Offering / Prospectus
     if "手取金の使途" in combined or "手取概算額" in combined or "資金使途" in combined:
         return "手取金の使途"
     if "新株予約権" in combined or "募集の条件" in combined or "発行数" in combined:
@@ -319,7 +374,8 @@ def ingest_pdf_document(
             pdf_bytes = local_path.read_bytes()
 
     if not pdf_bytes:
-        pdf_bytes = download_edinet_pdf(doc_id)
+        is_foreign_doc = category == "foreign" or (bool(doc_type_code) and doc_type_code in FOREIGN_DOC_TYPES)
+        pdf_bytes = download_edinet_pdf(doc_id, is_foreign=is_foreign_doc)
 
     if not pdf_bytes:
         err = "Failed to download PDF binary from EDINET API"
@@ -461,6 +517,94 @@ def run_pdf_prospectus_collection(
                 session=session,
                 force=force,
                 max_pages=25,
+            )
+            results.append(res)
+    finally:
+        if close_session:
+            session.close()
+
+    succeeded = sum(1 for r in results if r.get("status") in ("completed", "skipped"))
+    failed = sum(1 for r in results if r.get("status") == "error")
+
+    return {
+        "date": date_str,
+        "total_candidates": len(candidates),
+        "processed": len(results),
+        "succeeded": succeeded,
+        "failed": failed,
+        "results": results,
+    }
+
+
+def run_pdf_foreign_collection(
+    target_date: dt_date | None = None,
+    max_documents: int = 20,
+    session: Session | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """
+    Scan EDINET documents for a given date, filter for foreign company/fund filings,
+    download their PDF and extract structured tables into the database.
+    """
+    t_date = target_date or dt_date.today()
+    date_str = t_date.isoformat()
+    logger.info("Starting foreign PDF collection for date=%s (max=%d)", date_str, max_documents)
+
+    api_key = get_edinet_api_key()
+    doc_list = fetch_document_list(date_str, api_key)
+    if not doc_list:
+        logger.info("No documents found on EDINET for %s", date_str)
+        return {
+            "date": date_str,
+            "total_candidates": 0,
+            "processed": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "documents": [],
+        }
+
+    candidates = []
+    for d in doc_list:
+        doc_type_code = d.get("docTypeCode") or ""
+        desc = d.get("docDescription") or ""
+        filer = d.get("filerName") or ""
+        if (
+            doc_type_code in FOREIGN_DOC_TYPES
+            or "外国会社" in desc
+            or "外国投資" in desc
+            or "外国法人" in desc
+        ):
+            candidates.append(d)
+
+    logger.info("Found %d foreign candidates for %s", len(candidates), date_str)
+
+    close_session = False
+    if session is None:
+        session = SessionLocal()
+        close_session = True
+
+    results = []
+    try:
+        for item in candidates[:max_documents]:
+            doc_id = item.get("docID")
+            if not doc_id:
+                continue
+
+            meta = {
+                "submitDateTime": item.get("submitDateTime"),
+                "secCode": item.get("secCode"),
+                "filerName": item.get("filerName"),
+                "docDescription": item.get("docDescription"),
+                "docTypeCode": item.get("docTypeCode"),
+                "category": "foreign",
+            }
+
+            res = ingest_pdf_document(
+                doc_id=doc_id,
+                meta=meta,
+                session=session,
+                force=force,
+                max_pages=35,
             )
             results.append(res)
     finally:
