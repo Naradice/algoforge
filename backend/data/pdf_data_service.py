@@ -384,9 +384,17 @@ def ingest_pdf_document(
         }
     except Exception as exc:
         logger.exception("Error extracting tables from %s: %s", abs_path, exc)
-        doc_rec.extraction_status = "error"
-        doc_rec.error_message = str(exc)
-        session.commit()
+        session.rollback()
+        try:
+            err_doc = session.execute(
+                sa.select(PdfDocumentRecord).where(PdfDocumentRecord.doc_id == doc_id)
+            ).scalar_one_or_none()
+            if err_doc:
+                err_doc.extraction_status = "error"
+                err_doc.error_message = str(exc)
+                session.commit()
+        except Exception:
+            session.rollback()
         return {"doc_id": doc_id, "status": "error", "error": str(exc)}
 
 
