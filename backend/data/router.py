@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,9 @@ from data.models import (
     DatasetRead, DatasetUpdate, CollectionJobCreate, CollectionJobRead,
     CollectionJobUpdate, CollectionJobRunRead,
     DataCharacteristicsRead,
+    PdfDocumentRecord, PdfExtractedTableRecord,
+    PdfDocumentRead, PdfDocumentDetailRead, PdfExtractedTableRead,
+    PdfCollectRequest,
 )
 from data.service import data_service
 from data.repository import data_repo
@@ -787,3 +791,148 @@ async def get_swing_signals(
         ],
         meta=Meta(total=len(signals)),
     )
+
+
+# ── PDF Document & Table Extraction Endpoints ─────────────────────────────────
+
+@router.get("/pdf/documents", response_model=DataResponse[list[PdfDocumentRead]])
+async def list_pdf_documents(
+    category: str | None = Query(None, description="Category filter (prospectus, foreign, extraordinary, legacy, large_holding)"),
+    sec_code: str | None = Query(None, description="Security code filter (e.g. 4882)"),
+    filer_name: str | None = Query(None, description="Filer name substring"),
+    doc_type_code: str | None = Query(None, description="Document type code (e.g. 010)"),
+    status: str | None = Query(None, description="Extraction status filter (pending, completed, error, skipped)"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """List PDF documents with metadata and extraction status."""
+    import sqlalchemy as sa
+    from sqlalchemy.orm import selectinload
+
+    q = sa.select(PdfDocumentRecord).options(selectinload(PdfDocumentRecord.tables))
+    if category:
+        q = q.where(PdfDocumentRecord.category == category)
+    if sec_code:
+        q = q.where(PdfDocumentRecord.sec_code.contains(sec_code))
+    if filer_name:
+        q = q.where(PdfDocumentRecord.filer_name.contains(filer_name))
+    if doc_type_code:
+        q = q.where(PdfDocumentRecord.doc_type_code == doc_type_code)
+    if status:
+        q = q.where(PdfDocumentRecord.extraction_status == status)
+
+    # Count total
+    count_q = sa.select(sa.func.count(PdfDocumentRecord.id))
+    if category:
+        count_q = count_q.where(PdfDocumentRecord.category == category)
+    if sec_code:
+        count_q = count_q.where(PdfDocumentRecord.sec_code.contains(sec_code))
+    if filer_name:
+        count_q = count_q.where(PdfDocumentRecord.filer_name.contains(filer_name))
+    if doc_type_code:
+        count_q = count_q.where(PdfDocumentRecord.doc_type_code == doc_type_code)
+    if status:
+        count_q = count_q.where(PdfDocumentRecord.extraction_status == status)
+
+    total = (await db.execute(count_q)).scalar() or 0
+    q = q.order_by(PdfDocumentRecord.filing_date.desc().nullslast(), PdfDocumentRecord.created_at.desc()).offset(offset).limit(limit)
+    rows = (await db.execute(q)).scalars().all()
+
+    items = [PdfDocumentRead.model_validate(r) for r in rows]
+    return DataResponse(data=items, meta=Meta(total=total))
+
+
+@router.get("/pdf/documents/{doc_id}", response_model=DataResponse[PdfDocumentDetailRead])
+async def get_pdf_document_detail(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve full detail of a PDF document including all extracted tables and HTML."""
+    import sqlalchemy as sa
+    from sqlalchemy.orm import selectinload
+
+    q = (
+        sa.select(PdfDocumentRecord)
+        .options(selectinload(PdfDocumentRecord.tables))
+        .where(PdfDocumentRecord.doc_id == doc_id)
+    )
+    doc = (await db.execute(q)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"PDF document {doc_id} not found")
+
+    item = PdfDocumentDetailRead.model_validate(doc)
+    return DataResponse(data=item)
+
+
+@router.get("/pdf/documents/{doc_id}/file")
+async def get_pdf_document_file(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve the original raw PDF file for fast progressive browser viewing."""
+    import sqlalchemy as sa
+    from data.pdf_data_service import resolve_pdf_path
+
+    q = sa.select(PdfDocumentRecord).where(PdfDocumentRecord.doc_id == doc_id)
+    doc = (await db.execute(q)).scalar_one_or_none()
+    if not doc or not doc.file_path:
+        raise HTTPException(status_code=404, detail=f"PDF file for {doc_id} not registered")
+
+    pdf_file = resolve_pdf_path(doc.file_path)
+    if not pdf_file or not pdf_file.exists():
+        raise HTTPException(status_code=404, detail=f"PDF file not found on disk at {doc.file_path}")
+
+    return FileResponse(
+        path=str(pdf_file),
+        media_type="application/pdf",
+        filename=f"{doc_id}.pdf",
+    )
+
+
+@router.get("/pdf/tables", response_model=DataResponse[list[PdfExtractedTableRead]])
+async def query_pdf_tables(
+    doc_id: str | None = Query(None, description="Filter by Document ID"),
+    title: str | None = Query(None, description="Filter by table title keyword"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Query extracted PDF tables across documents."""
+    import sqlalchemy as sa
+
+    q = sa.select(PdfExtractedTableRecord)
+    if doc_id:
+        q = q.where(PdfExtractedTableRecord.doc_id == doc_id)
+    if title:
+        q = q.where(PdfExtractedTableRecord.table_title.contains(title))
+
+    count_q = sa.select(sa.func.count(PdfExtractedTableRecord.id))
+    if doc_id:
+        count_q = count_q.where(PdfExtractedTableRecord.doc_id == doc_id)
+    if title:
+        count_q = count_q.where(PdfExtractedTableRecord.table_title.contains(title))
+
+    total = (await db.execute(count_q)).scalar() or 0
+    q = q.order_by(PdfExtractedTableRecord.id.asc()).offset(offset).limit(limit)
+    rows = (await db.execute(q)).scalars().all()
+
+    items = [PdfExtractedTableRead.model_validate(r) for r in rows]
+    return DataResponse(data=items, meta=Meta(total=total))
+
+
+@router.post("/pdf/collect")
+async def collect_pdf_prospectus(
+    body: PdfCollectRequest,
+):
+    """Trigger batch collection and extraction of prospectus/offering PDF files from EDINET."""
+    import asyncio
+    from datetime import date as dt_date
+    from data.pdf_data_service import run_pdf_prospectus_collection
+
+    t_dt = dt_date.fromisoformat(body.target_date) if body.target_date else dt_date.today()
+    res = await asyncio.get_event_loop().run_in_executor(
+        None, run_pdf_prospectus_collection, t_dt, body.max_documents, None, body.force
+    )
+    return DataResponse(data=res)
+

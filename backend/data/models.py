@@ -248,6 +248,53 @@ class MarketMarginWeeklyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
 
+class PdfDocumentRecord(Base):
+    __tablename__ = "pdf_documents"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    doc_id: Mapped[str] = mapped_column(sa.Text, unique=True, index=True, nullable=False)
+    sec_code: Mapped[str | None] = mapped_column(sa.Text, index=True, nullable=True)
+    filer_name: Mapped[str | None] = mapped_column(sa.Text, index=True, nullable=True)
+    doc_type: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    doc_type_code: Mapped[str | None] = mapped_column(sa.Text, index=True, nullable=True)
+    category: Mapped[str] = mapped_column(sa.Text, index=True, nullable=False, default="prospectus")
+    filing_date: Mapped[date | None] = mapped_column(sa.Date, index=True, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(sa.BigInteger, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    num_pages: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    extraction_status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="pending")  # pending | completed | error | skipped
+    error_message: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    extracted_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())
+
+    tables: Mapped[list[PdfExtractedTableRecord]] = relationship(
+        "PdfExtractedTableRecord", back_populates="document", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class PdfExtractedTableRecord(Base):
+    __tablename__ = "pdf_extracted_tables"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    document_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("pdf_documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    doc_id: Mapped[str] = mapped_column(sa.Text, index=True, nullable=False)
+    page_number: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    table_index: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    table_title: Mapped[str | None] = mapped_column(sa.Text, index=True, nullable=True)
+    row_count: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+    col_count: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+    headers_json: Mapped[list | None] = mapped_column(sa.JSON, nullable=True)
+    data_json: Mapped[list | None] = mapped_column(sa.JSON, nullable=True)
+    html: Mapped[str] = mapped_column(sa.Text, nullable=False, default="")
+    bbox_json: Mapped[list | None] = mapped_column(sa.JSON, nullable=True)
+    meta_json: Mapped[dict | None] = mapped_column(sa.JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+
+    document: Mapped[PdfDocumentRecord] = relationship("PdfDocumentRecord", back_populates="tables")
+
+
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
@@ -418,3 +465,118 @@ class ReportForecastRead(BaseModel):
     title: str | None = None
     raw_artifact_path: str | None = None
     extracted_at: datetime
+
+
+class PdfExtractedTableRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    doc_id: str
+    page_number: int
+    table_index: int
+    table_title: str | None = None
+    row_count: int
+    col_count: int
+    headers: list | None = None
+    data: list | None = None
+    html: str
+    bbox: list | None = None
+    meta: dict | None = None
+    created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_json_fields(cls, data: object) -> object:
+        if isinstance(data, dict):
+            return data
+        # Map ORM columns *_json to schema fields
+        return {
+            "id": getattr(data, "id"),
+            "document_id": getattr(data, "document_id"),
+            "doc_id": getattr(data, "doc_id"),
+            "page_number": getattr(data, "page_number"),
+            "table_index": getattr(data, "table_index"),
+            "table_title": getattr(data, "table_title"),
+            "row_count": getattr(data, "row_count"),
+            "col_count": getattr(data, "col_count"),
+            "headers": getattr(data, "headers_json", None),
+            "data": getattr(data, "data_json", None),
+            "html": getattr(data, "html", ""),
+            "bbox": getattr(data, "bbox_json", None),
+            "meta": getattr(data, "meta_json", None),
+            "created_at": getattr(data, "created_at"),
+        }
+
+
+class PdfDocumentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    doc_id: str
+    sec_code: str | None = None
+    filer_name: str | None = None
+    doc_type: str | None = None
+    doc_type_code: str | None = None
+    category: str
+    filing_date: date | None = None
+    file_path: str | None = None
+    file_size: int | None = None
+    sha256: str | None = None
+    num_pages: int | None = None
+    extraction_status: str
+    error_message: str | None = None
+    extracted_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    tables_count: int = 0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_tables_count(cls, data: object) -> object:
+        if isinstance(data, dict):
+            return data
+        tables = getattr(data, "tables", None)
+        count = len(tables) if tables is not None else 0
+        return {
+            "id": getattr(data, "id"),
+            "doc_id": getattr(data, "doc_id"),
+            "sec_code": getattr(data, "sec_code"),
+            "filer_name": getattr(data, "filer_name"),
+            "doc_type": getattr(data, "doc_type"),
+            "doc_type_code": getattr(data, "doc_type_code"),
+            "category": getattr(data, "category"),
+            "filing_date": getattr(data, "filing_date"),
+            "file_path": getattr(data, "file_path"),
+            "file_size": getattr(data, "file_size"),
+            "sha256": getattr(data, "sha256"),
+            "num_pages": getattr(data, "num_pages"),
+            "extraction_status": getattr(data, "extraction_status"),
+            "error_message": getattr(data, "error_message"),
+            "extracted_at": getattr(data, "extracted_at"),
+            "created_at": getattr(data, "created_at"),
+            "updated_at": getattr(data, "updated_at"),
+            "tables_count": count,
+        }
+
+
+class PdfDocumentDetailRead(PdfDocumentRead):
+    tables: list[PdfExtractedTableRead] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_tables_detail(cls, data: object) -> object:
+        if isinstance(data, dict):
+            return data
+        base = PdfDocumentRead._map_tables_count(data)
+        tables = getattr(data, "tables", []) or []
+        base["tables"] = tables
+        return base
+
+
+class PdfCollectRequest(BaseModel):
+    target_date: str | None = None
+    category: str = "prospectus"
+    max_documents: int = 20
+    force: bool = False
+
