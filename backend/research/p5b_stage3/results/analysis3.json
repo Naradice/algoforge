@@ -1,6 +1,6 @@
 {
  "_code": {
-  "head": "89c9478d3daf5def82dd0851cf7e4805efc228d8",
+  "head": "ad2437bcdffe19d6cd71ac8f9b78f31326abe9c8",
   "dirty_p5b_stage3_files": ""
  },
  "gates": {
@@ -32,6 +32,7 @@
   "C3": {
    "n_obs": 32,
    "n_within_25pct": 0,
+   "n_proxy_nonpositive_e_undefined_counted_outside": 32,
    "spearman": 0.9424486803519062,
    "median_e": null,
    "bucket_e": {
@@ -396,6 +397,7 @@
    "summary": {
     "n_obs": 32,
     "n_within_25pct": 0,
+    "n_proxy_nonpositive_e_undefined_counted_outside": 32,
     "spearman": 0.9563782991202344,
     "median_e": null,
     "bucket_e": {
@@ -4824,7 +4826,8 @@
    }
   },
   "n_valid": 170,
-  "spearman_kurt_vs_relseedsd_all_valid": null,
+  "n_valid_kurtosis_missing": 0,
+  "spearman_kurt_vs_relseedsd_all_valid": 0.8380463427974743,
   "conds": {
    "C3": {
     "rows": [
