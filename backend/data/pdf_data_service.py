@@ -404,7 +404,8 @@ def run_pdf_prospectus_collection(
     date_str = t_date.isoformat()
     logger.info("Starting prospectus PDF collection for date=%s (max=%d)", date_str, max_documents)
 
-    doc_list = fetch_document_list(date_str)
+    api_key = get_edinet_api_key()
+    doc_list = fetch_document_list(date_str, api_key)
     if not doc_list:
         logger.info("No documents found on EDINET for %s", date_str)
         return {
