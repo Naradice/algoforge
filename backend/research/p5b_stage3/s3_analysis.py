@@ -119,7 +119,7 @@ def main():
     def crit(obs, bk):
         e = np.array([o["e"] for o in obs])
         rho = float(sps.spearmanr([o["vrproxy"] for o in obs], [o["vrwin"] for o in obs])[0])
-        return {"n_obs": len(obs), "n_within_25pct": int(np.sum(np.abs(e) <= E.LOG125)), "spearman": rho, "median_e": float(np.median(e)),
+        return {"n_obs": len(obs), "n_within_25pct": int(np.sum(np.abs(e) <= E.LOG125)), "n_proxy_nonpositive_e_undefined_counted_outside": int(np.sum(~np.isfinite(e))), "spearman": rho, "median_e": float(np.median(e)),
                 "bucket_e": {str(b["q"]): b["e"] for b in bk}, "buckets_within": int(np.sum([abs(b["e"]) <= E.LOG125 for b in bk]))}
     real_bk = []
     for q in E.BUCKETS4:
@@ -220,7 +220,7 @@ def main():
         m = kb == lab
         x = rr[m]
         cls[lab] = {"n": int(m.sum()), "ratio_median": float(x.median()) if len(x) else None, "ratio_p90": float(x.quantile(0.9)) if len(x) else None, "ratio_max": float(x.max()) if len(x) else None}
-    C = {"kurtosis_classes": cls, "n_valid": nvalid, "spearman_kurt_vs_relseedsd_all_valid": float(sps.spearmanr(valid["kurtosis"], rr)[0]), "conds": {}}
+    C = {"kurtosis_classes": cls, "n_valid": nvalid, "n_valid_kurtosis_missing": int(valid["kurtosis"].isna().sum()), "spearman_kurt_vs_relseedsd_all_valid": float(sps.spearmanr(valid["kurtosis"], rr, nan_policy="omit")[0]), "conds": {}}
     for cond in E.CONDS:
         rows = []
         for q in E.BUCKETS4:
