@@ -52,7 +52,7 @@ for cond in E.CONDS:
         ax.set_xlabel(lab)
         ax.set_ylabel("log(V_ens / sigma2_atlas)")
     axs[0].legend(fontsize=7)
-    fig.suptitle(f"C3 ({cond}): 32 observations (4 buckets x 8 candidates; duplicates of (delta, wma) exist); descriptive only", fontsize=9)
+    fig.suptitle(f"{'C3 condition (main analysis)' if cond == 'C3' else 'C0s condition (supplementary)'}: 32 observations (4 buckets x 8 candidates; duplicates of (delta, wma) exist); descriptive only", fontsize=9)
     fig.tight_layout()
     fig.savefig(os.path.join(E.RESULTS, f"fig_c3_{cond}.png"), dpi=110)
     plt.close(fig)
