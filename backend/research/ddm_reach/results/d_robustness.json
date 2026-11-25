@@ -1,0 +1,284 @@
+{
+ "_code": {
+  "head": "806053d18505d1a262d78c5deada767b3deb84ed",
+  "dirty_ddm_reach_files": ""
+ },
+ "validation_frozen": {
+  "reach": {
+   "n_points_matching_eligible": 39,
+   "n_RA_windows": 351,
+   "n_reachable_windows": 8,
+   "fraction_reachable_box": 0.022792022792022793,
+   "fraction_reachable_euclid_0.5": 0.005698005698005698,
+   "n_weeks_reachable": 8,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.2336182336182336,
+    "kurtosis": 0.11396011396011396,
+    "volclust_50": 0.16524216524216523
+   },
+   "nearest_chebyshev_median": 1.4328522394591805
+  },
+  "estimation_RA_reference_fraction": 0.05160390516039052
+ },
+ "swap_SA_SB": {
+  "n_points_matching_eligible": 48,
+  "n_RA_windows": 717,
+  "n_reachable_windows": 44,
+  "fraction_reachable_box": 0.061366806136680614,
+  "fraction_reachable_euclid_0.5": 0.01813110181311018,
+  "n_weeks_reachable": 36,
+  "fraction_reachable_if_caliper_removed_for": {
+   "acf_1": 0.32357043235704325,
+   "kurtosis": 0.1701534170153417,
+   "volclust_50": 0.29428172942817293
+  },
+  "nearest_chebyshev_median": 1.4872015058526022
+ },
+ "partitions": {
+  "PB": {
+   "M": [
+    "acf_1",
+    "volclust_50"
+   ],
+   "n_points_matching_eligible": 40,
+   "n_RA_windows": 717,
+   "n_reachable_windows": 115,
+   "fraction_reachable_box": 0.1603905160390516,
+   "fraction_reachable_euclid_0.5": 0.13249651324965134,
+   "n_weeks_reachable": 70,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.37796373779637377,
+    "volclust_50": 0.6122733612273361
+   },
+   "nearest_chebyshev_median": 1.1054478069036822,
+   "frozen_noise_floor_computable": true
+  },
+  "PC": {
+   "M": [
+    "vr20",
+    "kurtosis"
+   ],
+   "n_points_matching_eligible": 101,
+   "n_RA_windows": 717,
+   "n_reachable_windows": 206,
+   "fraction_reachable_box": 0.28730822873082285,
+   "fraction_reachable_euclid_0.5": 0.21199442119944212,
+   "n_weeks_reachable": 89,
+   "fraction_reachable_if_caliper_removed_for": {
+    "vr20": 0.9414225941422594,
+    "kurtosis": 0.5578800557880056
+   },
+   "nearest_chebyshev_median": 0.6398449278681316,
+   "frozen_noise_floor_computable": true
+  }
+ },
+ "unit_pairing_L1000": {
+  "TPC10_bar1": {
+   "n_RA": 717,
+   "n_points_matching_eligible": 26,
+   "n_RA_windows": 717,
+   "n_reachable_windows": 11,
+   "fraction_reachable_box": 0.015341701534170154,
+   "fraction_reachable_euclid_0.5": 0.008368200836820083,
+   "n_weeks_reachable": 11,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.3124128312412831,
+    "kurtosis": 0.09483960948396095,
+    "volclust_50": 0.07112970711297072
+   },
+   "nearest_chebyshev_median": 1.3573120947165984
+  },
+  "TPC20_bar1": {
+   "n_RA": 717,
+   "n_points_matching_eligible": 39,
+   "n_RA_windows": 717,
+   "n_reachable_windows": 37,
+   "fraction_reachable_box": 0.05160390516039052,
+   "fraction_reachable_euclid_0.5": 0.02789400278940028,
+   "n_weeks_reachable": 34,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.3542538354253835,
+    "kurtosis": 0.1603905160390516,
+    "volclust_50": 0.20223152022315202
+   },
+   "nearest_chebyshev_median": 1.1332857034976889
+  },
+  "TPC40_bar1": {
+   "n_RA": 717,
+   "n_points_matching_eligible": 38,
+   "n_RA_windows": 717,
+   "n_reachable_windows": 48,
+   "fraction_reachable_box": 0.06694560669456066,
+   "fraction_reachable_euclid_0.5": 0.029288702928870293,
+   "n_weeks_reachable": 39,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.502092050209205,
+    "kurtosis": 0.08228730822873083,
+    "volclust_50": 0.2412831241283124
+   },
+   "nearest_chebyshev_median": 1.5262828932967756
+  },
+  "TPC10_bar2": {
+   "n_RA": 307,
+   "n_points_matching_eligible": 23,
+   "n_RA_windows": 307,
+   "n_reachable_windows": 4,
+   "fraction_reachable_box": 0.013029315960912053,
+   "fraction_reachable_euclid_0.5": 0.006514657980456026,
+   "n_weeks_reachable": 4,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.4495114006514658,
+    "kurtosis": 0.09771986970684039,
+    "volclust_50": 0.05863192182410423
+   },
+   "nearest_chebyshev_median": 1.2429913511641295
+  },
+  "TPC20_bar2": {
+   "n_RA": 307,
+   "n_points_matching_eligible": 30,
+   "n_RA_windows": 307,
+   "n_reachable_windows": 18,
+   "fraction_reachable_box": 0.05863192182410423,
+   "fraction_reachable_euclid_0.5": 0.029315960912052116,
+   "n_weeks_reachable": 15,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.50814332247557,
+    "kurtosis": 0.2247557003257329,
+    "volclust_50": 0.1758957654723127
+   },
+   "nearest_chebyshev_median": 0.9562391901794245
+  },
+  "TPC40_bar2": {
+   "n_RA": 307,
+   "n_points_matching_eligible": 30,
+   "n_RA_windows": 307,
+   "n_reachable_windows": 12,
+   "fraction_reachable_box": 0.03908794788273615,
+   "fraction_reachable_euclid_0.5": 0.019543973941368076,
+   "n_weeks_reachable": 12,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.6449511400651465,
+    "kurtosis": 0.05863192182410423,
+    "volclust_50": 0.16612377850162866
+   },
+   "nearest_chebyshev_median": 1.470528498930119
+  },
+  "TPC10_bar5": {
+   "n_RA": 100,
+   "n_points_matching_eligible": 17,
+   "n_RA_windows": 100,
+   "n_reachable_windows": 0,
+   "fraction_reachable_box": 0.0,
+   "fraction_reachable_euclid_0.5": 0.0,
+   "n_weeks_reachable": 0,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.61,
+    "kurtosis": 0.18,
+    "volclust_50": 0.03
+   },
+   "nearest_chebyshev_median": 1.3685310897450245
+  },
+  "TPC20_bar5": {
+   "n_RA": 100,
+   "n_points_matching_eligible": 21,
+   "n_RA_windows": 100,
+   "n_reachable_windows": 2,
+   "fraction_reachable_box": 0.02,
+   "fraction_reachable_euclid_0.5": 0.01,
+   "n_weeks_reachable": 2,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.64,
+    "kurtosis": 0.3,
+    "volclust_50": 0.03
+   },
+   "nearest_chebyshev_median": 1.107798682895757
+  },
+  "TPC40_bar5": {
+   "n_RA": 100,
+   "n_points_matching_eligible": 19,
+   "n_RA_windows": 100,
+   "n_reachable_windows": 0,
+   "fraction_reachable_box": 0.0,
+   "fraction_reachable_euclid_0.5": 0.0,
+   "n_weeks_reachable": 0,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.8,
+    "kurtosis": 0.12,
+    "volclust_50": 0.0
+   },
+   "nearest_chebyshev_median": 7.312079665473117
+  }
+ },
+ "L4000_bar1": {
+  "n_RA": 103,
+  "note": "L=4000 with 2- or 5-minute bars needs 8,000 / 20,000 rows, longer than a trading week (about 7,200 minutes): not feasible under the within-week rule",
+  "TPC10": {
+   "n_points_matching_eligible": 1,
+   "n_RA_windows": 103,
+   "n_reachable_windows": 0,
+   "fraction_reachable_box": 0.0,
+   "fraction_reachable_euclid_0.5": 0.0,
+   "n_weeks_reachable": 0,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.11650485436893204,
+    "kurtosis": 0.0,
+    "volclust_50": 0.0
+   },
+   "nearest_chebyshev_median": 15.425696607242873
+  },
+  "TPC20": {
+   "n_points_matching_eligible": 4,
+   "n_RA_windows": 103,
+   "n_reachable_windows": 0,
+   "fraction_reachable_box": 0.0,
+   "fraction_reachable_euclid_0.5": 0.0,
+   "n_weeks_reachable": 0,
+   "fraction_reachable_if_caliper_removed_for": {
+    "acf_1": 0.06796116504854369,
+    "kurtosis": 0.0,
+    "volclust_50": 0.0
+   },
+   "nearest_chebyshev_median": 8.022768630960822
+  }
+ },
+ "by_year_RA": {
+  "2016": {
+   "n": 59,
+   "fraction_reachable": 0.05084745762711865
+  },
+  "2017": {
+   "n": 180,
+   "fraction_reachable": 0.044444444444444446
+  },
+  "2018": {
+   "n": 181,
+   "fraction_reachable": 0.03314917127071823
+  },
+  "2019": {
+   "n": 181,
+   "fraction_reachable": 0.07734806629834254
+  },
+  "2020": {
+   "n": 116,
+   "fraction_reachable": 0.05172413793103448
+  }
+ },
+ "hours_08_17_RA": {
+  "n_points_matching_eligible": 39,
+  "n_RA_windows": 306,
+  "n_reachable_windows": 15,
+  "fraction_reachable_box": 0.049019607843137254,
+  "fraction_reachable_euclid_0.5": 0.026143790849673203,
+  "n_weeks_reachable": 15,
+  "fraction_reachable_if_caliper_removed_for": {
+   "acf_1": 0.2875816993464052,
+   "kurtosis": 0.13398692810457516,
+   "volclust_50": 0.21241830065359477
+  },
+  "nearest_chebyshev_median": 1.26918125274386
+ },
+ "not_executed": {
+  "other_currency_pairs": "not executed: requires parsing eight HistData CSV files (about 7 million rows each); a reachability check for other markets is left for a follow-up",
+  "residual_checks_on_validation": "only if stage C ran the residual analysis"
+ }
+}
