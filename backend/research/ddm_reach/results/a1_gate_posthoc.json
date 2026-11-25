@@ -1,0 +1,70 @@
+{
+ "_code": {
+  "head": "63f99631d134a0d0c8ae830da899f35c3fc44d88",
+  "dirty_ddm_reach_files": ""
+ },
+ "note": "post hoc, descriptive; the pre-committed gate result stands",
+ "n_points": 136,
+ "components": [
+  "acf_1",
+  "kurtosis",
+  "volclust_50"
+ ],
+ "n_random_splits": 2000,
+ "by_multiplier": {
+  "1.0": {
+   "observed": 0.2647058823529412,
+   "observed_by_component": {
+    "acf_1": 0.6838235294117647,
+    "kurtosis": 0.6911764705882353,
+    "volclust_50": 0.6617647058823529
+   },
+   "null_mean": 0.27981985294117645,
+   "null_mean_by_component": {
+    "acf_1": 0.6498713235294109,
+    "kurtosis": 0.6259926470588238,
+    "volclust_50": 0.6517720588235286
+   },
+   "null_p5": 0.22022058823529414,
+   "null_p95": 0.34558823529411764,
+   "null_fraction_ge_0.80": 0.0,
+   "null_fraction_le_observed": 0.388
+  },
+  "2.0": {
+   "observed": 0.7573529411764706,
+   "observed_by_component": {
+    "acf_1": 0.8823529411764706,
+    "kurtosis": 0.9264705882352942,
+    "volclust_50": 0.9264705882352942
+   },
+   "null_mean": 0.7973235294117648,
+   "null_mean_by_component": {
+    "acf_1": 0.9204926470588252,
+    "kurtosis": 0.9374448529411769,
+    "volclust_50": 0.9183088235294137
+   },
+   "null_p5": 0.7426470588235294,
+   "null_p95": 0.8529411764705882,
+   "null_fraction_ge_0.80": 0.5075,
+   "null_fraction_le_observed": 0.1435
+  },
+  "3.0": {
+   "observed": 0.9632352941176471,
+   "observed_by_component": {
+    "acf_1": 0.9852941176470589,
+    "kurtosis": 0.9852941176470589,
+    "volclust_50": 0.9926470588235294
+   },
+   "null_mean": 0.9575257352941176,
+   "null_mean_by_component": {
+    "acf_1": 0.9853272058823384,
+    "kurtosis": 0.9884742647058641,
+    "volclust_50": 0.9827132352941039
+   },
+   "null_p5": 0.9264705882352942,
+   "null_p95": 0.9852941176470589,
+   "null_fraction_ge_0.80": 1.0,
+   "null_fraction_le_observed": 0.691
+  }
+ }
+}
