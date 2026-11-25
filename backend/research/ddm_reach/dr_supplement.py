@@ -93,6 +93,14 @@ def main():
     post["reaching_eligible_points"] = [{"pid": int(P.pid[i]), "delta": float(P.delta[i]), "wma": int(P.wma[i]),
                                          **{s: {"eligible": bool(st[s]["elig"][i]), "n_windows_if_eligible_ignored": int(st[s]["raw"][:, i].sum()), "n_windows_counted": int(st[s]["mask"][:, i].sum()),
                                                 "M": dict(zip(M, map(float, st[s]["M"][i]))), "SE_over_caliper": dict(zip(M, map(float, st[s]["SE"][i] / c)))} for s in ("SA", "SB")}} for i in used]
+    # windows beyond the DDM range of one component by more than its caliper: unreachable from any all-10-success point, whatever the eligibility
+    beyond = {}
+    for s in ("SA", "SB"):
+        lo, hi = st[s]["M"].min(axis=0) - c, st[s]["M"].max(axis=0) + c
+        out_j = (MA < lo) | (MA > hi)
+        beyond[s] = {**{m_: float(out_j[:, j].mean()) for j, m_ in enumerate(M)}, "any_component": float(out_j.any(axis=1).mean()), "volclust_50_upper_bound": float(hi[M.index("volclust_50")])}
+    post["fraction_windows_beyond_ddm_range_plus_caliper"] = beyond
+    post["windows_per_counted_point_SA"] = {int(P.pid[i]): int(st["SA"]["mask"][:, i].sum()) for i in np.flatnonzero(st["SA"]["mask"].any(axis=0))}
     k = M.index("kurtosis")
     mk = st["SA"]["mask"][reach]
     post["kurtosis_of_reachable"] = {"real_windows": q(WA.loc[reach, "kurtosis"]), "matched_ddm_mean": q((mk @ st["SA"]["M"][:, k]) / mk.sum(axis=1)), "caliper_kurtosis": float(c[k]),

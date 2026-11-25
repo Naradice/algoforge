@@ -47,7 +47,7 @@ if a0:
           r["n_atlas_in_half_sd_box_acf_1"], r["n_atlas_in_half_sd_box_kurtosis"], r["n_atlas_in_half_sd_box_volclust_50"], r["n_atlas_in_3d_box"], r["n_atlas_in_2d_box_acf1_kurt"]] for r in a0["real_buckets_vs_atlas"]])
 if a1:
     L.append("## A1 DDM の格子\n")
-    tab(["項目", "値"], [["run 数 / 成功", f"{a1['n_runs']} / {a1['n_runs_success']}"], ["N_grid(全 10 seed 成功の点)", a1["N_grid"]], ["SD_grid", f({k: v for k, v in a1["SD_grid"].items()}.values() and list(a1["SD_grid"].values()), 4)],
+    tab(["項目", "値"], [["run 数 / 成功", f"{a1['n_runs']} / {a1['n_runs_success']}"], ["N_grid(全 10 seed 成功の点)", a1["N_grid"]], ["SD_grid", ", ".join(f"{k} {v:.4f}" for k, v in a1["SD_grid"].items())],
                         ["DDM 精度資格を満たす点(全窓 / 最終)", f"{a1['n_DDM_precision_eligible_all_windows']} / {a1['n_DDM_precision_eligible_final']}"],
                         ["尖度が精度資格を満たさない点の割合 → 主の裾の指標", f"{f(a1['fallback_rule']['fraction_of_N_grid_points_failing_kurtosis_precision'])} → {a1['fallback_rule']['primary_tail_measure']}"],
                         ["初期過渡: 最初の窓を除外するか", f(a1["transient"]["exclude_first_window"])], ["SA/SB の一致割合(基準 0.80)", f(a1["SA_SB_agreement"]["fraction_all_components"])]])
