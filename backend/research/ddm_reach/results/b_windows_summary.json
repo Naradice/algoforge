@@ -1,0 +1,30 @@
+{
+ "_code": {
+  "head": "cc02097cf66f63a863977fe3cc319b729506fe48",
+  "dirty_ddm_reach_files": ""
+ },
+ "parquet_sha256": "c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828",
+ "n_rows_used": 1863206,
+ "zero_frac_max": 0.3,
+ "gap_seconds": 300,
+ "week_shift_hours": 6,
+ "counts": {
+  "estimation|parity0": {
+   "False": 719
+  },
+  "estimation|parity1": {
+   "False": 717
+  },
+  "validation|parity0": {
+   "False": 172
+  },
+  "validation|parity1": {
+   "False": 179
+  }
+ },
+ "atr_group_edges": [
+  0.005508474576270994,
+  0.007728813559321364,
+  0.011000000000000497
+ ]
+}
