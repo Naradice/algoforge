@@ -1,0 +1,246 @@
+{
+ "_code": {
+  "head": "a9ec55108688d95f0e94d3c998a328e76c0b27e5",
+  "dirty_ddm_reach_files": ""
+ },
+ "frozen_rules": {
+  "M": [
+   "acf_1",
+   "kurtosis",
+   "volclust_50"
+  ],
+  "E": [
+   "acf_5",
+   "acf_20",
+   "vr20",
+   "vr60",
+   "skew"
+  ],
+  "SD": [
+   0.05804906783226416,
+   28.230253463565727,
+   0.04417711430911421
+  ],
+  "c": [
+   0.02902453391613208,
+   14.115126731782864,
+   0.022088557154557105
+  ],
+  "sigma": [
+   0.043240962478804164,
+   0.03838852229712297,
+   0.19818121069055883,
+   0.30712470539054726,
+   1.588021095135959
+  ],
+  "tau": [
+   1.920589799729231,
+   1.9918599171661122,
+   1.6374144765584437,
+   1.706503181496902,
+   0.9770762126956776
+  ],
+  "f0": [
+   0.055681041508288766,
+   0.05272994299050162,
+   0.05341396816508428,
+   0.05224862095504973,
+   0.053042926756313155
+  ],
+  "f0_split_sd": [
+   0.017398344402578782,
+   0.015138933834841497,
+   0.015530415222332221,
+   0.015121265785372312,
+   0.015997539977737056
+  ],
+  "f0_split_min": [
+   0.018518518518518517,
+   0.01818181818181818,
+   0.01592356687898089,
+   0.018518518518518517,
+   0.01529051987767584
+  ],
+  "f0_split_max": [
+   0.1033434650455927,
+   0.10179640718562874,
+   0.10153846153846154,
+   0.10461538461538461,
+   0.09667673716012085
+  ],
+  "n_RA": 717,
+  "n_RB": 719,
+  "n_RB_valid_ref_ge3": 648,
+  "frac_RB_unreferenceable": 0.09874826147426985,
+  "ref_count_median": 45.0,
+  "ref_count_max": 105,
+  "n_RB_with_ref_ge1": 681,
+  "noise_floor_computable": true,
+  "tau_imprecise_lt_200": false,
+  "f0_outside_0.03_0.08": [
+   false,
+   false,
+   false,
+   false,
+   false
+  ],
+  "n_weeks_RA": 105,
+  "n_weeks_RB": 105
+ },
+ "reachability": {
+  "n_points_all10": 136,
+  "n_points_matching_eligible": 39,
+  "fraction_points_unresolved_for_matching": 0.7132352941176471,
+  "n_RA_windows": 717,
+  "n_reachable_windows": 37,
+  "fraction_reachable_box": 0.05160390516039052,
+  "n_weeks_reachable": 34,
+  "n_weeks_RA": 105,
+  "by_atr_group": {
+   "0": {
+    "n": 75,
+    "fraction_reachable": 0.08
+   },
+   "1": {
+    "n": 221,
+    "fraction_reachable": 0.04072398190045249
+   },
+   "2": {
+    "n": 270,
+    "fraction_reachable": 0.04814814814814815
+   },
+   "3": {
+    "n": 151,
+    "fraction_reachable": 0.059602649006622516
+   }
+  },
+  "by_hour": {
+   "0": {
+    "n": 106,
+    "fraction_reachable": 0.09433962264150944
+   },
+   "1": {
+    "n": 1,
+    "fraction_reachable": 0.0
+   },
+   "2": {
+    "n": 98,
+    "fraction_reachable": 0.030612244897959183
+   },
+   "3": {
+    "n": 5,
+    "fraction_reachable": 0.0
+   },
+   "4": {
+    "n": 94,
+    "fraction_reachable": 0.02127659574468085
+   },
+   "5": {
+    "n": 1,
+    "fraction_reachable": 0.0
+   },
+   "6": {
+    "n": 1,
+    "fraction_reachable": 0.0
+   },
+   "9": {
+    "n": 98,
+    "fraction_reachable": 0.05102040816326531
+   },
+   "10": {
+    "n": 6,
+    "fraction_reachable": 0.0
+   },
+   "11": {
+    "n": 93,
+    "fraction_reachable": 0.03225806451612903
+   },
+   "12": {
+    "n": 2,
+    "fraction_reachable": 0.0
+   },
+   "13": {
+    "n": 1,
+    "fraction_reachable": 0.0
+   },
+   "16": {
+    "n": 98,
+    "fraction_reachable": 0.07142857142857142
+   },
+   "17": {
+    "n": 8,
+    "fraction_reachable": 0.0
+   },
+   "18": {
+    "n": 95,
+    "fraction_reachable": 0.07368421052631578
+   },
+   "19": {
+    "n": 6,
+    "fraction_reachable": 0.0
+   },
+   "20": {
+    "n": 2,
+    "fraction_reachable": 0.0
+   },
+   "23": {
+    "n": 2,
+    "fraction_reachable": 0.0
+   }
+  },
+  "fraction_reachable_if_caliper_removed_for": {
+   "acf_1": 0.3542538354253835,
+   "kurtosis": 0.1603905160390516,
+   "volclust_50": 0.20223152022315202
+  },
+  "fraction_reachable_euclid_0.5": 0.02789400278940028,
+  "nearest_chebyshev_distance_SD_units": {
+   "min": 0.1308514544685453,
+   "p10": 0.5837562136801301,
+   "median": 1.1332857034976906,
+   "p90": 2.389654997885416,
+   "max": 10.28326784443983,
+   "fraction_le_0.5": 0.05160390516039052
+  },
+  "binding_component_at_nearest_point_counts": {
+   "acf_1": 136,
+   "kurtosis": 152,
+   "volclust_50": 429
+  },
+  "marginal_coverage": {
+   "acf_1": {
+    "ddm_min": -0.5069547935683884,
+    "ddm_max": 0.0543507017989074,
+    "real_min": -0.2823191018064949,
+    "real_median": -0.0264583380499252,
+    "real_max": 0.1528954448098649,
+    "fraction_real_inside_ddm_range": 0.9344490934449093
+   },
+   "kurtosis": {
+    "ddm_min": 2.97280836112781,
+    "ddm_max": 35.515049672259615,
+    "real_min": 3.376118583962028,
+    "real_median": 8.451945573591267,
+    "real_max": 325.81430735453125,
+    "fraction_real_inside_ddm_range": 0.9079497907949791
+   },
+   "volclust_50": {
+    "ddm_min": -0.0114836619779015,
+    "ddm_max": 0.0129142755457774,
+    "real_min": -0.0580181658644712,
+    "real_median": 0.0504252949789886,
+    "real_max": 0.1867604036487088,
+    "fraction_real_inside_ddm_range": 0.13668061366806136
+   }
+  },
+  "jaccard_reachable_points_SA_vs_SB": {
+   "n_SA": 3,
+   "n_SB": 1,
+   "jaccard": 0.0
+  }
+ },
+ "residual_conditions_met": false,
+ "residual_analysis_run": false,
+ "residual_analysis_condition": "plan section 10: reachable windows >= 5% of R-A, >= 50 windows, >= 20 distinct weeks; and noise floor computable (>= 100 R-B windows with >= 3 reference windows)",
+ "residual_skipped_reason": "reachability conditions not met (plan section 10): report the reachability and the binding components only"
+}
