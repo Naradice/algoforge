@@ -1,6 +1,6 @@
 {
  "_code": {
-  "head": "cbef96cd2109f28b8964add6b941f00ecd43a94b",
+  "head": "9bb2e3a3ab63fd12eee6fc082a5ec5e3f399aa2d",
   "dirty_ddm_reach_files": ""
  },
  "planned": {
@@ -320,6 +320,27 @@
     }
    }
   ],
+  "fraction_windows_beyond_ddm_range_plus_caliper": {
+   "SA": {
+    "acf_1": 0.015341701534170154,
+    "kurtosis": 0.058577405857740586,
+    "volclust_50": 0.6220362622036262,
+    "any_component": 0.6457461645746164,
+    "volclust_50_upper_bound": 0.03719264655905691
+   },
+   "SB": {
+    "acf_1": 0.0502092050209205,
+    "kurtosis": 0.03626220362622036,
+    "volclust_50": 0.6513249651324965,
+    "any_component": 0.6778242677824268,
+    "volclust_50_upper_bound": 0.033192157002045
+   }
+  },
+  "windows_per_counted_point_SA": {
+   "133": 27,
+   "143": 1,
+   "165": 9
+  },
   "kurtosis_of_reachable": {
    "real_windows": {
     "n": 37,
