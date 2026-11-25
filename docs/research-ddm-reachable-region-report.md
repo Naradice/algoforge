@@ -171,3 +171,4 @@ DDM は集約すると負の自己相関が強まる。実市場はほぼ変わ�
 - データ: `usdjpy_1min_volatility.parquet`、SHA-256 `c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828`。2021-09-01 以降の final 期間は不使用。
 - 中間ファイル(リポジトリ外): `C:\tmp\ddm_reach_out\a1\`(価格系列、約 0.6 GB)、`a1_stats.pkl`(SHA-256 `e9e0bcdd9995504953557b7aea196df511e559a7c57a33b2a1c7e04f28faa6a8`)。
 - 環境: Python 3.13.17、numpy 2.3.3、pandas 3.0.1、scipy 1.17.1、statsmodels 0.14.6、matplotlib 3.10.8、Core i9-10900F、32 GB。
+- Study Manager(Goal #874 の下): 仮説 #1120(inconclusive)、実験 #1121(inconclusive、コードと結果を添付)、事後分析の所見 #1122(open)。登録時の参照 commit は `5e7967c`(分析の最終実行は `9bb2e3a`)。
