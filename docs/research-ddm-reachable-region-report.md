@@ -55,7 +55,7 @@
 ## 6. 再現情報
 
 - 生成コード: `backend/research/ddm_reach/dr_a1_gen.py`(実行時 commit `36bf42e`)。コマンド: `python dr_a1_gen.py`
-- run ごとの記録: `backend/research/ddm_reach/results/a1_meta.jsonl`(SHA-256 `71da4e46c5ff5adfb3904f7affdead9ae0bdaee352fa6a995e6e9931d77584a1`)、集計: `results/a1_gen.json`
+- run ごとの記録: `backend/research/ddm_reach/results/a1_meta.jsonl`(SHA-256: リポジトリ内の LF 版 `25de63aaf648e73bdab870b38005e40db349b6ef5cc34b7171c213a62333e775`、Windows 作業コピーの CRLF 版 `71da4e46c5ff5adfb3904f7affdead9ae0bdaee352fa6a995e6e9931d77584a1`)、集計: `results/a1_gen.json`
 - seed: `100_000 × set(SA=1, SB=2) + point_id × 10 + k`
 - 約定単位の価格系列: `C:\tmp\ddm_reach_out\a1\`(約 0.6 GB、リポジトリ外)
 - 実市場データ(B): SHA-256 `c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828`、最終期間(2021-09-01 以降)は不使用
