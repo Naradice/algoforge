@@ -195,9 +195,13 @@ def main():
     reach, mask, elig = descriptive_reach(WA, fr["M"], d, fr)
     out = {"_code": code, "frozen_rules": fr, "reachability": reach}
     cond = reach["fraction_reachable_box"] >= 0.05 and reach["n_reachable_windows"] >= 50 and reach["n_weeks_reachable"] >= 20
-    out["residual_analysis_run"] = bool(cond)
+    reach_only = "--reach-only" in sys.argv
+    out["residual_conditions_met"] = bool(cond)
+    out["residual_analysis_run"] = bool(cond and fr["noise_floor_computable"] and not reach_only)
     out["residual_analysis_condition"] = "plan section 10: reachable windows >= 5% of R-A, >= 50 windows, >= 20 distinct weeks; and noise floor computable (>= 100 R-B windows with >= 3 reference windows)"
-    if cond and fr["noise_floor_computable"]:
+    if reach_only and cond and fr["noise_floor_computable"]:
+        out["residual_skipped_reason"] = "reachability-only invocation"
+    elif cond and fr["noise_floor_computable"]:
         rng = np.random.default_rng(RNG_SEED)
         EA = WA[list(fr["E"])].values
         sigma, tau, f0 = np.array(fr["sigma"]), np.array(fr["tau"]), np.array(fr["f0"])
