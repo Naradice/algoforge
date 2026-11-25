@@ -1,0 +1,16 @@
+{
+ "primary_tail_measure": "kurtosis",
+ "M_components": [
+  "acf_1",
+  "kurtosis",
+  "volclust_50"
+ ],
+ "exclude_first_window": false,
+ "SD_grid": {
+  "acf_1": 0.14245267326908792,
+  "kurtosis": 9.15869967617104,
+  "Q": 4.464083501744566,
+  "volclust_50": 0.0068440013296364064
+ },
+ "N_grid": 136
+}
