@@ -1,0 +1,340 @@
+{
+ "_code": {
+  "head": "cbef96cd2109f28b8964add6b941f00ecd43a94b",
+  "dirty_ddm_reach_files": ""
+ },
+ "planned": {
+  "aggregation_profile": {
+   "1": {
+    "ddm_window_median": {
+     "acf_1": -0.32485258928568,
+     "kurtosis": 3.2723387611239465
+    },
+    "real_RA_window_median": {
+     "acf_1": -0.0264583380499252,
+     "kurtosis": 8.451945573591267
+    },
+    "n_ddm_windows": 3400,
+    "n_real_windows": 717
+   },
+   "2": {
+    "ddm_window_median": {
+     "acf_1": -0.3497949440621792,
+     "kurtosis": 3.217423593377504
+    },
+    "real_RA_window_median": {
+     "acf_1": -0.036291538331965,
+     "kurtosis": 7.110245669415526
+    },
+    "n_ddm_windows": 3400,
+    "n_real_windows": 717
+   },
+   "4": {
+    "ddm_window_median": {
+     "acf_1": -0.384061940550539,
+     "kurtosis": 3.1395830948150443
+    },
+    "real_RA_window_median": {
+     "acf_1": -0.0293911614049424,
+     "kurtosis": 5.954399271704606
+    },
+    "n_ddm_windows": 3400,
+    "n_real_windows": 717
+   }
+  },
+  "H1s_std_ratio_reachable": {
+   "ratio_real_over_ddm": {
+    "n": 37,
+    "p10": 0.03991541616915985,
+    "median": 0.10511392806666386,
+    "p90": 0.19188305962189486
+   },
+   "p90_over_p10": 4.807241863862889,
+   "spearman_real_std_vs_ddm_std": -0.01656304576039083
+  },
+  "by_start_hour_RA": {
+   "0": {
+    "n": 106,
+    "acf_1": -0.035163293437969353,
+    "kurtosis": 8.245650500968072,
+    "volclust_50": 0.032950214688396096,
+    "fraction_reachable": 0.09433962264150944
+   },
+   "2": {
+    "n": 98,
+    "acf_1": -0.0240038869005691,
+    "kurtosis": 7.979577713040948,
+    "volclust_50": 0.0451488111840735,
+    "fraction_reachable": 0.030612244897959183
+   },
+   "4": {
+    "n": 94,
+    "acf_1": -0.0195282983246878,
+    "kurtosis": 9.90282928066668,
+    "volclust_50": 0.0547755072134491,
+    "fraction_reachable": 0.02127659574468085
+   },
+   "9": {
+    "n": 98,
+    "acf_1": -0.025141905313676598,
+    "kurtosis": 8.636480169723168,
+    "volclust_50": 0.05623289858700925,
+    "fraction_reachable": 0.05102040816326531
+   },
+   "11": {
+    "n": 93,
+    "acf_1": -0.0373744818204021,
+    "kurtosis": 9.483221387871144,
+    "volclust_50": 0.0646304403209144,
+    "fraction_reachable": 0.03225806451612903
+   },
+   "16": {
+    "n": 98,
+    "acf_1": -0.026770703996304948,
+    "kurtosis": 7.721004384197691,
+    "volclust_50": 0.05491662617746075,
+    "fraction_reachable": 0.07142857142857142
+   },
+   "18": {
+    "n": 95,
+    "acf_1": -0.026206333139697,
+    "kurtosis": 9.310134813062415,
+    "volclust_50": 0.0468677535203387,
+    "fraction_reachable": 0.07368421052631578
+   }
+  },
+  "M_of_windows": {
+   "all_RA": {
+    "acf_1": {
+     "n": 717,
+     "p10": -0.09953901066178941,
+     "median": -0.0264583380499252,
+     "p90": 0.03854028159673249
+    },
+    "kurtosis": {
+     "n": 717,
+     "p10": 5.1726247341099665,
+     "median": 8.451945573591267,
+     "p90": 29.82219993394872
+    },
+    "volclust_50": {
+     "n": 717,
+     "p10": -0.0007910437430164977,
+     "median": 0.0504252949789886,
+     "p90": 0.11024763877846584
+    }
+   },
+   "reachable": {
+    "acf_1": {
+     "n": 37,
+     "p10": -0.06839991463270254,
+     "median": -0.0374535140393853,
+     "p90": 0.025625452420165312
+    },
+    "kurtosis": {
+     "n": 37,
+     "p10": 9.889173464229858,
+     "median": 15.541376062631496,
+     "p90": 23.975267097503135
+    },
+    "volclust_50": {
+     "n": 37,
+     "p10": -0.01003009808750278,
+     "median": 0.0074891186371568,
+     "p90": 0.02325421600978594
+    }
+   }
+  }
+ },
+ "post_hoc": {
+  "SA": {
+   "n_eligible_points": 39,
+   "eligibility_pass_by_component": {
+    "acf_1": 0.3088235294117647,
+    "kurtosis": 0.8970588235294118,
+    "volclust_50": 0.9779411764705882
+   },
+   "n_reachable_windows": 37,
+   "n_reachable_windows_ignoring_eligibility": 93,
+   "fraction_ignoring_eligibility": 0.1297071129707113,
+   "n_points_reaching_windows_ignoring_eligibility": 24
+  },
+  "SB": {
+   "n_eligible_points": 48,
+   "eligibility_pass_by_component": {
+    "acf_1": 0.39705882352941174,
+    "kurtosis": 0.8455882352941176,
+    "volclust_50": 0.9632352941176471
+   },
+   "n_reachable_windows": 44,
+   "n_reachable_windows_ignoring_eligibility": 97,
+   "fraction_ignoring_eligibility": 0.13528591352859135,
+   "n_points_reaching_windows_ignoring_eligibility": 21
+  },
+  "overlap": {
+   "eligible_points_both": 19,
+   "windows_both": 13,
+   "windows_jaccard": 0.19117647058823528,
+   "windows_jaccard_ignoring_eligibility": 0.484375,
+   "point_jaccard_ignoring_eligibility": 0.5517241379310345
+  },
+  "reaching_eligible_points": [
+   {
+    "pid": 133,
+    "delta": -0.3,
+    "wma": 2,
+    "SA": {
+     "eligible": true,
+     "n_windows_if_eligible_ignored": 27,
+     "n_windows_counted": 27,
+     "M": {
+      "acf_1": -0.048145161033234,
+      "kurtosis": 23.09510295261241,
+      "volclust_50": 0.0014448038007026
+     },
+     "SE_over_caliper": {
+      "acf_1": 0.2406376387534724,
+      "kurtosis": 0.2888889522262832,
+      "volclust_50": 0.2899511690801208
+     }
+    },
+    "SB": {
+     "eligible": false,
+     "n_windows_if_eligible_ignored": 23,
+     "n_windows_counted": 0,
+     "M": {
+      "acf_1": -0.0377633931802996,
+      "kurtosis": 25.3184617409825,
+      "volclust_50": 0.0097247947548188
+     },
+     "SE_over_caliper": {
+      "acf_1": 0.2575855979178948,
+      "kurtosis": 0.287519826879573,
+      "volclust_50": 0.5021141200732169
+     }
+    }
+   },
+   {
+    "pid": 143,
+    "delta": -0.2,
+    "wma": 1,
+    "SA": {
+     "eligible": true,
+     "n_windows_if_eligible_ignored": 1,
+     "n_windows_counted": 1,
+     "M": {
+      "acf_1": 0.0543507017989074,
+      "kurtosis": 35.515049672259615,
+      "volclust_50": 0.0129142755457774
+     },
+     "SE_over_caliper": {
+      "acf_1": 0.39149908510567,
+      "kurtosis": 0.4580729087549631,
+      "volclust_50": 0.34459213658576415
+     }
+    },
+    "SB": {
+     "eligible": false,
+     "n_windows_if_eligible_ignored": 1,
+     "n_windows_counted": 0,
+     "M": {
+      "acf_1": 0.0343782029033641,
+      "kurtosis": 63.75723978026747,
+      "volclust_50": -0.0006735294803224
+     },
+     "SE_over_caliper": {
+      "acf_1": 0.3845298520671656,
+      "kurtosis": 1.245850572032639,
+      "volclust_50": 0.2275794860445014
+     }
+    }
+   },
+   {
+    "pid": 155,
+    "delta": -0.1,
+    "wma": 2,
+    "SA": {
+     "eligible": false,
+     "n_windows_if_eligible_ignored": 12,
+     "n_windows_counted": 0,
+     "M": {
+      "acf_1": -0.0150819987870938,
+      "kurtosis": 30.917227447060043,
+      "volclust_50": 0.001859385522362
+     },
+     "SE_over_caliper": {
+      "acf_1": 1.0926243299686542,
+      "kurtosis": 0.9291124185942158,
+      "volclust_50": 0.35534491129051654
+     }
+    },
+    "SB": {
+     "eligible": true,
+     "n_windows_if_eligible_ignored": 44,
+     "n_windows_counted": 44,
+     "M": {
+      "acf_1": -0.0770061005276523,
+      "kurtosis": 19.5238167929972,
+      "volclust_50": 0.005907214944896
+     },
+     "SE_over_caliper": {
+      "acf_1": 0.3575884369018086,
+      "kurtosis": 0.2436625502279,
+      "volclust_50": 0.12237238791525305
+     }
+    }
+   },
+   {
+    "pid": 165,
+    "delta": 0.0,
+    "wma": 1,
+    "SA": {
+     "eligible": true,
+     "n_windows_if_eligible_ignored": 9,
+     "n_windows_counted": 9,
+     "M": {
+      "acf_1": 0.0355856960293305,
+      "kurtosis": 25.790707721359876,
+      "volclust_50": 0.0086713691714171
+     },
+     "SE_over_caliper": {
+      "acf_1": 0.26007353630718844,
+      "kurtosis": 0.34674489667019104,
+      "volclust_50": 0.29358291966907
+     }
+    },
+    "SB": {
+     "eligible": false,
+     "n_windows_if_eligible_ignored": 1,
+     "n_windows_counted": 0,
+     "M": {
+      "acf_1": 0.0181455390796277,
+      "kurtosis": 46.0827209252407,
+      "volclust_50": -0.0010996190551461
+     },
+     "SE_over_caliper": {
+      "acf_1": 0.2890772497930925,
+      "kurtosis": 1.3300730307461264,
+      "volclust_50": 0.36459262501999196
+     }
+    }
+   }
+  ],
+  "kurtosis_of_reachable": {
+   "real_windows": {
+    "n": 37,
+    "p10": 9.889173464229858,
+    "median": 15.541376062631496,
+    "p90": 23.975267097503135
+   },
+   "matched_ddm_mean": {
+    "n": 37,
+    "p10": 23.09510295261241,
+    "median": 23.09510295261241,
+    "p90": 25.790707721359876
+   },
+   "caliper_kurtosis": 14.115126731782864,
+   "real_RA_median_kurtosis": 8.451945573591267
+  }
+ }
+}
