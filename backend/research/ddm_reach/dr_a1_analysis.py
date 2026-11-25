@@ -102,7 +102,7 @@ def main():
     exclude_first = bool(len(vals) > 0 and max(vals) >= 0.25)
     out["transient"]["exclude_first_window"] = exclude_first
     # ---- final point statistics (after the transient decision) ----------------------------------------------------------------------------------
-    names_all = comps + E_ALL + ("std",)
+    names_all = comps + E_ALL + ("std", "Q" if tail == "kurtosis" else "kurtosis")      # both tail measures are stored (PB evaluates "kurtosis and the robust tail measure")
     rows = []
     for pid, d, w in grid:
         r = {"pid": pid, "delta": d, "wma": w}

@@ -54,7 +54,8 @@ def main():
     out["gates"] = {"RA_ge_300": bool(len(WA) >= 300), "RB_ge_300": bool(len(WB) >= 300), "noise_floor_ref_windows_ge_100": out["primary"]["noise_floor_computable"]}
     # sensitivity partitions (PB, PC) -- defined only for the sensitivity analysis of plan 7.1
     tail = dec["primary_tail_measure"]
-    out["PB"] = freeze(WA, WB, ("acf_1", "volclust_50"), (tail, "skew", "acf_5", "acf_20", "vr20", "vr60"))
+    other_tail = "Q" if tail == "kurtosis" else "kurtosis"
+    out["PB"] = freeze(WA, WB, ("acf_1", "volclust_50"), (tail, other_tail, "skew", "acf_5", "acf_20", "vr20", "vr60"))      # plan 7.1: both tail measures
     out["PC"] = freeze(WA, WB, ("vr20", tail), ("acf_1", "acf_5", "acf_20", "volclust_50", "skew"))
     json.dump(out, open(os.path.join(E.RESULTS, "frozen_rules.json"), "w", encoding="utf-8"), indent=1)
     p = out["primary"]
