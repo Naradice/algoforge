@@ -1,0 +1,20 @@
+{
+ "_code": {
+  "head": "dc172f90ab0afcf163e50434e8a926d70261d095"
+ },
+ "datasets": {
+  "independent_USDJPY": {
+   "role": "primary",
+   "not_judged": "held or not judged in V1 (values not computed)"
+  },
+  "main_series": {
+   "not_computed": "time basis of the main series not identified (plan V0 step 1)"
+  }
+ },
+ "sensitivity": {},
+ "v4_condition": {
+  "raw": null,
+  "adjusted": null,
+  "run_v4": false
+ }
+}
