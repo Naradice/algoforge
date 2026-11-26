@@ -1,0 +1,84 @@
+{
+ "_code": {
+  "head": "b45fb931ad4735ce844e88eb7287ef42a4aeeee5"
+ },
+ "a1_stats": {
+  "n_success": 1593,
+  "n_in_stats": 1593,
+  "n_missing": 0,
+  "n_bad_windows": 0,
+  "sha256": "e9e0bcdd9995504953557b7aea196df511e559a7c57a33b2a1c7e04f28faa6a8",
+  "sha256_matches": true
+ },
+ "hist_usdjpy": {
+  "source_file": "L:\\data\\fx\\HistData_USDJPY_1MIN.csv",
+  "source_bytes": 394716001,
+  "duplicates_dropped": 120,
+  "sha256": "6f192faf7b70f25b445f4b3ba10d3ec687fa09c1745c7a2e84c7bc48d34b891d",
+  "rows_loaded": 7118327,
+  "first": "2000-05-30 17:58:00",
+  "last_loaded": "2021-08-31 23:59:00"
+ },
+ "time_basis": {
+  "criterion": "fixed EST if the zero offset is best overall, in summer and in winter, with correlation >= 0.5 and >= 3x the second best",
+  "identified_as_fixed_EST": false,
+  "best": {
+   "all": {
+    "offset_h": 7,
+    "corr": 0.8618317170287315,
+    "second_corr": 0.11741541077261594
+   },
+   "summer": {
+    "offset_h": 7,
+    "corr": 0.9705521841569338,
+    "second_corr": 0.007090496145648233
+   },
+   "winter": {
+    "offset_h": 7,
+    "corr": 0.9637349407496911,
+    "second_corr": 0.0066387169398787384
+   }
+  },
+  "corr_by_offset_all": {
+   "-12": 2.8757080311970473e-05,
+   "-11": 0.0011911968779929716,
+   "-10": -0.0011687088185562203,
+   "-9": -0.00040242522895613913,
+   "-8": 0.0004944977961302544,
+   "-7": -0.0021338272327132706,
+   "-6": -0.00043623914106415715,
+   "-5": 0.0014193086678360078,
+   "-4": -0.00013765290570729466,
+   "-3": 0.000391596605026975,
+   "-2": 0.00034119183709342764,
+   "-1": 0.001149221966698112,
+   "0": 0.001002645400390175,
+   "1": -0.0006108490711102071,
+   "2": 0.0017637649453608752,
+   "3": -0.00028832464428530253,
+   "4": 0.0024828299250303884,
+   "5": 0.00601831833254852,
+   "6": 0.003166446612819903,
+   "7": 0.8618317170287315,
+   "8": 0.11741541077261594,
+   "9": 0.00457900040058827,
+   "10": 9.864597488056554e-05,
+   "11": 0.003115048384828013,
+   "12": 0.0024491804862281437
+  },
+  "matched_rows_offset0": 1396784,
+  "main_rows_in_period": 1490151,
+  "fraction_exactly_equal_close": 0.002201485698576158,
+  "median_abs_close_difference": 0.14000000000000057
+ },
+ "independent_counts": {
+  "n_windows_built": 1902,
+  "n_excluded": 92,
+  "n_valid_windows": 1810,
+  "n_weeks_with_valid_windows": 307,
+  "zero_frac_median": 0.07,
+  "zero_frac_p90": 0.2449000000000001,
+  "enough_windows_ge_300": true
+ },
+ "inputs_ok": true
+}

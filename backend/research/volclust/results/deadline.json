@@ -1,0 +1,8 @@
+{
+ "first_execution_start_unix": 1795667943.123332,
+ "deadline_unix": 1795675143.123332,
+ "first_execution_start": "2026-11-26 13:39:03",
+ "deadline": "2026-11-26 15:39:03",
+ "first_script": "vc_v0a",
+ "code_head": "b45fb931ad4735ce844e88eb7287ef42a4aeeee5"
+}
