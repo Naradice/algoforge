@@ -1,0 +1,136 @@
+{
+ "_code": {
+  "head": "d8f38d7888a49ee37cc438779a0db59953bc203c"
+ },
+ "n_points": 136,
+ "n_pseudo": 1000,
+ "inner_B": 500,
+ "pseudo_weeks": 307,
+ "delta": 0.022,
+ "settings": {
+  "a_point_means": {
+   "truth_max": 0.010291887233435904,
+   "truth_sd": 0.004292732365533494,
+   "results": {
+    "true_Delta=delta+0.000": {
+     "diff": {
+      "rate": 0.0,
+      "count": 0,
+      "ci95": [
+       0.0,
+       0.003682083896865671
+      ]
+     },
+     "small": {
+      "rate": 0.994,
+      "count": 994,
+      "ci95": [
+       0.9869865767290256,
+       0.9977950175148487
+      ]
+     }
+    },
+    "true_Delta=delta+0.010": {
+     "diff": {
+      "rate": 0.0,
+      "count": 0,
+      "ci95": [
+       0.0,
+       0.003682083896865671
+      ]
+     },
+     "small": {
+      "rate": 0.094,
+      "count": 94,
+      "ci95": [
+       0.07662899292737785,
+       0.11380243871897454
+      ]
+     }
+    },
+    "true_Delta=delta-0.010": {
+     "diff": {
+      "rate": 0.0,
+      "count": 0,
+      "ci95": [
+       0.0,
+       0.003682083896865671
+      ]
+     },
+     "small": {
+      "rate": 1.0,
+      "count": 1000,
+      "ci95": [
+       0.9963179161031344,
+       1.0
+      ]
+     }
+    }
+   }
+  },
+  "b_all_equal_to_max": {
+   "truth_max": 0.010291887233435904,
+   "truth_sd": 0.0,
+   "results": {
+    "true_Delta=delta+0.000": {
+     "diff": {
+      "rate": 0.0,
+      "count": 0,
+      "ci95": [
+       0.0,
+       0.003682083896865671
+      ]
+     },
+     "small": {
+      "rate": 1.0,
+      "count": 1000,
+      "ci95": [
+       0.9963179161031344,
+       1.0
+      ]
+     }
+    },
+    "true_Delta=delta+0.010": {
+     "diff": {
+      "rate": 0.0,
+      "count": 0,
+      "ci95": [
+       0.0,
+       0.003682083896865671
+      ]
+     },
+     "small": {
+      "rate": 0.972,
+      "count": 972,
+      "ci95": [
+       0.9597851126261566,
+       0.9813153138044625
+      ]
+     }
+    },
+    "true_Delta=delta-0.010": {
+     "diff": {
+      "rate": 0.0,
+      "count": 0,
+      "ci95": [
+       0.0,
+       0.003682083896865671
+      ]
+     },
+     "small": {
+      "rate": 1.0,
+      "count": 1000,
+      "ci95": [
+       0.9963179161031344,
+       1.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ "false_diff_rate_max": 0.0,
+ "false_small_rate_max": 1.0,
+ "stop_false_diff": false,
+ "small_category_enabled": false
+}
