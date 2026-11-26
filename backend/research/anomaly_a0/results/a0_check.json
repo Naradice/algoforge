@@ -1,0 +1,398 @@
+{
+ "_code": {
+  "head": "5e8841256a4e9b3023635481f679f723cc0d3ef1"
+ },
+ "inputs": {
+  "main": {
+   "path": "C:\\Users\\ksato\\workspace\\finance\\algoforge\\artifacts\\datasets\\derived\\usdjpy_1min_volatility.parquet",
+   "sha256": "c25eb5720a5552b0230fb6ce2354de1cee020e6b7ca95da46034b75f2a53c828"
+  },
+  "histdata": {
+   "path": "L:\\data\\fx\\HistData_USDJPY_1MIN.csv",
+   "sha256": "6f192faf7b70f25b445f4b3ba10d3ec687fa09c1745c7a2e84c7bc48d34b891d",
+   "duplicates_from_2021_08_20": 120,
+   "conversion": {
+    "weeks_shifted_8h": [
+     "2021-10-31",
+     "2022-03-13",
+     "2022-03-20",
+     "2022-10-30"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  }
+ },
+ "stamps_main": {
+  "estimation": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "rows": 1490151,
+   "first": "2016-08-31 18:00:00",
+   "last": "2020-08-31 23:59:00",
+   "duplicates": 0,
+   "backward_steps": 0,
+   "steps_over_60s": 1792,
+   "steps_over_300s": 262,
+   "steps_over_3_days": 3,
+   "weeks": 209,
+   "weekly_open_conforming": 205,
+   "weekly_open_share": 0.9808612440191388
+  },
+  "validation": {
+   "period": [
+    "2020-09-01",
+    "2021-08-31"
+   ],
+   "rows": 373054,
+   "first": "2020-09-01 00:00:00",
+   "last": "2021-08-31 23:59:00",
+   "duplicates": 0,
+   "backward_steps": 0,
+   "steps_over_60s": 1341,
+   "steps_over_300s": 126,
+   "steps_over_3_days": 0,
+   "weeks": 52,
+   "weekly_open_conforming": 42,
+   "weekly_open_share": 0.8076923076923077
+  },
+  "evaluation": {
+   "period": [
+    "2021-09-01",
+    "2022-08-31"
+   ],
+   "rows": 376079,
+   "first": "2021-09-01 00:00:00",
+   "last": "2022-08-31 17:59:00",
+   "duplicates": 0,
+   "backward_steps": 0,
+   "steps_over_60s": 2180,
+   "steps_over_300s": 242,
+   "steps_over_3_days": 0,
+   "weeks": 52,
+   "weekly_open_conforming": 3,
+   "weekly_open_share": 0.057692307692307696
+  }
+ },
+ "time_basis_evaluation": {
+  "period": [
+   "2021-09-01",
+   "2022-08-31"
+  ],
+  "n_weeks": 53,
+  "n_offset0_best": 53,
+  "share": 1.0,
+  "median_corr_offset0": 0.9755276482981798,
+  "failing_weeks": [],
+  "passes": true
+ },
+ "stamps_hist_supplementary": {
+  "period": [
+   "2022-09-01",
+   "2022-12-31"
+  ],
+  "rows": 124600,
+  "first": "2022-09-01 00:00:00",
+  "last": "2022-12-30 23:58:00",
+  "duplicates": 0,
+  "backward_steps": 0,
+  "steps_over_60s": 320,
+  "steps_over_300s": 35,
+  "steps_over_3_days": 0,
+  "weeks": 17,
+  "weekly_open_conforming": 17,
+  "weekly_open_share": 1.0
+ },
+ "origins_by_stamps": {
+  "validation": {
+   "C-S": 24710,
+   "C-M1": 6079,
+   "C-M4": 5881,
+   "C-D": 4571,
+   "C-R": 255
+  },
+  "evaluation": {
+   "C-S": 24858,
+   "C-M1": 6123,
+   "C-M4": 5943,
+   "C-D": 4750,
+   "C-R": 257
+  }
+ },
+ "f1_recorded_evaluation_origins": {
+  "C-M1": 6123,
+  "C-M4": 5943,
+  "C-D": 4750
+ },
+ "labels_estimation": {
+  "C-S": {
+   "H_rows": 15,
+   "valid_origins": 98887,
+   "primary_q95": {
+    "threshold": 8.88432845204054e-07,
+    "positive_origins": 4945,
+    "events": 998,
+    "duration_median": 30.0,
+    "duration_max": 11160
+   },
+   "q99": {
+    "threshold": 2.4214660356596313e-06,
+    "positive_origins": 989,
+    "events": 380,
+    "duration_median": 15.0,
+    "duration_max": 4035
+   },
+   "q95_gap_max60H": {
+    "threshold": 8.88432845204054e-07,
+    "positive_origins": 4945,
+    "events": 1606,
+    "duration_median": 15.0,
+    "duration_max": 1950
+   },
+   "q95_gap_max1440H": {
+    "threshold": 8.88432845204054e-07,
+    "positive_origins": 4945,
+    "events": 244,
+    "duration_median": 682.5,
+    "duration_max": 52260
+   },
+   "normalised_q95": {
+    "threshold": 3.019236941789805,
+    "positive_origins": 4940,
+    "events": 1672,
+    "duration_median": 45.0,
+    "duration_max": 990,
+    "valid_origins": 98792
+   }
+  },
+  "C-M1": {
+   "H_rows": 60,
+   "valid_origins": 24380,
+   "primary_q95": {
+    "threshold": 3.50644102796436e-06,
+    "positive_origins": 1219,
+    "events": 454,
+    "duration_median": 60.0,
+    "duration_max": 9420
+   },
+   "q99": {
+    "threshold": 9.136169866468441e-06,
+    "positive_origins": 244,
+    "events": 131,
+    "duration_median": 60.0,
+    "duration_max": 1380
+   },
+   "q95_gap_max60H": {
+    "threshold": 3.50644102796436e-06,
+    "positive_origins": 1219,
+    "events": 624,
+    "duration_median": 60.0,
+    "duration_max": 1380
+   },
+   "q95_gap_max1440H": {
+    "threshold": 3.50644102796436e-06,
+    "positive_origins": 1219,
+    "events": 193,
+    "duration_median": 120.0,
+    "duration_max": 37140
+   },
+   "normalised_q95": {
+    "threshold": 2.84941658244219,
+    "positive_origins": 1218,
+    "events": 809,
+    "duration_median": 60.0,
+    "duration_max": 600,
+    "valid_origins": 24358
+   }
+  },
+  "C-M4": {
+   "H_rows": 240,
+   "valid_origins": 23715,
+   "primary_q95": {
+    "threshold": 1.3527392585391343e-05,
+    "positive_origins": 1186,
+    "events": 203,
+    "duration_median": 420.0,
+    "duration_max": 7080
+   },
+   "q99": {
+    "threshold": 3.064240352019404e-05,
+    "positive_origins": 238,
+    "events": 47,
+    "duration_median": 420.0,
+    "duration_max": 2100
+   },
+   "q95_gap_max60H": {
+    "threshold": 1.3527392585391343e-05,
+    "positive_origins": 1186,
+    "events": 203,
+    "duration_median": 420.0,
+    "duration_max": 7080
+   },
+   "q95_gap_max1440H": {
+    "threshold": 1.3527392585391343e-05,
+    "positive_origins": 1186,
+    "events": 98,
+    "duration_median": 420.0,
+    "duration_max": 18360
+   },
+   "normalised_q95": {
+    "threshold": 2.7413756582154063,
+    "positive_origins": 1185,
+    "events": 367,
+    "duration_median": 360.0,
+    "duration_max": 780,
+    "valid_origins": 23693
+   }
+  },
+  "C-D": {
+   "H_rows": 1440,
+   "valid_origins": 19340,
+   "primary_q95": {
+    "threshold": 7.359251982459726e-05,
+    "positive_origins": 967,
+    "events": 38,
+    "duration_median": 2730.0,
+    "duration_max": 7080
+   },
+   "q99": {
+    "threshold": 0.00016924912957239378,
+    "positive_origins": 194,
+    "events": 8,
+    "duration_median": 2280.0,
+    "duration_max": 7080
+   },
+   "q95_gap_max60H": {
+    "threshold": 7.359251982459726e-05,
+    "positive_origins": 967,
+    "events": 38,
+    "duration_median": 2730.0,
+    "duration_max": 7080
+   },
+   "q95_gap_max1440H": {
+    "threshold": 7.359251982459726e-05,
+    "positive_origins": 967,
+    "events": 38,
+    "duration_median": 2730.0,
+    "duration_max": 7080
+   },
+   "normalised_q95": {
+    "threshold": 2.4363283472981174,
+    "positive_origins": 966,
+    "events": 94,
+    "duration_median": 1890.0,
+    "duration_max": 3060,
+    "valid_origins": 19318
+   }
+  },
+  "C-R": {
+   "H_blocks": 120,
+   "valid_origins": 1033,
+   "primary_q95": {
+    "threshold": 2.9328917175167924e-06,
+    "positive_origins": 52,
+    "events": 5
+   },
+   "q99": {
+    "threshold": 7.412112975086236e-06,
+    "positive_origins": 11,
+    "events": 2
+   },
+   "normalised_q95": {
+    "threshold": 2.6179586351635113,
+    "positive_origins": 52,
+    "events": 27,
+    "valid_origins": 1032
+   },
+   "horizon_blocks": 120
+  }
+ },
+ "labels_estimation_rows_used": {
+  "rows": 1490151,
+  "last": "2020-08-31 23:59:00"
+ },
+ "M3": {
+  "C-S": {
+   "events_estimation": 998,
+   "origins_estimation": 98887,
+   "origins_evaluation": 24858,
+   "origins_evaluation_source": "time stamps",
+   "expected_events": 250.8750796363526,
+   "passes": true
+  },
+  "C-M1": {
+   "events_estimation": 454,
+   "origins_estimation": 24380,
+   "origins_evaluation": 6123,
+   "origins_evaluation_source": "F1 record",
+   "expected_events": 114.0214109926169,
+   "passes": true
+  },
+  "C-M4": {
+   "events_estimation": 203,
+   "origins_estimation": 23715,
+   "origins_evaluation": 5943,
+   "origins_evaluation_source": "F1 record",
+   "expected_events": 50.8719797596458,
+   "passes": false
+  },
+  "C-D": {
+   "events_estimation": 38,
+   "origins_estimation": 19340,
+   "origins_evaluation": 4750,
+   "origins_evaluation_source": "F1 record",
+   "expected_events": 9.332988624612204,
+   "passes": false
+  },
+  "C-R": {
+   "events_estimation": 5,
+   "origins_estimation": 1033,
+   "origins_evaluation": 257,
+   "origins_evaluation_source": "time stamps",
+   "expected_events": 1.2439496611810261,
+   "passes": false
+  }
+ },
+ "f1_artifacts": {
+  "selection.json": {
+   "exists": true,
+   "sha256_matches": true
+  },
+  "scores_final.npz": {
+   "exists": true,
+   "sha256_matches": true,
+   "pit_arrays": {
+    "B7N|h1": true,
+    "B7N|h4": true,
+    "B4|h24": true
+   }
+  },
+  "scores_validation.npz": {
+   "exists": true,
+   "sha256_matches": true,
+   "pit_arrays": {
+    "B7N|h1": true,
+    "B7N|h4": true,
+    "B4|h24": true
+   }
+  },
+  "ddm_mapping.json": {
+   "exists": true,
+   "sha256_matches": true
+  },
+  "ddm_ens_seed1.npy": {
+   "exists": true,
+   "sha256_matches": true
+  },
+  "ddm_ens_seed2.npy": {
+   "exists": true,
+   "sha256_matches": true
+  },
+  "ddm_ens_seed3.npy": {
+   "exists": true,
+   "sha256_matches": true
+  }
+ },
+ "seconds": 16.74156880378723
+}
