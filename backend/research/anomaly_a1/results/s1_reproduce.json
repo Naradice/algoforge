@@ -1,0 +1,36 @@
+{
+ "_code": {
+  "head": "c1869ebfb9ddadff2437e7e67c67e01b3953702d",
+  "versions": {
+   "arch": "8.0.0",
+   "numpy": "2.3.3",
+   "scipy": "1.17.1",
+   "pandas": "3.0.1",
+   "statsmodels": "0.14.6"
+  },
+  "python": "3.13.17",
+  "time": "2026-11-27 01:24:33"
+ },
+ "n_origins": 6076,
+ "n_stored": 6076,
+ "same_origin_set": true,
+ "n_pit_differences": 0,
+ "bit_identical": true,
+ "seconds_validation": 70.7779061794281,
+ "estimation_forecasts": 18815,
+ "seconds_estimation": 180.42631244659424,
+ "missing": {
+  "estimation": {
+   "included_origins": 18101,
+   "without_previous_forecast": 0
+  },
+  "validation": {
+   "included_origins": 6009,
+   "without_previous_forecast": 0
+  }
+ },
+ "sha256": {
+  "estimation": "783af1adb797abe36d6d784522ff903121cbe3302ebf660cdc8a01625b400057",
+  "validation": "190577ac8c2a20806a235a2401b68b2b9b5ee13844788ba85b479b39104f08ed"
+ }
+}

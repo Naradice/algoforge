@@ -1,0 +1,25 @@
+{
+ "_code": {
+  "head": "c1869ebfb9ddadff2437e7e67c67e01b3953702d",
+  "versions": {
+   "arch": "8.0.0",
+   "numpy": "2.3.3",
+   "scipy": "1.17.1",
+   "pandas": "3.0.1",
+   "statsmodels": "0.14.6"
+  },
+  "python": "3.13.17",
+  "time": "2026-11-27 01:24:29"
+ },
+ "destination": "C:\\Users\\ksato\\workspace\\finance\\algoforge\\artifacts\\research\\f1_run1_db0926f",
+ "sha256_matches": {
+  "selection.json": true,
+  "scores_final.npz": true,
+  "scores_validation.npz": true,
+  "ddm_mapping.json": true,
+  "ddm_ens_seed1.npy": true,
+  "ddm_ens_seed2.npy": true,
+  "ddm_ens_seed3.npy": true
+ },
+ "files": 58
+}
