@@ -24,28 +24,37 @@ def load_main():
 
 
 def load_hist(sym, end):
-    """HistData 1-minute closes (naive fixed EST) up to the end date (+1 day); cached. Duplicate time stamps: the first row is kept."""
+    """HistData 1-minute closes converted to the basis of the main series (New York + 7 h, vc_core.convert_hist) up to the end date (+1 day, converted basis).
+    The unconverted rows are cached. Duplicate time stamps: the first row is kept."""
+    limit = pd.Timestamp(end) + pd.Timedelta(days=3)
     if E.SYNTH:
-        df = pd.read_parquet(os.path.join(E.SYNTH, f"hist_{sym}.parquet"))
-        return df[df.index < pd.Timestamp(end) + pd.Timedelta(days=1)], {"duplicates_dropped": 0}
-    path = os.path.join(E.HIST_DIR, f"HistData_{sym}_1MIN.csv")
-    cache = os.path.join(E.OUT, f"hist_{sym}_{end}.parquet")
-    info = {"source_file": path, "source_bytes": os.path.getsize(path)}
-    if os.path.exists(cache):
-        df = pd.read_parquet(cache)
-        info.update(json.load(open(cache + ".json")))
-        return df, info
-    d = pd.read_csv(path, usecols=["time", "close"])
-    d["time"] = pd.to_datetime(d["time"], format="%Y-%m-%d %H:%M:%S")
-    d = d.set_index("time").sort_index(kind="stable")
-    d = d[d.index < pd.Timestamp(end) + pd.Timedelta(days=1)]
-    dup = d.index.duplicated(keep="first")
-    d = d[~dup]
-    extra = {"duplicates_dropped": int(dup.sum()), "sha256": BW.sha256_file(path)}
-    d.to_parquet(cache)
-    json.dump(extra, open(cache + ".json", "w"))
-    info.update(extra)
-    return d, info
+        raw = pd.read_parquet(os.path.join(E.SYNTH, f"hist_{sym}.parquet"))
+        raw = raw[raw.index < limit]
+        info = {"duplicates_dropped": 0}
+    else:
+        path = os.path.join(E.HIST_DIR, f"HistData_{sym}_1MIN.csv")
+        cache = os.path.join(E.OUT, f"hist_raw_{sym}_{end}.parquet")
+        info = {"source_file": path, "source_bytes": os.path.getsize(path)}
+        if os.path.exists(cache):
+            raw = pd.read_parquet(cache)
+            info.update(json.load(open(cache + ".json")))
+        else:
+            raw = pd.read_csv(path, usecols=["time", "close"])
+            raw["time"] = pd.to_datetime(raw["time"], format="%Y-%m-%d %H:%M:%S")
+            raw = raw.set_index("time").sort_index(kind="stable")
+            raw = raw[raw.index < limit]
+            dup = raw.index.duplicated(keep="first")
+            raw = raw[~dup]
+            extra = {"duplicates_dropped": int(dup.sum()), "sha256": BW.sha256_file(path)}
+            raw.to_parquet(cache)
+            json.dump(extra, open(cache + ".json", "w"))
+            info.update(extra)
+    df, conv = C.convert_hist(raw)
+    df = df[df.index < pd.Timestamp(end) + pd.Timedelta(days=1)]
+    cut = str((pd.Timestamp(end) + pd.Timedelta(days=1)).date())
+    conv["weeks_shifted_8h"] = [w for w in conv["weeks_shifted_8h"] if w < cut]
+    info.update(conv)
+    return df, info
 
 
 def b_windows():

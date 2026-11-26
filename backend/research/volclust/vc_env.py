@@ -1,5 +1,6 @@
-"""volclust_50 verification (plan docs/research-ddm-volclust-verification-plan.md v0.3 @ c9b2a79, approved).
-Constants, the shared wall-clock deadline (2 h from the first execution of V0-V3, never reset), the ledger and the output location.
+"""volclust_50 verification, revision r1 (plan docs/research-ddm-volclust-verification-plan-r1.md v0.2 @ 9f067ee, approved; everything it does not change follows
+docs/research-ddm-volclust-verification-plan.md v0.3 @ c9b2a79). The code of the original run is at commits b45fb93 / d9607c8; its results/ folder is read only.
+Constants, the shared wall-clock deadline (2 h from the first execution of R0-R4, never reset), the ledger and the output location.
 Set VC_SYNTH=<dir> to dry-run every script on synthetic inputs (no research data is read, no deadline)."""
 from __future__ import annotations
 
@@ -19,8 +20,9 @@ import dr_env as DE  # noqa: E402  (also puts backend and the earlier research f
 
 REPO = DE.REPO
 SYNTH = os.environ.get("VC_SYNTH")
-RESULTS = os.path.join(SYNTH, "results") if SYNTH else os.path.join(HERE, "results")
-OUT = os.path.join(SYNTH, "cache") if SYNTH else r"C:\tmp\volclust_out"
+RESULTS = os.path.join(SYNTH, "results") if SYNTH else os.path.join(HERE, "results_r1")
+PREVIOUS = os.path.join(SYNTH, "previous") if SYNTH else os.path.join(HERE, "results")      # original run: read only
+OUT = os.path.join(SYNTH, "cache") if SYNTH else r"C:\tmp\volclust_r1_out"
 HIST_DIR = r"L:\data\fx"
 A1_STATS = os.path.join(DE.OUT, "a1_stats.pkl")
 A1_STATS_SHA = "e9e0bcdd9995504953557b7aea196df511e559a7c57a33b2a1c7e04f28faa6a8"
@@ -40,9 +42,14 @@ MIN_BIN_OBS = 100
 B = int(os.environ.get("VC_B", 2000))
 B_CAL = int(os.environ.get("VC_BCAL", 500))
 N_CAL = int(os.environ.get("VC_NCAL", 1000))
-SOURCE_MIN_RETURNS, SOURCE_MIN_WINDOWS = 950, 300
+SOURCE_MIN_RETURNS = 950
+SOURCE_BIAS_LIMIT = DELTA / 4                        # r1 3.2: the 90% interval of mean(hist - main) must lie within +-this, in estimation and validation
+SOURCE_MIN_MATCHED, SOURCE_MIN_FRACTION = 250, 0.80  # r1 3.2: matched windows per period
+OPEN_MINUTES, OPEN_CONFORM = 30, 0.95                # r1 2.3 (a): converted weekly open Monday 00:00-00:29 in >= 95% of weeks
+CORR_MIN_MATCHED, CORR_CONFORM, CORR_MEDIAN = 500, 0.98, 0.90      # r1 2.3 (b)
+CORR_MIN_SHIFTED = 100                               # a +-1 h correlation with fewer matched returns cannot count against offset 0
 LIMIT_SECONDS = 7200
-SEEDS = {"cal": 20261201, "real": 20261202, "ddm": 20261203, "inject": 20261204, "v3": 20261205}
+SEEDS = {"cal": 20261201, "real": 20261202, "ddm": 20261203, "inject": 20261204, "v3": 20261205, "source": 20261206}
 
 _state = {}
 
@@ -71,11 +78,16 @@ def load(name):
         return json.load(f)
 
 
+def load_previous(name):
+    with open(os.path.join(PREVIOUS, name), encoding="utf-8") as f:
+        return json.load(f)
+
+
 def code_state():
     head = subprocess.check_output(["git", "-C", REPO, "rev-parse", "HEAD"], text=True).strip()
     if SYNTH:
         return {"head": head, "synthetic": True}
-    dirty = subprocess.check_output(["git", "-C", REPO, "status", "--porcelain", "--", "backend/research/volclust", ":(exclude)backend/research/volclust/results",
+    dirty = subprocess.check_output(["git", "-C", REPO, "status", "--porcelain", "--", "backend/research/volclust", ":(exclude)backend/research/volclust/results_r1",
                                      "backend/research/ddm_reach"], text=True).strip()
     if dirty:
         raise SystemExit("uncommitted code changes -> commit first: " + dirty)

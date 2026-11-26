@@ -1,5 +1,6 @@
-"""V2 (plan 6): intraday seasonality. Primary adjustment: America/New_York 15-minute profile of |r| (fixed EST -> UTC -> New York), estimated from the other weeks of the
-same period and source, re-estimated inside every week-block bootstrap replicate. Judgement on the independent period; R-A and validation descriptive. Output: results/v2.json"""
+"""R3 = V2 (plan 6, plan r1 2.2): intraday seasonality. Primary adjustment: New York 15-minute profile of |r| (time stamps on the basis New York + 7 h), estimated from the
+other weeks of the same period and source, re-estimated inside every week-block bootstrap replicate. Judgement on the independent period; R-A and validation descriptive.
+Output: results_r1/v2.json"""
 from __future__ import annotations
 
 import numpy as np
@@ -55,10 +56,10 @@ def variants(S, W, period, maxima):
     z = W["zero_frac"] <= 0.10
     put("raw_zero_frac_le_0.10", C.volclust(R[z]))
     put("adjusted_zero_frac_le_0.10", C.volclust(A[z]))
-    day = (pool["ts"] + 7 * 3600) // 86400
+    day = pool["ts"] // 86400                  # basis New York + 7 h: the calendar day is the trading day (boundary 17:00 New York)
     ud, inv = np.unique(day, return_inverse=True)
     level = np.bincount(inv, weights=np.abs(pool["r"])) / np.bincount(inv)
-    wd = (W["ret_ts"] + 7 * 3600) // 86400
+    wd = W["ret_ts"] // 86400
     j = np.clip(np.searchsorted(ud, wd), 0, len(ud) - 1)
     scale = np.where(ud[j] == wd, level[j], np.nan)
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -90,7 +91,7 @@ def injection(base, ok, se, W, rng):
 
 def main():
     code = E.begin("vc_v2")
-    v0a, v1 = E.load("v0a.json"), E.load("v1.json")
+    r0, v1 = E.load("r0.json"), E.load("v1.json")
     hold, small = v1["independent_held"], v1["small_category_enabled"]
     base, ext, ok = D.ddm_points()
     dbase, dext = D.padded(D.ddm_run_values(base, ok)), D.padded(D.ddm_run_values(ext, ok))
@@ -109,7 +110,7 @@ def main():
         inj_source = ("independent_USDJPY", se, W)
     else:
         out["datasets"]["independent_USDJPY"] = {"role": "primary", "not_judged": "held or not judged in V1 (values not computed)"}
-    if v0a["time_basis"]["identified_as_fixed_EST"]:
+    if r0["main_ok"]:
         T = D.b_windows()
         S = C.prepare(D.load_main())
         for name, period, mask in (("R-A", E.ESTIM, (T["period"] == "estimation") & (T["parity"] == 1)), ("validation", E.VALID, T["period"] == "validation")):
@@ -120,7 +121,7 @@ def main():
             if inj_source is None and name == "R-A":
                 inj_source = (name, se, W)
     else:
-        out["datasets"]["main_series"] = {"not_computed": "time basis of the main series not identified (plan V0 step 1)"}
+        out["datasets"]["main_series"] = {"not_computed": "the main series failed the weekly-open check of R0"}
     if inj_source is not None:
         out["injection_control"] = {"profile_from": inj_source[0], **injection(base, ok, inj_source[1], inj_source[2], np.random.default_rng(E.SEEDS["inject"]))}
     raw = v1["datasets"]["independent_USDJPY"].get("combined_classification")

@@ -1,6 +1,6 @@
 """V3b (plan 6): conditional residual of volclust_50 with volclust_50 removed from the matching, using the frozen rules of v3b_rules.json and the definitions of the
 previous study (g = f - f0 >= 0.05 in the point estimate and in the 90% lower bounds of the seed layer (percentile and t4) and of the real layer), SA->SB and SB->SA,
-with and without the matching eligibility. For the adjusted statistic the seasonality is re-estimated in every replicate. Output: results/v3b.json"""
+with and without the matching eligibility. Revision r1: the adjusted statistic only; its seasonality is re-estimated in every replicate. Output: results_r1/v3b.json"""
 from __future__ import annotations
 
 import numpy as np
@@ -26,10 +26,13 @@ def matched(WA, Mn, fr, P, mset, eligibility):
 
 def main():
     code = E.begin("vc_v3b")
-    identified = E.load("v0a.json")["time_basis"]["identified_as_fixed_EST"]
+    if not E.load("r0.json")["main_ok"]:
+        E.save("v3b.json", {"_code": code, "not_run": "the main series failed the weekly-open check of R0"})
+        E.done()
+        return
     rules = E.load("v3b_rules.json")["variants"]
-    T, W, se = estimation_table(identified)
-    evals = ["volclust_raw"] + (["volclust_adj"] if identified else [])
+    T, W, se = estimation_table(True)
+    evals = ["volclust_adj"]
     WA, WB = split_est(T)
     odd = (T["week"].values % 100) % 2 == 1
     base, _, ok = D.ddm_points()

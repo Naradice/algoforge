@@ -35,9 +35,26 @@ def estimator(R, name):
 ESTIMATORS = ("lag1", "lag5", "lag10", "lag20", "lag50", "lag100", "mean41_60", "rank", "squared")
 
 
+# ---------------------------------------------------------------- time basis ----------------------------------------------------------------
+def convert_hist(df):
+    """HistData (naive New York local time) -> the basis of the main series (New York + 7 h). A calendar week (Sunday..Saturday) whose first Sunday row is stamped
+    16:00-16:29 is shifted by 8 h as a whole, every other week by 7 h (plan r1 2.2; time stamps only). Returns (frame, info)."""
+    idx = df.index
+    week = idx.normalize() - pd.to_timedelta((idx.dayofweek.values + 1) % 7, unit="D")
+    sunday = idx.dayofweek == 6
+    first = pd.Series(idx[sunday], index=week[sunday]).groupby(level=0).min()
+    early = first.index[(first.dt.hour.values == 16) & (first.dt.minute.values < E.OPEN_MINUTES)]
+    off = np.where(week.isin(early), 8, 7)
+    out = df.copy()
+    out.index = idx + pd.to_timedelta(off, unit="h")
+    out = out.sort_index(kind="stable")
+    dup = out.index.duplicated(keep="first")
+    return out[~dup], {"weeks_shifted_8h": [str(d.date()) for d in early], "duplicates_dropped_after_conversion": int(dup.sum())}
+
+
 # ---------------------------------------------------------------- series and windows ------------------------------------------------------
 def prepare(df):
-    """df: DatetimeIndex (naive, fixed EST) with column close -> arrays (seconds, close, trading week id)."""
+    """df: DatetimeIndex (naive, basis of the main series = New York + 7 h) with column close -> arrays (seconds, close, trading week id)."""
     ts = df.index.values.astype("datetime64[s]").astype("int64")
     iso = (pd.DatetimeIndex(df.index) + pd.Timedelta(hours=E.WEEK_SHIFT_HOURS)).isocalendar()
     wk = iso["year"].values.astype(np.int64) * 100 + iso["week"].values.astype(np.int64)
@@ -93,18 +110,21 @@ def pool_returns(S, period):
 
 
 # ---------------------------------------------------------------- time-of-day profiles --------------------------------------------------
-def bins_of(ts_est, scheme):
-    """ts_est: seconds of naive fixed-EST (UTC-5) time stamps. 'ny15' / 'ny_wd30' convert fixed EST -> UTC -> America/New_York."""
-    ts_est = np.asarray(ts_est, np.int64)
-    flat = ts_est.ravel()
-    if scheme == "est15":
-        return ((flat % 86400) // 900).reshape(ts_est.shape), 96
-    ny = pd.to_datetime(flat + 5 * 3600, unit="s", utc=True).tz_convert("America/New_York")
-    minute = ny.hour.values * 60 + ny.minute.values
+def bins_of(ts_main, scheme):
+    """ts_main: seconds of naive time stamps on the basis of the main series (New York + 7 h). 'ny15' / 'ny_wd30' use New York local time; 'est15' (sensitivity)
+    converts New York -> UTC -> a fixed UTC-5 clock, which ignores daylight saving time."""
+    ts_main = np.asarray(ts_main, np.int64)
+    ny = ts_main.ravel() - 7 * 3600
     if scheme == "ny15":
-        return (minute // 15).reshape(ts_est.shape), 96
+        return ((ny % 86400) // 900).reshape(ts_main.shape), 96
     if scheme == "ny_wd30":
-        return (ny.dayofweek.values * 48 + minute // 30).reshape(ts_est.shape), 336
+        dow = (ny // 86400 + 3) % 7                      # 1970-01-01 was a Thursday; Monday = 0
+        return (dow * 48 + (ny % 86400) // 1800).reshape(ts_main.shape), 336
+    if scheme == "est15":
+        local = pd.to_datetime(ny, unit="s")
+        utc = local.tz_localize("America/New_York", ambiguous=np.ones(len(local), bool), nonexistent="shift_forward").tz_convert("UTC")
+        sec = utc.tz_localize(None).values.astype("datetime64[s]").astype("int64") - 5 * 3600
+        return ((sec % 86400) // 900).reshape(ts_main.shape), 96
     raise KeyError(scheme)
 
 

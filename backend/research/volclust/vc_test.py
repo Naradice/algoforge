@@ -1,4 +1,5 @@
 """Pre-execution checks on synthetic inputs only (no research data is read): generates a synthetic input set in VC_SYNTH and runs the unit checks.
+The synthetic HistData series are stamped in New York local time (some weeks opening at 16:00), the synthetic main series on New York + 7 h.
 usage: VC_SYNTH=<dir> python vc_test.py   then   VC_SYNTH=<dir> VC_B=40 VC_BCAL=40 VC_NCAL=20 python vc_run.py"""
 from __future__ import annotations
 
@@ -36,15 +37,30 @@ def series(start, end, seed):
     return pd.DataFrame({"close": np.round(100 * np.exp(np.cumsum(r)), 4)}, index=t)
 
 
+def to_hist(local):
+    """local: New York local stamps (week opens Sunday 17:00) -> (HistData-like frame with three weeks of two springs stamped 1 h early, the same rows on New York + 7 h)."""
+    conv = local.copy()
+    conv.index = local.index + pd.Timedelta(hours=7)
+    early = np.zeros(len(local), bool)
+    for a, b in (("2019-03-10", "2019-03-31"), ("2020-03-08", "2020-03-29")):
+        early |= (local.index >= a) & (local.index < b)
+    raw = local.copy()
+    raw.index = local.index - pd.to_timedelta(early.astype(int), unit="h")
+    return raw, conv
+
+
 def make():
     os.makedirs(E.SYNTH, exist_ok=True)
     os.makedirs(E.DR_RESULTS, exist_ok=True)
     long = series("2009-12-01", "2021-09-10", 1)
-    long.to_parquet(os.path.join(E.SYNTH, "hist_USDJPY.parquet"))
-    main = long[(long.index >= "2016-08-31 18:00") & (long.index <= "2021-09-01")]
+    raw, conv = to_hist(long)
+    raw.to_parquet(os.path.join(E.SYNTH, "hist_USDJPY.parquet"))
+    main = conv[(conv.index >= "2016-08-31") & (conv.index <= "2021-09-01")]
     main.to_parquet(os.path.join(E.SYNTH, "main.parquet"))
     for k, sym in enumerate(E.PAIRS):
-        series("2016-08-28", "2020-09-03", 10 + k).to_parquet(os.path.join(E.SYNTH, f"hist_{sym}.parquet"))
+        to_hist(series("2016-08-28", "2020-09-03", 10 + k))[0].to_parquet(os.path.join(E.SYNTH, f"hist_{sym}.parquet"))
+    os.makedirs(E.PREVIOUS, exist_ok=True)
+    json.dump({"small_category_enabled": False}, open(os.path.join(E.PREVIOUS, "v0c.json"), "w"))
     W = BW.build(main, DE.L_MAIN, 1)
     W.to_csv(os.path.join(E.DR_RESULTS, "b_windows_L1000_bar1.csv"), index=False)
     WA, WB = BR.split_est(W)
@@ -123,9 +139,15 @@ def checks(main, W):
             if n[g].sum() > 0:
                 assert np.allclose(P[u, g], s[g].sum() / n[g].sum(), rtol=1e-10), (u, g[:3])
     assert np.isfinite(se.adjusted(win["R"], np.ones(len(se.units)))).all()
-    # 4. fixed EST -> New York
+    # 4. basis New York + 7 h -> New York bins; the fixed UTC-5 sensitivity differs by 1 h in summer only
     t = np.array([np.datetime64("2015-07-01T12:00:00"), np.datetime64("2015-01-05T12:00:00")]).astype("datetime64[s]").astype("int64")
-    assert list(C.bins_of(t, "ny15")[0]) == [13 * 4, 12 * 4] and list(C.bins_of(t, "est15")[0]) == [48, 48]
+    assert list(C.bins_of(t, "ny15")[0]) == [20, 20] and list(C.bins_of(t, "est15")[0]) == [16, 20]
+    assert list(C.bins_of(t, "ny_wd30")[0]) == [2 * 48 + 10, 10]                       # Wednesday and Monday 05:00 New York
+    # 4b. the HistData conversion recovers the main-series stamps, including the weeks stamped 1 h early
+    got, info = C.convert_hist(pd.read_parquet(os.path.join(E.SYNTH, "hist_USDJPY.parquet")))
+    both = got.index.intersection(main.index)
+    assert len(both) >= len(main) - 5 and np.array_equal(got.loc[both, "close"].values, main.loc[both, "close"].values), (len(both), len(main))
+    assert len(info["weeks_shifted_8h"]) == 6, info
     # 5. classification and DDM bootstrap
     assert C.classify([[0.03, 0.04]] * 4, 0.022, True) == "差あり" and C.classify([[0.0, 0.01]] * 4, 0.022, True) == "差は小さい"
     assert C.classify([[0.0, 0.01]] * 4, 0.022, False) == "判定保留" and C.classify([[0.03, 0.04]] * 3 + [[0.01, 0.04]], 0.022, True) == "判定保留"
