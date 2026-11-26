@@ -1,0 +1,359 @@
+{
+ "_code": {
+  "head": "1bac5cc7410501a23c13b605f7a33e78b1a7db21"
+ },
+ "a1_stats": {
+  "n_success": 1593,
+  "n_in_stats": 1593,
+  "n_missing": 0,
+  "n_bad_windows": 0,
+  "sha256": "e9e0bcdd9995504953557b7aea196df511e559a7c57a33b2a1c7e04f28faa6a8",
+  "sha256_matches": true
+ },
+ "main_open": {
+  "period": [
+   "2016-08-31",
+   "2021-08-31"
+  ],
+  "n_weeks": 261,
+  "n_conforming": 247,
+  "share": 0.946360153256705,
+  "passes": false,
+  "nonconforming_first_rows": [
+   "2016-12-27 01:00:00",
+   "2017-01-03 01:00:00",
+   "2018-01-02 00:02:00",
+   "2019-12-08 23:00:00",
+   "2021-06-27 22:00:00",
+   "2021-07-04 22:00:00",
+   "2021-07-11 22:00:00",
+   "2021-07-18 22:00:00",
+   "2021-07-25 22:00:00",
+   "2021-08-01 22:00:00",
+   "2021-08-08 22:00:00",
+   "2021-08-15 22:00:00",
+   "2021-08-22 22:00:00",
+   "2021-08-29 22:00:00"
+  ]
+ },
+ "usdjpy_info": {
+  "source_file": "L:\\data\\fx\\HistData_USDJPY_1MIN.csv",
+  "source_bytes": 394716001,
+  "duplicates_dropped": 120,
+  "sha256": "6f192faf7b70f25b445f4b3ba10d3ec687fa09c1745c7a2e84c7bc48d34b891d",
+  "weeks_shifted_8h": [
+   "2004-11-28",
+   "2019-03-17",
+   "2019-03-24",
+   "2019-10-27",
+   "2020-03-08",
+   "2020-03-15",
+   "2020-03-22",
+   "2020-10-25",
+   "2021-03-14",
+   "2021-03-21"
+  ],
+  "duplicates_dropped_after_conversion": 0
+ },
+ "usdjpy_open_independent": {
+  "period": [
+   "2010-01-01",
+   "2016-08-30"
+  ],
+  "n_weeks": 348,
+  "n_conforming": 345,
+  "share": 0.9913793103448276,
+  "passes": true,
+  "nonconforming_first_rows": [
+   "2011-12-26 09:00:00",
+   "2012-01-02 09:00:00",
+   "2014-06-02 22:01:00"
+  ]
+ },
+ "usdjpy_weekly_correlation": {
+  "period": [
+   "2016-08-31",
+   "2021-08-31"
+  ],
+  "n_weeks": 262,
+  "n_offset0_best": 261,
+  "share": 0.9961832061068703,
+  "median_corr_offset0": 0.9743801689727971,
+  "failing_weeks": {
+   "201911": {
+    "n-1": 7053.0,
+    "c-1": -0.0122,
+    "n0": 7113.0,
+    "c0": 0.0049,
+    "n1": 7113.0,
+    "c1": 0.9699
+   }
+  },
+  "passes": true
+ },
+ "usdjpy_ok": true,
+ "main_ok": false,
+ "pairs": {
+  "EURUSD": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "n_weeks": 209,
+   "n_conforming": 204,
+   "share": 0.9760765550239234,
+   "passes": true,
+   "nonconforming_first_rows": [
+    "2016-12-26 00:30:00",
+    "2017-01-02 09:00:00",
+    "2017-12-26 00:00:00",
+    "2018-01-02 00:00:00",
+    "2019-05-27 06:00:00"
+   ],
+   "info": {
+    "source_file": "L:\\data\\fx\\HistData_EURUSD_1MIN.csv",
+    "source_bytes": 403440848,
+    "duplicates_dropped": 60,
+    "sha256": "322fe72ecc57e780f38ce0315ecdee585500f9bce6d4ac83f1185f56c7610047",
+    "weeks_shifted_8h": [
+     "2019-03-10",
+     "2019-03-17",
+     "2019-03-24",
+     "2019-10-27",
+     "2020-03-08",
+     "2020-03-15",
+     "2020-03-22"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  },
+  "GBPUSD": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "n_weeks": 209,
+   "n_conforming": 205,
+   "share": 0.9808612440191388,
+   "passes": true,
+   "nonconforming_first_rows": [
+    "2017-01-02 09:00:00",
+    "2017-12-26 00:00:00",
+    "2018-01-02 00:00:00",
+    "2019-05-27 07:00:00"
+   ],
+   "info": {
+    "source_file": "L:\\data\\fx\\HistData_GBPUSD_1MIN.csv",
+    "source_bytes": 397545233,
+    "duplicates_dropped": 60,
+    "sha256": "d4073fed071bfea3f45bfe1d669f216d01d072f97ff9a868e1fa7346ce78d63a",
+    "weeks_shifted_8h": [
+     "2019-03-10",
+     "2019-03-17",
+     "2019-03-24",
+     "2019-10-27",
+     "2020-03-08",
+     "2020-03-15",
+     "2020-03-22"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  },
+  "AUDUSD": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "n_weeks": 209,
+   "n_conforming": 205,
+   "share": 0.9808612440191388,
+   "passes": true,
+   "nonconforming_first_rows": [
+    "2017-01-02 09:00:00",
+    "2017-12-26 00:00:00",
+    "2018-01-02 00:00:00",
+    "2019-05-27 12:00:00"
+   ],
+   "info": {
+    "source_file": "L:\\data\\fx\\HistData_AUDUSD_1MIN.csv",
+    "source_bytes": 371004128,
+    "duplicates_dropped": 60,
+    "sha256": "4c89f6d562f33a8506a711566f2ffe639f834da99c551c0fa363fa9d1be3bdaf",
+    "weeks_shifted_8h": [
+     "2019-03-10",
+     "2019-03-17",
+     "2019-03-24",
+     "2019-10-27",
+     "2020-03-08",
+     "2020-03-15",
+     "2020-03-22"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  },
+  "USDCHF": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "n_weeks": 209,
+   "n_conforming": 204,
+   "share": 0.9760765550239234,
+   "passes": true,
+   "nonconforming_first_rows": [
+    "2016-12-26 00:30:00",
+    "2017-01-02 09:00:00",
+    "2017-12-26 00:00:00",
+    "2018-01-02 00:00:00",
+    "2019-05-27 11:00:00"
+   ],
+   "info": {
+    "source_file": "L:\\data\\fx\\HistData_USDCHF_1MIN.csv",
+    "source_bytes": 382056558,
+    "duplicates_dropped": 60,
+    "sha256": "731097a971d9115f1759f71935d743175ee0914fcd4431f676e407072dd4babc",
+    "weeks_shifted_8h": [
+     "2004-11-28",
+     "2019-03-17",
+     "2019-03-24",
+     "2019-10-27",
+     "2020-03-08",
+     "2020-03-15",
+     "2020-03-22"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  },
+  "EURJPY": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "n_weeks": 209,
+   "n_conforming": 204,
+   "share": 0.9760765550239234,
+   "passes": true,
+   "nonconforming_first_rows": [
+    "2016-12-26 00:31:00",
+    "2017-01-02 09:01:00",
+    "2017-12-26 00:01:00",
+    "2018-01-02 00:01:00",
+    "2019-05-27 05:00:00"
+   ],
+   "info": {
+    "source_file": "L:\\data\\fx\\HistData_EURJPY_1MIN.csv",
+    "source_bytes": 395374512,
+    "duplicates_dropped": 60,
+    "sha256": "a842cd12bbee2c75dbed1803d003da09ad6a484587fbc2ebb5d2efce2a214c58",
+    "weeks_shifted_8h": [
+     "2019-03-10",
+     "2019-03-17",
+     "2019-03-24",
+     "2019-10-27",
+     "2020-03-08",
+     "2020-03-15",
+     "2020-03-22"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  },
+  "GBPJPY": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "n_weeks": 209,
+   "n_conforming": 204,
+   "share": 0.9760765550239234,
+   "passes": true,
+   "nonconforming_first_rows": [
+    "2016-12-26 00:31:00",
+    "2017-01-02 09:00:00",
+    "2017-12-26 00:02:00",
+    "2018-01-02 00:02:00",
+    "2019-05-27 08:00:00"
+   ],
+   "info": {
+    "source_file": "L:\\data\\fx\\HistData_GBPJPY_1MIN.csv",
+    "source_bytes": 395251911,
+    "duplicates_dropped": 60,
+    "sha256": "12012fa1b4d7a5f8e600dd4e4e283fc52610ecee4ef615a63f0762fe3098a6fb",
+    "weeks_shifted_8h": [
+     "2019-03-17",
+     "2019-03-24",
+     "2019-10-27",
+     "2020-03-08",
+     "2020-03-15",
+     "2020-03-22"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  },
+  "AUDJPY": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "n_weeks": 209,
+   "n_conforming": 204,
+   "share": 0.9760765550239234,
+   "passes": true,
+   "nonconforming_first_rows": [
+    "2016-12-26 00:30:00",
+    "2017-01-02 09:01:00",
+    "2017-12-26 00:00:00",
+    "2018-01-02 00:00:00",
+    "2019-05-27 03:00:00"
+   ],
+   "info": {
+    "source_file": "L:\\data\\fx\\HistData_AUDJPY_1MIN.csv",
+    "source_bytes": 359532923,
+    "duplicates_dropped": 60,
+    "sha256": "7e9979f4daab4be345037fd239a124486eeb67dcea85c59df541e033109ad839",
+    "weeks_shifted_8h": [
+     "2019-03-10",
+     "2019-03-17",
+     "2019-03-24",
+     "2019-10-27",
+     "2020-03-08",
+     "2020-03-15",
+     "2020-03-22"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  },
+  "CHFJPY": {
+   "period": [
+    "2016-08-31",
+    "2020-08-31"
+   ],
+   "n_weeks": 209,
+   "n_conforming": 204,
+   "share": 0.9760765550239234,
+   "passes": true,
+   "nonconforming_first_rows": [
+    "2016-12-26 00:30:00",
+    "2017-01-02 09:01:00",
+    "2017-12-26 00:01:00",
+    "2018-01-02 00:00:00",
+    "2019-05-27 06:00:00"
+   ],
+   "info": {
+    "source_file": "L:\\data\\fx\\HistData_CHFJPY_1MIN.csv",
+    "source_bytes": 374179784,
+    "duplicates_dropped": 60,
+    "sha256": "958033134da7babf14f1d83c05daecd516104be9a003e5198345d9fa93787bc8",
+    "weeks_shifted_8h": [
+     "2019-03-10",
+     "2019-03-17",
+     "2019-03-24",
+     "2019-10-27",
+     "2020-03-08",
+     "2020-03-15",
+     "2020-03-22"
+    ],
+    "duplicates_dropped_after_conversion": 0
+   }
+  }
+ }
+}
