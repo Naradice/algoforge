@@ -1,0 +1,159 @@
+{
+ "threshold_q95": 3.50644102796436e-06,
+ "threshold_q90": 2.2200242339136606e-06,
+ "years": [
+  [
+   "2016-08-31",
+   "2017-08-31"
+  ],
+  [
+   "2017-09-01",
+   "2018-08-31"
+  ],
+  [
+   "2018-09-01",
+   "2019-08-31"
+  ],
+  [
+   "2019-09-01",
+   "2020-08-31"
+  ],
+  [
+   "2020-09-01",
+   "2021-08-31"
+  ]
+ ],
+ "options": {
+  "A_current": [
+   {
+    "origins": 6056,
+    "positive_origins": 564,
+    "events": 226
+   },
+   {
+    "origins": 6055,
+    "positive_origins": 160,
+    "events": 104
+   },
+   {
+    "origins": 6027,
+    "positive_origins": 102,
+    "events": 55
+   },
+   {
+    "origins": 6019,
+    "positive_origins": 381,
+    "events": 67
+   },
+   {
+    "origins": 6009,
+    "positive_origins": 38,
+    "events": 30
+   }
+  ],
+  "C_q90": [
+   {
+    "origins": 6056,
+    "positive_origins": 1180,
+    "events": 316
+   },
+   {
+    "origins": 6055,
+    "positive_origins": 397,
+    "events": 193
+   },
+   {
+    "origins": 6027,
+    "positive_origins": 229,
+    "events": 107
+   },
+   {
+    "origins": 6019,
+    "positive_origins": 608,
+    "events": 122
+   },
+   {
+    "origins": 6009,
+    "positive_origins": 93,
+    "events": 59
+   }
+  ],
+  "D_relative": [
+   null,
+   {
+    "origins": 6055,
+    "positive_origins": 174,
+    "events": 112
+   },
+   {
+    "origins": 6027,
+    "positive_origins": 274,
+    "events": 126
+   },
+   {
+    "origins": 6019,
+    "positive_origins": 573,
+    "events": 85
+   },
+   {
+    "origins": 6009,
+    "positive_origins": 110,
+    "events": 73
+   }
+  ],
+  "E_normalised": [
+   {
+    "origins": 6056,
+    "positive_origins": 309,
+    "events": 191
+   },
+   {
+    "origins": 6055,
+    "positive_origins": 285,
+    "events": 207
+   },
+   {
+    "origins": 6027,
+    "positive_origins": 307,
+    "events": 203
+   },
+   {
+    "origins": 6019,
+    "positive_origins": 307,
+    "events": 200
+   },
+   {
+    "origins": 6009,
+    "positive_origins": 285,
+    "events": 188
+   }
+  ],
+  "F_merge60": [
+   {
+    "origins": 6056,
+    "positive_origins": 564,
+    "events": 306
+   },
+   {
+    "origins": 6055,
+    "positive_origins": 160,
+    "events": 119
+   },
+   {
+    "origins": 6027,
+    "positive_origins": 102,
+    "events": 76
+   },
+   {
+    "origins": 6019,
+    "positive_origins": 381,
+    "events": 118
+   },
+   {
+    "origins": 6009,
+    "positive_origins": 38,
+    "events": 32
+   }
+  ]
+ }
+}
