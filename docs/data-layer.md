@@ -164,7 +164,17 @@ The datetime column is found by name (`datetime`, `date`, `time`, `timestamp`, `
 `local time`, or `datetime_col`). Day-first `dd.mm.yyyy[ HH:MM[:SS[.fff]]]` values (Dukascopy
 exports) are detected and parsed day-first; a trailing `GMT+hhmm` offset is applied, giving naive UTC.
 `datetime_format` (strptime) overrides detection. Times without an offset are stored as given (naive):
-HistData is fixed EST, MT5 exports are broker server time, Dukascopy `Gmt time` is UTC.
+MT5 exports are broker server time, Dukascopy `Gmt time` is UTC.
+
+The local `HistData_<SYM>_1MIN.csv` files are stamped in **New York local time (with daylight saving
+time)**, not fixed EST as this page said before. Checked on 2026-11-26:
+- USDJPY: the week opens Sunday 17h and the first-Friday release is at 08:30 in both US summer and
+  winter; against a second source (stamped New York + 7h) the 1-minute returns match at that offset.
+  Some weeks (spring 2019–2021, late October 2019 and 2020) are stamped one hour earlier (open at 16h).
+- EURUSD, GBPUSD, AUDUSD, USDCHF, EURJPY, GBPJPY, AUDJPY, CHFJPY: only the weekly open was checked
+  (2016-09 to 2020-08; at least 97.6% of weeks consistent after the same conversion).
+
+Details: `docs/research-ddm-volclust-verification-report-r1.md`. Other HistData downloads were not checked.
 
 ### `web_report`
 Downloads financial reports (PDFs, HTML, audio) from institution websites using Playwright.
