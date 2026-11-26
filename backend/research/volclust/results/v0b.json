@@ -1,0 +1,27 @@
+{
+ "_code": {
+  "head": "614d8dd68633e8fb61669344b24af97b74668df9"
+ },
+ "reproduces_stored_windows": {
+  "n": 1787,
+  "max_abs_diff_volclust_50": 8.881784197001252e-16,
+  "week_equal": true,
+  "builder_rows_equal_estimation": true
+ },
+ "source_effect": {
+  "offset_h_used": 7,
+  "n_estimation_windows": 1436,
+  "n_matched_windows": 1433,
+  "min_returns_for_match": 950,
+  "mean_abs_diff": 0.011676395343039894,
+  "mean_diff_hist_minus_main": -0.0010109019182364266,
+  "median_abs_diff": 0.008026975542920589,
+  "corr": 0.934099569464051,
+  "mean_main": 0.05489448187982106,
+  "mean_hist": 0.05388357996158462,
+  "threshold_mean_abs_diff": 0.011,
+  "enough_matched_windows": true,
+  "source_effect_flag": true,
+  "hold_independent_judgement": true
+ }
+}
