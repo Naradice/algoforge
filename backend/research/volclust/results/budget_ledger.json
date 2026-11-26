@@ -46,5 +46,13 @@
   "seconds": 0.6170964241027832,
   "status": "completed",
   "seconds_since_first_execution": 226.29694271087646
+ },
+ {
+  "script": "vc_v3b",
+  "start": 1795668172.7671473,
+  "end": 1795668200.1387634,
+  "seconds": 27.37161612510681,
+  "status": "completed",
+  "seconds_since_first_execution": 257.01543140411377
  }
 ]

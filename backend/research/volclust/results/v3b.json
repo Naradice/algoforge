@@ -1,0 +1,250 @@
+{
+ "_code": {
+  "head": "fc42124ffb081b74cc244a27212e73c8facf5344"
+ },
+ "g_threshold": 0.05,
+ "results": [
+  {
+   "variant": "primary",
+   "M": [
+    "acf_1",
+    "kurtosis"
+   ],
+   "E": "volclust_raw",
+   "direction": "SA->SB",
+   "eligibility": true,
+   "n_points_matched_eligible": 41,
+   "n_reachable": 145,
+   "fraction_reachable": 0.20223152022315202,
+   "n_weeks_reachable": 81,
+   "noise_floor_computable": true,
+   "residual_conditions_met": true,
+   "D": -0.9273052386265828,
+   "D_median": -0.8414935488476282,
+   "f": 0.1793103448275862,
+   "f0": 0.05286572574618223,
+   "g": 0.12644461908140397,
+   "tau": 1.9573055704089117,
+   "seed_layer_pct_g_90": [
+    0.08506530873657639,
+    0.1747204811503695
+   ],
+   "seed_layer_t_g_90": [
+    0.07127220528830053,
+    0.21609979149519706
+   ],
+   "mean_E_ddm": 0.005958726821986546,
+   "mean_E_real_reachable": 0.04692439634823353,
+   "n_distinct_points_used": 3,
+   "top1_point_share": 0.6143790849673203,
+   "real_layer_g_90": [
+    0.06713780808469533,
+    0.17956985981714443
+   ],
+   "exceeds_noise_floor": true
+  },
+  {
+   "variant": "primary",
+   "M": [
+    "acf_1",
+    "kurtosis"
+   ],
+   "E": "volclust_raw",
+   "direction": "SA->SB",
+   "eligibility": false,
+   "n_points_matched_eligible": 136,
+   "n_reachable": 408,
+   "fraction_reachable": 0.5690376569037657,
+   "n_weeks_reachable": 103,
+   "noise_floor_computable": true,
+   "residual_conditions_met": true,
+   "D": -1.0785058561622436,
+   "D_median": -1.0496567401906576,
+   "f": 0.1715686274509804,
+   "f0": 0.05286572574618223,
+   "g": 0.11870290170479816,
+   "tau": 1.9573055704089117,
+   "seed_layer_pct_g_90": [
+    0.0966440781753864,
+    0.15056564680283738
+   ],
+   "seed_layer_t_g_90": [
+    0.0892911369989158,
+    0.1701734899400923
+   ],
+   "mean_E_ddm": 0.0035590139789616684,
+   "mean_E_real_reachable": 0.0512042904696902,
+   "n_distinct_points_used": 35,
+   "top1_point_share": 0.24087591240875914,
+   "real_layer_g_90": [
+    0.0676752892900214,
+    0.1460705574161973
+   ],
+   "exceeds_noise_floor": true
+  },
+  {
+   "variant": "primary",
+   "M": [
+    "acf_1",
+    "kurtosis"
+   ],
+   "E": "volclust_raw",
+   "direction": "SB->SA",
+   "eligibility": true,
+   "n_points_matched_eligible": 51,
+   "n_reachable": 211,
+   "fraction_reachable": 0.29428172942817293,
+   "n_weeks_reachable": 95,
+   "noise_floor_computable": true,
+   "residual_conditions_met": true,
+   "D": -1.0957524939379815,
+   "D_median": -1.018816387214567,
+   "f": 0.18009478672985782,
+   "f0": 0.05286572574618223,
+   "g": 0.1272290609836756,
+   "tau": 1.9573055704089117,
+   "seed_layer_pct_g_90": [
+    0.09879304202632963,
+    0.18884043539125853
+   ],
+   "seed_layer_t_g_90": [
+    0.08931436904054763,
+    0.21727645434860451
+   ],
+   "mean_E_ddm": 0.001736815303472212,
+   "mean_E_real_reachable": 0.05014399848266743,
+   "n_distinct_points_used": 4,
+   "top1_point_share": 0.7,
+   "real_layer_g_90": [
+    0.06913400667090668,
+    0.1579665840546947
+   ],
+   "exceeds_noise_floor": true
+  },
+  {
+   "variant": "primary",
+   "M": [
+    "acf_1",
+    "kurtosis"
+   ],
+   "E": "volclust_raw",
+   "direction": "SB->SA",
+   "eligibility": false,
+   "n_points_matched_eligible": 136,
+   "n_reachable": 355,
+   "fraction_reachable": 0.49511854951185497,
+   "n_weeks_reachable": 101,
+   "noise_floor_computable": true,
+   "residual_conditions_met": true,
+   "D": -1.1990990441687934,
+   "D_median": -1.1488653363703663,
+   "f": 0.19718309859154928,
+   "f0": 0.05286572574618223,
+   "g": 0.14431737284536705,
+   "tau": 1.9573055704089117,
+   "seed_layer_pct_g_90": [
+    0.12459906298621215,
+    0.16403568270452198
+   ],
+   "seed_layer_t_g_90": [
+    0.11896526016931072,
+    0.17812018974677551
+   ],
+   "mean_E_ddm": -0.0016014410687200656,
+   "mean_E_real_reachable": 0.051371294473474334,
+   "n_distinct_points_used": 41,
+   "top1_point_share": 0.25874125874125875,
+   "real_layer_g_90": [
+    0.08761878957817366,
+    0.1731126185707877
+   ],
+   "exceeds_noise_floor": true
+  },
+  {
+   "variant": "tail_Q",
+   "M": [
+    "acf_1",
+    "Q"
+   ],
+   "E": "volclust_raw",
+   "direction": "SA->SB",
+   "eligibility": true,
+   "n_points_matched_eligible": 38,
+   "n_reachable": 0,
+   "fraction_reachable": 0.0,
+   "n_weeks_reachable": 0,
+   "noise_floor_computable": true,
+   "residual_conditions_met": false
+  },
+  {
+   "variant": "tail_Q",
+   "M": [
+    "acf_1",
+    "Q"
+   ],
+   "E": "volclust_raw",
+   "direction": "SA->SB",
+   "eligibility": false,
+   "n_points_matched_eligible": 136,
+   "n_reachable": 38,
+   "fraction_reachable": 0.05299860529986053,
+   "n_weeks_reachable": 32,
+   "noise_floor_computable": true,
+   "residual_conditions_met": false
+  },
+  {
+   "variant": "tail_Q",
+   "M": [
+    "acf_1",
+    "Q"
+   ],
+   "E": "volclust_raw",
+   "direction": "SB->SA",
+   "eligibility": true,
+   "n_points_matched_eligible": 46,
+   "n_reachable": 0,
+   "fraction_reachable": 0.0,
+   "n_weeks_reachable": 0,
+   "noise_floor_computable": true,
+   "residual_conditions_met": false
+  },
+  {
+   "variant": "tail_Q",
+   "M": [
+    "acf_1",
+    "Q"
+   ],
+   "E": "volclust_raw",
+   "direction": "SB->SA",
+   "eligibility": false,
+   "n_points_matched_eligible": 136,
+   "n_reachable": 33,
+   "fraction_reachable": 0.04602510460251046,
+   "n_weeks_reachable": 29,
+   "noise_floor_computable": true,
+   "residual_conditions_met": false
+  }
+ ],
+ "direction_agreement": {
+  "primary|volclust_raw|eligibility=True": {
+   "SA->SB": true,
+   "SB->SA": true,
+   "usable_for_conclusion": true
+  },
+  "primary|volclust_raw|eligibility=False": {
+   "SA->SB": true,
+   "SB->SA": true,
+   "usable_for_conclusion": true
+  },
+  "tail_Q|volclust_raw|eligibility=True": {
+   "SA->SB": null,
+   "SB->SA": null,
+   "usable_for_conclusion": false
+  },
+  "tail_Q|volclust_raw|eligibility=False": {
+   "SA->SB": null,
+   "SB->SA": null,
+   "usable_for_conclusion": false
+  }
+ }
+}
