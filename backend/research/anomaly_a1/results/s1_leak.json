@@ -1,0 +1,25 @@
+{
+ "_code": {
+  "head": "66d9bd8cb7a0b3a00382e52c25823a0867143666",
+  "versions": {
+   "arch": "8.0.0",
+   "numpy": "2.3.3",
+   "scipy": "1.17.1",
+   "pandas": "3.0.1",
+   "statsmodels": "0.14.6"
+  },
+  "python": "3.13.17",
+  "time": "2026-11-27 01:28:52"
+ },
+ "origins_tested": {
+  "estimation": 150,
+  "validation": 150
+ },
+ "mismatching_origins": {
+  "estimation": [],
+  "validation": []
+ },
+ "months_state_tested": 49,
+ "months_state_changed": [],
+ "passed": true
+}
