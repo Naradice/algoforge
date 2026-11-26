@@ -33,6 +33,7 @@ def time_basis(main, hist):
         r = s.diff()
         dt = df.index.to_series().diff().dt.total_seconds()
         return r[dt.values == 60]
+    main = main[~main.index.duplicated(keep="first")]
     p0, p1 = pd.Timestamp(E.ESTIM[0]), pd.Timestamp(E.ESTIM[1]) + pd.Timedelta(days=1)
     rm = rets(main[(main.index >= p0) & (main.index < p1)])
     rh = rets(hist[(hist.index >= p0 - pd.Timedelta(days=2)) & (hist.index < p1 + pd.Timedelta(days=2))])
