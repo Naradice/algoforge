@@ -1,4 +1,4 @@
-"""A1 (Study Manager #1140), frozen plan docs/research-anomaly-a1-plan.md v0.2 @ a83f2d7: definitions shared by the preparation (S1) and the
+"""A1 (Study Manager #1140), frozen plan docs/research-anomaly-a1-plan.md v0.3 (v0.2 with the evaluation period fixed to 42 months): definitions shared by the preparation (S1) and the
 evaluation (S3). The B7N forecast and the randomised PIT come from the F1 code (backend/research/f1_*.py, unchanged since db0926f)."""
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ WORK = os.path.join(REPO, "artifacts", "research", "anomaly_a1")               #
 RESULTS = os.path.join(HERE, "results")
 
 # ---- frozen by the plan ------------------------------------------------------------------------------------------------
-fc.PERIODS["forward"] = ("2026-12-01", "2028-05-31")
+fc.PERIODS["forward"] = ("2026-12-01", "2030-05-31")
 FIT_START = "2017-09-01"                       # estimation without its first 12 months
 LABEL_THRESHOLD = 3.50644102796436e-06         # V(t, 60) > threshold (95% point of the estimation period, fixed in A0)
 MERGE_ROWS = 240

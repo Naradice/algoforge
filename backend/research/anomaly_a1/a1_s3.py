@@ -1,7 +1,7 @@
 """A1 stage S3 (plan section 7): data checks, series construction, leak test and the single scoring of the forward period. Primary comparison and the
 alert-rate / Sunday sensitivities; the secondary analyses of plan section 8 are not in this script.
 
-  python a1_s3.py            (refused before 2028-06-01, without all archives, or when results/evaluation.json already exists)
+  python a1_s3.py            (refused before 2030-06-01, without all archives, or when results/evaluation.json already exists)
 """
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ import a1_data as D
 fm, fc = L.fm, L.fc
 
 HISTORY = ("2022-09", "2026-11")
-FORWARD_FILES = ("2026-12", "2028-06")          # one extra file: the archives are split by Japan-time months
-EARLIEST = date(2028, 6, 1)
+FORWARD_FILES = ("2026-12", "2030-06")          # one extra file: the archives are split by Japan-time months
+EARLIEST = date(2030, 6, 1)
 OPEN_SHARE = 0.95
 TIME_LIMIT = 3 * 3600
 WORKERS = 12
@@ -154,7 +154,9 @@ def main():
     chk = json.load(open(os.path.join(L.RESULTS, "check202208.json"), encoding="utf-8"))
     assert chk["identical"], "STOP: the 2022-08 check did not pass"
     close, index = L.load_main()
-    close, index = extend_series(close, index, [D.minute_closes(arch[m]) for m in need])
+    with ProcessPoolExecutor(max_workers=6) as ex:                              # one archive per task; map keeps the month order
+        minutes = list(ex.map(D.minute_closes, [arch[m] for m in need]))
+    close, index = extend_series(close, index, minutes)
     opens = {"history": weekly_open(index, "2022-09-05", "2026-11-30"), "forward": weekly_open(index, *fc.PERIODS["forward"])}
     data = {"rows": int(len(close)), "backward_tick_steps": {m: ledger[m]["backward_steps"] for m in need if ledger[m]["backward_steps"]}, "weekly_open": opens}
     if min(o["share"] for o in opens.values()) < OPEN_SHARE:

@@ -112,7 +112,8 @@ def unit(tmp):
     assert e["sunday_tick_rows"] == 3 * int((m.index.dayofweek == 6).sum())
     o = S3.weekly_open(s.index, "2021-02-01", "2021-05-31")
     assert o["weeks"] > 10 and o["share"] > 0.8, o
-    assert len(S3.required_months()) == 51 + 19
+    assert len(S3.required_months()) == 51 + 43 and fc.PERIODS["forward"]
+    assert str(S3.EARLIEST) == "2030-06-01" and S3.required_months()[-1] == "2030-06"
     print("unit checks passed", flush=True)
 
 
