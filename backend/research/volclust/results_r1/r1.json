@@ -1,0 +1,63 @@
+{
+ "_code": {
+  "head": "32fb57abdc4c6621e5f37ae39552c8ef9be8ad9e"
+ },
+ "reproduces_stored_windows": {
+  "n": 1787,
+  "max_abs_diff_volclust_50": 8.881784197001252e-16,
+  "week_equal": true,
+  "builder_rows_equal_estimation": true
+ },
+ "periods": {
+  "estimation": {
+   "n_valid_windows": 1436,
+   "n_matched_windows": 1433,
+   "n_required": 1149,
+   "enough_matched": true,
+   "n_weeks": 210,
+   "mean_diff_hist_minus_main": -0.001125713817452839,
+   "mean_diff_90": [
+    -0.0018538903234453165,
+    -0.00040265668099487197
+   ],
+   "limit": 0.0055,
+   "interval_within_limit": true,
+   "mean_main": 0.05489448187982106,
+   "mean_hist": 0.053768768062368216,
+   "original_criterion": {
+    "mean_abs_diff": 0.011454932923778829,
+    "threshold": 0.011,
+    "met": false
+   },
+   "median_abs_diff": 0.007924203546275946,
+   "corr": 0.9364869502821408,
+   "passes": true
+  },
+  "validation": {
+   "n_valid_windows": 351,
+   "n_matched_windows": 346,
+   "n_required": 281,
+   "enough_matched": true,
+   "n_weeks": 53,
+   "mean_diff_hist_minus_main": -9.154291058171409e-05,
+   "mean_diff_90": [
+    -0.0021988316171950347,
+    0.0019506693881826214
+   ],
+   "limit": 0.0055,
+   "interval_within_limit": true,
+   "mean_main": 0.07416950360686467,
+   "mean_hist": 0.07407796069628295,
+   "original_criterion": {
+    "mean_abs_diff": 0.014275012403753392,
+    "threshold": 0.011,
+    "met": false
+   },
+   "median_abs_diff": 0.01019019712665718,
+   "corr": 0.9263432279292774,
+   "passes": true
+  }
+ },
+ "source_passes": true,
+ "hold_independent_judgement": false
+}
