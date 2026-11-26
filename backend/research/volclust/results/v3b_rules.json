@@ -1,0 +1,109 @@
+{
+ "_code": {
+  "head": "e7f7cbd46feb784b70c59925f59cde572edd1236"
+ },
+ "variants": {
+  "primary": {
+   "volclust_raw": {
+    "M": [
+     "acf_1",
+     "kurtosis"
+    ],
+    "E": [
+     "volclust_raw"
+    ],
+    "SD": [
+     0.05804906783226416,
+     28.230253463565727
+    ],
+    "c": [
+     0.02902453391613208,
+     14.115126731782864
+    ],
+    "sigma": [
+     0.04417711430911423
+    ],
+    "tau": [
+     1.9573055704089117
+    ],
+    "f0": [
+     0.05286572574618223
+    ],
+    "f0_split_sd": [
+     0.017839420676651993
+    ],
+    "f0_split_min": [
+     0.011428571428571429
+    ],
+    "f0_split_max": [
+     0.11046511627906977
+    ],
+    "n_RA": 717,
+    "n_RB": 719,
+    "n_RB_valid_ref_ge3": 687,
+    "frac_RB_unreferenceable": 0.0445062586926287,
+    "ref_count_median": 193.0,
+    "ref_count_max": 269,
+    "n_RB_with_ref_ge1": 707,
+    "noise_floor_computable": true,
+    "tau_imprecise_lt_200": false,
+    "f0_outside_0.03_0.08": [
+     false
+    ],
+    "n_weeks_RA": 105,
+    "n_weeks_RB": 105
+   }
+  },
+  "tail_Q": {
+   "volclust_raw": {
+    "M": [
+     "acf_1",
+     "Q"
+    ],
+    "E": [
+     "volclust_raw"
+    ],
+    "SD": [
+     0.05804906783226416,
+     1.522577633043038
+    ],
+    "c": [
+     0.02902453391613208,
+     0.761288816521519
+    ],
+    "sigma": [
+     0.04417711430911423
+    ],
+    "tau": [
+     1.9934361111973093
+    ],
+    "f0": [
+     0.05216457840458665
+    ],
+    "f0_split_sd": [
+     0.016473936471645766
+    ],
+    "f0_split_min": [
+     0.014326647564469915
+    ],
+    "f0_split_max": [
+     0.10140845070422536
+    ],
+    "n_RA": 717,
+    "n_RB": 719,
+    "n_RB_valid_ref_ge3": 701,
+    "frac_RB_unreferenceable": 0.025034770514603566,
+    "ref_count_median": 85.0,
+    "ref_count_max": 161,
+    "n_RB_with_ref_ge1": 717,
+    "noise_floor_computable": true,
+    "tau_imprecise_lt_200": false,
+    "f0_outside_0.03_0.08": [
+     false
+    ],
+    "n_weeks_RA": 105,
+    "n_weeks_RB": 105
+   }
+  }
+ }
+}
