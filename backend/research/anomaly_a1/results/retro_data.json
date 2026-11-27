@@ -1,0 +1,41 @@
+{
+ "_code": {
+  "head": "2d9dd2c7453b78b6787df1974703049851af9a37",
+  "versions": {
+   "arch": "8.0.0",
+   "numpy": "2.3.3",
+   "scipy": "1.17.1",
+   "pandas": "3.0.1",
+   "statsmodels": "0.14.6"
+  },
+  "python": "3.13.17",
+  "time": "2026-11-27 13:32:48"
+ },
+ "period": [
+  "2022-09-01",
+  "2026-10-31"
+ ],
+ "months": 50,
+ "passed": true,
+ "check202208": {
+  "sha256": "cc0c63736e462e49423ce250a45ea4eee0e9c3692af0d29dff11e8cbce250eba",
+  "rows_archive": 32793,
+  "identical": true
+ },
+ "backward_tick_steps": {},
+ "new_minutes": 1569186,
+ "duplicated_minutes": 0,
+ "backward_minutes": 0,
+ "minutes_not_after_main_series": 0,
+ "main_rows": 2239284,
+ "rows": 3808470,
+ "last": "2026-10-30 23:59:00",
+ "non_positive_or_non_finite_closes": 0,
+ "weekly_open": {
+  "weeks": 217,
+  "conforming": 216,
+  "share": 0.9953917050691244
+ },
+ "series_file": "C:\\Users\\ksato\\workspace\\finance\\algoforge\\artifacts\\research\\anomaly_a1r\\series_retro.npz",
+ "series_sha256": "8d24ed13fc30367998b708dce46ffc0fcb89e9c48384abed1ddc280fa93fadc5"
+}

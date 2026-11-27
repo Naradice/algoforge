@@ -1,0 +1,13 @@
+{
+ "file": "ticks_USDJPY-oj5k_2022-08.zip",
+ "sha256": "cc0c63736e462e49423ce250a45ea4eee0e9c3692af0d29dff11e8cbce250eba",
+ "rows_archive": 32793,
+ "rows_main_same_range": 32793,
+ "first": "2022-07-31 22:00:00",
+ "last": "2022-08-31 17:59:00",
+ "main_last": "2022-08-31 17:59:00",
+ "rows_after_main_end": 0,
+ "same_time_stamps": true,
+ "identical": true,
+ "source_folder": "L:\\data\\fx\\anomaly_a1_forward"
+}

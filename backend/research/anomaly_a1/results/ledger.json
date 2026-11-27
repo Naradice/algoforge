@@ -1,4 +1,18 @@
 {
+ "2022-08": {
+  "backward_steps": 0,
+  "bytes": 74138429,
+  "equal_consecutive_stamps": 1226696,
+  "file": "ticks_USDJPY-oj5k_2022-08.zip",
+  "first": "2022-07-31T22:00:04.728",
+  "gaps_over_300s": 43,
+  "last": "2022-08-31T17:59:59.933",
+  "minutes": 32793,
+  "recorded": "2026-11-27 13:32:22",
+  "sha256": "cc0c63736e462e49423ce250a45ea4eee0e9c3692af0d29dff11e8cbce250eba",
+  "sunday_tick_rows": 851,
+  "tick_rows": 17260223
+ },
  "2022-09": {
   "backward_steps": 0,
   "bytes": 100825269,
