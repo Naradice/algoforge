@@ -1,6 +1,6 @@
 # algoforge の移動と研究リポジトリの分割: 移行計画
 
-- 版: **v0.1。2026-11-28 に利用者が承認(「計画承認」)。**承認した草案は commit `d2673bd`。移動の操作は利用者が行い(§4 の段階 3)、GitHub のリポジトリの作成と最初の push は実行前に改めて確認する。
+- 版: **v0.2。**v0.1(草案は commit `d2673bd`)を 2026-11-28 に利用者が承認(「計画承認」)した。同日、利用者の指示「research にする」で、研究リポジトリの名前と構成を変えた(§0 の 2、§3、段階 1)。移動の手順は変えていない。移動の操作は利用者が行い(§4 の段階 3)、GitHub のリポジトリの作成と最初の push は実行前に改めて確認する。
 - 草案の作成で行ったのは読み取りの調査と、使い捨てフォルダでのジャンクションの試験だけである(承認の時点で、何も移動・作成していない)。
 - パスは公開リポジトリに残るため、`$env:USERPROFILE`(ユーザーフォルダ)で書く。
 
@@ -9,7 +9,7 @@
 | # | 判断 | この案 |
 |---|---|---|
 | 1 | algoforge の移し方 | `C:\AIWS\algoforge` へ**実体を移し、元の場所にジャンクションを残す** |
-| 2 | 研究リポジトリ | `C:\AIWS\algoforge-research`、**非公開**、研究ごとのフォルダ |
+| 2 | 研究リポジトリ | `C:\AIWS\research`、**非公開**、分野ごとのフォルダの下に研究ごとのフォルダ(v0.2) |
 | 3 | パスの混入防止 | 研究リポジトリのコミット前チェックで、ユーザーフォルダのパスを拒否する |
 | 4 | 分担 | 研究リポジトリの準備と移動後の確認は Claude、**移動の操作は利用者**(§4) |
 
@@ -53,18 +53,21 @@
 ```
 C:\AIWS\
 ├ algoforge\             本体(今のリポジトリ。公開)
-├ algoforge-research\    研究(新しいリポジトリ。非公開)
-│  ├ CLAUDE.md
+├ research\              研究(新しいリポジトリ。非公開。分野を問わない)
+│  ├ CLAUDE.md           全分野で共通のルール
 │  ├ .gitignore
 │  ├ .githooks\pre-commit
-│  ├ tools\check_algoforge.py
-│  └ <study名>\          plan.md, report.md, code, results, requirements.txt, algoforge_commit.txt
+│  ├ _template\          研究のひな形
+│  └ finance\
+│     ├ CLAUDE.md        algoforge の使い方、データの利用制約
+│     ├ tools\check_algoforge.py
+│     └ <study名>\       plan.md, report.md, code, results, requirements.txt, algoforge_commit.txt
 └ finance\               (既存のジャンクション。変えない)
 ```
 
 - 研究コードは環境変数 `ALGOFORGE_DIR`(= `C:\AIWS\algoforge`)で本体を読み込む。HTTP API だけで足りる研究は読み込まない。
 - `check_algoforge.py` は、記録したコミットと本体の HEAD が一致し、未コミットの変更がないことを確認する。
-- 大きなデータ(parquet、npz、モデル)、`.env`、秘密情報はコミットしない。
+- 大きなデータ(parquet、npz、モデル)、`.env`、秘密情報、個人に関わるデータはコミットしない。
 - コミット前チェックは `C:\Users\`、`C:/Users/`、`/c/Users/` を含む変更を拒否する。チェックのファイル自体にユーザー名は書かない。
 - 作者は、このリポジトリの設定で GitHub の noreply アドレスにする。
 - **既存の研究(DP1〜DP3、F1、A0・A1・A1R など)は移さない。**進行中の A1 は今の場所で続ける。
@@ -73,7 +76,7 @@ C:\AIWS\
 
 ### 段階 1: 研究リポジトリの準備(Claude。移動の前でもできる。何も壊さない)
 
-1. `C:\AIWS\algoforge-research` を作り、`git init`、上の構成のひな形を作る。
+1. `C:\AIWS\research` を作り、`git init`、上の構成のひな形を作る。
 2. コミット前チェックが、パスを含むファイルを拒否することを試す。
 3. GitHub の非公開リポジトリを作る。**作成と最初の push は、実行前に改めて確認する。**
 
