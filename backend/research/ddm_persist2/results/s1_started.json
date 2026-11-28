@@ -1,0 +1,10 @@
+{
+ "head": "1ccc9224aa10aa3afc2afba51e413ba78a6ce8ff",
+ "versions": {
+  "numpy": "2.3.3",
+  "scipy": "1.17.1",
+  "pandas": "3.0.1"
+ },
+ "python": "3.13.17",
+ "time": "2026-11-28 20:13:20"
+}
