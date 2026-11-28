@@ -1,0 +1,399 @@
+{
+ "code": {
+  "head": "ded6e82a1226c80fabb552f807ad3cc8d061bff1",
+  "versions": {
+   "numpy": "2.3.3",
+   "scipy": "1.17.1",
+   "pandas": "3.0.1"
+  },
+  "python": "3.13.17",
+  "time": "2026-11-28 20:12:35"
+ },
+ "cfg": {
+  "model": {
+   "num_agent": 300,
+   "max_volatility": 0.02,
+   "min_volatility": 0.01,
+   "wma": 5,
+   "spread": 1.0,
+   "initial_price": 100.0,
+   "dealer_sensitive_min": -3.5,
+   "dealer_sensitive_max": -1.5
+  },
+  "eta": 15.0,
+  "burn": 5000,
+  "k": 100000,
+  "bar": 20,
+  "clocks": {
+   "K-short": [
+    16,
+    0.1
+   ],
+   "K-long": [
+    50,
+    0.03
+   ]
+  },
+  "target_mean": 3.0,
+  "alpha": 1.25,
+  "pool_seeds": [
+   9001,
+   9002,
+   9003
+  ],
+  "pool_trades": 20000,
+  "pool_n": 100,
+  "cal_seeds": [
+   8001,
+   8002,
+   8003,
+   8004,
+   8005,
+   8006,
+   8007,
+   8008,
+   8009,
+   8010,
+   8011,
+   8012,
+   8013,
+   8014,
+   8015,
+   8016,
+   8017,
+   8018,
+   8019,
+   8020
+  ],
+  "cal_k": 400000,
+  "cal_burn": 500,
+  "diag_chains": 4000,
+  "diag_seed": 6001,
+  "diag_tol": 0.05,
+  "half_tol": 0.25,
+  "op_min": 0.05,
+  "main_seeds": [
+   301,
+   302,
+   303,
+   304,
+   305,
+   306,
+   307,
+   308,
+   309,
+   310,
+   311,
+   312,
+   313,
+   314,
+   315,
+   316,
+   317,
+   318,
+   319,
+   320
+  ],
+  "pilot_seeds": [
+   191,
+   192,
+   193,
+   194,
+   195
+  ],
+  "equiv_seeds": [
+   4,
+   5,
+   6
+  ],
+  "equiv_trades": 20000,
+  "clock_offset": 1000,
+  "shuffle_offset": 50000,
+  "barperm_offset": 60000,
+  "pos_offset": 70000,
+  "lags_p": [
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10
+  ],
+  "lags_sec": [
+   1,
+   5,
+   20,
+   60,
+   240
+  ],
+  "delta": 0.03,
+  "min_pairs": 18,
+  "n_boot": 10000,
+  "boot_seed": 20261129,
+  "level_main": 0.975,
+  "level_check": 0.95,
+  "pilot_max_fail": 1,
+  "neg_band": 0.01,
+  "pos_min": 0.05,
+  "pos_tau": 200.0,
+  "pos_sd": 0.5,
+  "price_lo": 50.0,
+  "price_hi": 200.0,
+  "run_limit_s": 600.0,
+  "cpu_cap_s": 3600.0,
+  "har_train_n": 14,
+  "workers": 10,
+  "fake": false,
+  "rw_offset": 90000,
+  "width": 60.0,
+  "pre_min": 0.03,
+  "share_major": 0.5,
+  "share_some": 0.2,
+  "level_pre": 0.95,
+  "level_share": 0.975,
+  "dp1_s0": "C:\\Users\\ksato\\workspace\\finance\\algoforge\\backend\\research\\ddm_persist\\results\\s0.json",
+  "pool_path": "C:\\Users\\ksato\\workspace\\finance\\algoforge\\artifacts\\research\\ddm_persist\\lf_pool.npy"
+ },
+ "checks": {
+  "1_pool_equivalence": {
+   "pool_sha256": "7ba14a0bfdfd91b15faa4772b60afd4fff224e8ceb788de4aacb1508355d4dab",
+   "dp1_sha256": "7ba14a0bfdfd91b15faa4772b60afd4fff224e8ceb788de4aacb1508355d4dab",
+   "rows": [
+    {
+     "seed": 4,
+     "n": 20000,
+     "equal": true,
+     "price_changes": 17723
+    },
+    {
+     "seed": 5,
+     "n": 20000,
+     "equal": true,
+     "price_changes": 17712
+    },
+    {
+     "seed": 6,
+     "n": 20000,
+     "equal": true,
+     "price_changes": 17707
+    }
+   ],
+   "pass": true
+  },
+  "2_clock": {
+   "all_positive": true,
+   "half_diff_mean": 0.04420983514732933,
+   "half_diff_by_seed": [
+    0.24545370266328492,
+    -0.22070437744894206,
+    0.28149049366974843,
+    0.17394300771608623,
+    0.1236465911585859,
+    0.11197596580417854,
+    0.37231602116836093,
+    0.06772517624339691,
+    0.23096083347911506,
+    -0.6266038880800688,
+    0.2355653563989863,
+    -0.06290784410859884,
+    -0.15042926995911188,
+    0.1698953312065986,
+    0.12010229947261258,
+    0.3555140969494575,
+    0.0844897022073603,
+    -0.0099788112334952,
+    -0.0013945741758937258,
+    -0.6168631101850747
+   ],
+   "pass": true
+  },
+  "3_operation": {
+   "ord": 0.6926209592976913,
+   "shuf": -0.0009009551143050699,
+   "diff": 0.6935219144119964,
+   "pass": true
+  },
+  "4_negative": {
+   "n": 20,
+   "mean": -0.0015911914069672815,
+   "lo": -0.0037584363508783116,
+   "hi": 0.00041580851617803303,
+   "level": 0.95,
+   "pass": true
+  }
+ },
+ "proceed": true,
+ "stopped": null,
+ "calib": {
+  "n": 50,
+  "lam": 0.03,
+  "kappa": 2.027701396876846,
+  "m0": 1.4795077838486133
+ },
+ "u_runs": [
+  {
+   "cond": "U",
+   "seed": 301,
+   "ok": true,
+   "error": null,
+   "cpu": 9.046875,
+   "wall": 9.286906399996951
+  },
+  {
+   "cond": "U",
+   "seed": 302,
+   "ok": true,
+   "error": null,
+   "cpu": 8.828125,
+   "wall": 9.215279800002463
+  },
+  {
+   "cond": "U",
+   "seed": 303,
+   "ok": true,
+   "error": null,
+   "cpu": 8.84375,
+   "wall": 9.138403699966148
+  },
+  {
+   "cond": "U",
+   "seed": 304,
+   "ok": true,
+   "error": null,
+   "cpu": 9.140625,
+   "wall": 9.393897800007835
+  },
+  {
+   "cond": "U",
+   "seed": 305,
+   "ok": true,
+   "error": null,
+   "cpu": 8.890625,
+   "wall": 9.135319599998184
+  },
+  {
+   "cond": "U",
+   "seed": 306,
+   "ok": true,
+   "error": null,
+   "cpu": 9.03125,
+   "wall": 9.333622600068338
+  },
+  {
+   "cond": "U",
+   "seed": 307,
+   "ok": true,
+   "error": null,
+   "cpu": 9.078125,
+   "wall": 9.26537100004498
+  },
+  {
+   "cond": "U",
+   "seed": 308,
+   "ok": true,
+   "error": null,
+   "cpu": 8.953125,
+   "wall": 9.140982400043868
+  },
+  {
+   "cond": "U",
+   "seed": 309,
+   "ok": true,
+   "error": null,
+   "cpu": 8.953125,
+   "wall": 9.242781599983573
+  },
+  {
+   "cond": "U",
+   "seed": 310,
+   "ok": true,
+   "error": null,
+   "cpu": 9.078125,
+   "wall": 9.415272300015204
+  },
+  {
+   "cond": "U",
+   "seed": 311,
+   "ok": true,
+   "error": null,
+   "cpu": 9.0,
+   "wall": 9.352267500013113
+  },
+  {
+   "cond": "U",
+   "seed": 312,
+   "ok": true,
+   "error": null,
+   "cpu": 8.90625,
+   "wall": 9.247115699923597
+  },
+  {
+   "cond": "U",
+   "seed": 313,
+   "ok": true,
+   "error": null,
+   "cpu": 9.015625,
+   "wall": 9.364975200034678
+  },
+  {
+   "cond": "U",
+   "seed": 314,
+   "ok": true,
+   "error": null,
+   "cpu": 8.921875,
+   "wall": 9.153522499953397
+  },
+  {
+   "cond": "U",
+   "seed": 315,
+   "ok": true,
+   "error": null,
+   "cpu": 9.15625,
+   "wall": 9.37240989995189
+  },
+  {
+   "cond": "U",
+   "seed": 316,
+   "ok": true,
+   "error": null,
+   "cpu": 8.875,
+   "wall": 9.13146930001676
+  },
+  {
+   "cond": "U",
+   "seed": 317,
+   "ok": true,
+   "error": null,
+   "cpu": 8.96875,
+   "wall": 9.244369799969718
+  },
+  {
+   "cond": "U",
+   "seed": 318,
+   "ok": true,
+   "error": null,
+   "cpu": 8.96875,
+   "wall": 9.230365099967457
+  },
+  {
+   "cond": "U",
+   "seed": 319,
+   "ok": true,
+   "error": null,
+   "cpu": 8.96875,
+   "wall": 9.160401199944317
+  },
+  {
+   "cond": "U",
+   "seed": 320,
+   "ok": true,
+   "error": null,
+   "cpu": 8.96875,
+   "wall": 9.144791099941358
+  }
+ ],
+ "cpu_s": 186.125
+}
